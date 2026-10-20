@@ -1,0 +1,292 @@
+name: Release
+
+# Push a tag like v1.2.3 to build and publish everything for the server.
+# The GitHub Release is created as a DRAFT; other workflows (desktop.yml, android.yml) attach their
+# assets to the same tag, then the owner publishes the draft. See docs/RELEASING.md.
+# Manual only (Actions > Run workflow): the free CI minutes of the private repo are nearly used up, so nothing starts on push / tag / pull request.
+# Re-enable the triggers (push tags: ["v*"] ...) when the repo is public or the quota is raised. Releases are built locally (packaging/local/).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v1.2.3"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  NODE_MAJOR: "24"
+  WINSW_URL: https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe
+  WINSW_SHA256: 05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da
+
+jobs:
+  build:
+    name: Build web + server (once)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - id: v
+        run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - run: npm ci --no-audit --no-fund
+        working-directory: app
+      - run: npm ci --no-audit --no-fund
+        working-directory: server
+      - name: Stage server (no bundled runtime)
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: node packaging/build-release.mjs --out .release/stage --version "$VERSION"
+      - name: Pack stage
+        run: tar -czf stage.tgz -C .release/stage server
+      # Platform-independent update bundle. Made from the stage BEFORE any runtime/ is added (the zip excludes it anyway).
+      - name: Server update bundle (zip)
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p out-bundle
+          node packaging/make-bundle-zip.mjs .release/stage/server "out-bundle/omnichat-server-bundle-$VERSION.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: stage
+          path: stage.tgz
+          retention-days: 3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bundle
+          path: out-bundle/*.zip
+          retention-days: 3
+
+  docker:
+    name: Docker image (ghcr, amd64+arm64)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - name: Image name (lowercase owner)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/omnichat" >> "$GITHUB_ENV"
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ env.TAG }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }},enable=${{ !contains(env.TAG, '-') }}
+            type=raw,value=latest,enable=${{ !contains(env.TAG, '-') }}
+      - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  windows:
+    name: Windows installer
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: stage
+      - name: Unpack stage and add Node 24 win-x64 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .release/stage && tar -xzf stage.tgz -C .release/stage
+          base=https://nodejs.org/dist/latest-v${NODE_MAJOR}.x
+          curl -fsSL "$base/SHASUMS256.txt" -o SHASUMS256.txt
+          file=$(grep -o "node-v[0-9.]*-win-x64\.zip" SHASUMS256.txt | head -n1)
+          curl -fsSL "$base/$file" -o node.zip
+          want=$(grep " $file\$" SHASUMS256.txt | cut -d' ' -f1)
+          got=$(sha256sum node.zip | cut -d' ' -f1)
+          [ "$want" = "$got" ] || { echo "Node archive checksum mismatch"; exit 1; }
+          unzip -q node.zip
+          mkdir -p .release/stage/server/runtime
+          cp "${file%.zip}/node.exe" .release/stage/server/runtime/node.exe
+          .release/stage/server/runtime/node.exe --version
+      - name: Download WinSW (pinned, SHA256-verified)
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL "$WINSW_URL" -o WinSW-x64.exe
+          got=$(sha256sum WinSW-x64.exe | cut -d' ' -f1)
+          [ "$got" = "$WINSW_SHA256" ] || { echo "WinSW checksum mismatch: expected $WINSW_SHA256, got $got"; exit 1; }
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Compile installer
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyAppVersion=$env:VERSION" `
+            "/DStageDir=$PWD\.release\stage\server" `
+            "/DWinSWExe=$PWD\WinSW-x64.exe" `
+            "/DOutDir=$PWD\out" `
+            packaging\windows\omnichat.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows
+          path: out/OmniChat-Server-Setup-*.exe
+
+  unix:
+    name: ${{ matrix.os }}-${{ matrix.arch }} tarball
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: linux, arch: x64, node: linux-x64, ext: tar.xz }
+          - { os: linux, arch: arm64, node: linux-arm64, ext: tar.xz }
+          - { os: macos, arch: arm64, node: darwin-arm64, ext: tar.gz }
+          - { os: macos, arch: x64, node: darwin-x64, ext: tar.gz }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: stage
+      - name: Unpack stage and add Node 24 runtime (${{ matrix.node }})
+        env:
+          NODE_PLATFORM: ${{ matrix.node }}
+          NODE_EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          mkdir -p .release/stage && tar -xzf stage.tgz -C .release/stage
+          base=https://nodejs.org/dist/latest-v${NODE_MAJOR}.x
+          curl -fsSL "$base/SHASUMS256.txt" -o SHASUMS256.txt
+          file=$(grep -o "node-v[0-9.]*-${NODE_PLATFORM}\.${NODE_EXT}" SHASUMS256.txt | head -n1)
+          curl -fsSL "$base/$file" -o node-archive
+          want=$(grep " $file\$" SHASUMS256.txt | cut -d' ' -f1)
+          got=$(sha256sum node-archive | cut -d' ' -f1)
+          [ "$want" = "$got" ] || { echo "Node archive checksum mismatch"; exit 1; }
+          mkdir nodedist && tar -xf node-archive -C nodedist --strip-components=1
+          mkdir -p .release/stage/server/runtime
+          cp nodedist/bin/node .release/stage/server/runtime/node
+          chmod +x .release/stage/server/runtime/node
+      - name: "Smoke test (linux-x64 only: runtime runs on the runner)"
+        if: matrix.node == 'linux-x64'
+        run: .release/stage/server/runtime/node --version
+      - name: Make tarball
+        env:
+          MATRIX_OS: ${{ matrix.os }}
+          MATRIX_ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: sh packaging/make-tarball.sh .release/stage/server "$MATRIX_OS" "$MATRIX_ARCH" "$VERSION" out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}
+          path: out/*.tar.gz
+
+  tools:
+    name: Bridge + dsh-plugin packages
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: npm pack
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          for d in bridge dsh-plugin; do
+            (cd "$d" && npm ci --no-audit --no-fund && npm pack --pack-destination "$GITHUB_WORKSPACE/out")
+          done
+          ls -l out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tools
+          path: out/*.tgz
+
+  release:
+    name: GitHub Release (draft)
+    needs: [build, docker, windows, unix, tools]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+          pattern: "{windows,linux-*,macos-*,tools,bundle}"
+          merge-multiple: true
+      - name: Version-less aliases for the installers and tarballs
+        working-directory: artifacts
+        run: |
+          set -euo pipefail
+          for f in OmniChat-Server-Setup-*.exe; do cp "$f" OmniChat-Server-Setup.exe; done
+          for os in linux macos; do
+            for arch in x64 arm64; do
+              for f in omnichat-server-*-"$os"-"$arch".tar.gz; do
+                [ -e "$f" ] && cp "$f" "omnichat-server-$os-$arch.tar.gz"
+              done
+            done
+          done
+          ls -l
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+          path: src
+      - name: Release notes (per-OS download table)
+        run: node src/packaging/make-release-notes.mjs "$TAG" > release-notes.md
+      - name: SHA256SUMS
+        working-directory: artifacts
+        # all files are already downloaded here; SHA256SUMS lists every other file in artifacts/ (never itself)
+        run: |
+          set -euo pipefail
+          ls -l
+          rm -f SHA256SUMS
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | LC_ALL=C sort \
+            | xargs -r -d '\n' sha256sum -- > SHA256SUMS
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: OmniChat ${{ env.TAG }}
+          draft: true
+          prerelease: ${{ contains(env.TAG, '-') }}
+          body_path: release-notes.md
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: artifacts/*

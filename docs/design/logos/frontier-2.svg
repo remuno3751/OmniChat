@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <polygon points="68,12 188,12 244,68 244,188 188,244 68,244 12,188 12,68" fill="#141414" stroke="#c8af23" stroke-width="3" stroke-linejoin="miter"/>
+  <polygon points="128,28 214,78 214,178 128,228 42,178 42,78" fill="none" stroke="#c8af23" stroke-width="3" stroke-linejoin="miter"/>
+  <g fill="none" stroke="#c8af23" stroke-width="10" stroke-linecap="butt">
+    <path d="M128,128 L128,48"/>
+    <path d="M128,128 L197,168"/>
+    <path d="M128,128 L59,168"/>
+  </g>
+  <polygon points="128,48 197,88 197,168 128,208 59,168 59,88" fill="none" stroke="#fffa00" stroke-width="12" stroke-linejoin="miter"/>
+  <rect x="115" y="35" width="26" height="26" fill="#fffa00"/>
+  <rect x="123" y="43" width="10" height="10" fill="#141414"/>
+  <rect x="184" y="155" width="26" height="26" fill="#fffa00"/>
+  <rect x="192" y="163" width="10" height="10" fill="#141414"/>
+  <rect x="46" y="155" width="26" height="26" fill="#fffa00"/>
+  <rect x="54" y="163" width="10" height="10" fill="#141414"/>
+  <rect x="115" y="115" width="26" height="26" fill="#fffa00"/>
+</svg>

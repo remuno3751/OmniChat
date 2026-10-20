@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>OmniChat</title>
+<link rel="stylesheet" href="launcher.css">
+<link rel="stylesheet" href="frontier.css">
+</head>
+<body>
+<main>
+  <img class="logo" src="logo.png" alt="" width="56" height="56">
+  <h1>OmniChat</h1>
+  <p id="lead" class="muted"></p>
+
+  <form id="form" novalidate>
+    <label for="url" id="lbl"></label>
+    <input id="url" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="http://192.168.x.x:8787">
+    <p class="hint" id="hint"></p>
+    <button id="go" type="submit"></button>
+  </form>
+
+  <section id="status" role="status" aria-live="polite" hidden></section>
+  <section id="error" role="alert" hidden>
+    <strong id="err-title"></strong>
+    <p id="err-body"></p>
+  </section>
+
+  <div id="retry-actions" hidden>
+    <button id="retry" type="button"></button>
+    <button id="change" type="button" class="secondary"></button>
+  </div>
+
+  <footer>
+    <button id="lang" type="button" class="link" aria-label="Language">日本語 / English</button>
+  </footer>
+</main>
+<script src="launcher.js"></script>
+</body>
+</html>

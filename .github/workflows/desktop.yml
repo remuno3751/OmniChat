@@ -1,0 +1,167 @@
+name: Desktop
+
+# Builds the Tauri desktop launcher (Windows NSIS+MSI, macOS universal DMG, Linux AppImage+DEB).
+# Triggered by the same v* tags as release.yml. It does NOT create the release itself: the last job
+# attaches the files to the release of that tag (release.yml creates it as a DRAFT; if this workflow
+# is faster, it creates the same kind of draft and release.yml's softprops step then adds to it).
+# Manual run: pass an existing tag to attach assets, or leave empty to only build and keep artifacts.
+# Manual only (Actions > Run workflow): the free CI minutes of the private repo are nearly used up, so nothing starts on push / tag / pull request.
+# Re-enable the triggers (push tags: ["v*"] ...) when the repo is public or the quota is raised. Releases are built locally (packaging/local/).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to attach assets to, e.g. v1.2.3 (empty = build only)"
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-latest, args: "--bundles nsis,msi", rust_targets: "" }
+          - { name: macos-universal, os: macos-latest, args: "--target universal-apple-darwin --bundles dmg", rust_targets: "aarch64-apple-darwin,x86_64-apple-darwin" }
+          - { name: linux-x64, os: ubuntu-22.04, args: "--bundles appimage,deb", rust_targets: "" }
+    env:
+      # true when the owner configured Apple signing secrets (macOS only; see docs/CLIENTS.md)
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TAG || github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable 2026-10-17 (branch)
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Stamp version from tag
+        if: env.TAG != ''
+        shell: bash
+        run: node desktop/tools/set-version.mjs "$TAG"
+
+      - name: Install JS deps
+        run: npm ci --no-audit --no-fund
+        working-directory: desktop
+
+      # macOS signed + notarized (only when secrets exist)
+      - name: Build (macOS, signed + notarized)
+        if: runner.os == 'macOS' && env.HAS_APPLE_CERT == 'true'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: desktop
+          args: ${{ matrix.args }}
+
+      # everything else (unsigned; Gatekeeper first-run steps are in docs/CLIENTS.md)
+      - name: Build
+        if: runner.os != 'macOS' || env.HAS_APPLE_CERT != 'true'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        with:
+          projectPath: desktop
+          args: ${{ matrix.args }}
+
+      - name: Collect and name artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          label="${TAG:-dev-${GITHUB_SHA::7}}"
+          mkdir -p out
+          # find (not globstar): the macOS runner's bash 3.2 has no 'shopt -s globstar'
+          while IFS= read -r f; do
+            base=$(basename "$f")
+            ext="${base##*.}"
+            case "$base" in
+              *.exe) plat=Windows-x64-Setup ;;
+              *.msi) plat=Windows-x64 ;;
+              *.dmg) plat=macOS-universal ;;
+              *.AppImage) plat=Linux-x64 ;;
+              *.deb) plat=Linux-x64 ;;
+            esac
+            cp "$f" "out/OmniChat-Desktop-${label}-${plat}.${ext}"
+            # version-less alias: releases/latest/download/<this name> always points at the newest stable release
+            cp "$f" "out/OmniChat-Desktop-${plat}.${ext}"
+          done < <(find desktop/src-tauri/target -type f \( -path '*/bundle/nsis/*.exe' -o -path '*/bundle/msi/*.msi' -o -path '*/bundle/dmg/*.dmg' -o -path '*/bundle/appimage/*.AppImage' -o -path '*/bundle/deb/*.deb' \) | sort)
+          ls -l out
+          test -n "$(ls out)"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-${{ matrix.name }}
+          path: out/*
+          retention-days: 7
+
+  publish:
+    name: Attach to GitHub Release
+    needs: build
+    if: startsWith(github.event.inputs.tag || github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+          pattern: desktop-*
+          merge-multiple: true
+      - name: Checksums
+        working-directory: artifacts
+        run: |
+          ls -l
+          sha256sum OmniChat-Desktop-* > SHA256SUMS-desktop.txt
+          cat SHA256SUMS-desktop.txt
+          # per-asset checksum file next to each installer: "<hex>  <name>" (the updater accepts this form)
+          for f in OmniChat-Desktop-*; do
+            [ -f "$f" ] || continue
+            case "$f" in *.sha256) continue ;; esac
+            printf '%s  %s\n' "$(sha256sum -- "$f" | cut -d' ' -f1)" "$f" > "$f.sha256"
+          done
+          ls -l
+      - name: Create draft release if absent, then upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          T: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          pre=""; case "$T" in *-*) pre="--prerelease" ;; esac
+          # release.yml normally created the draft already; wait a little, then create if still absent
+          for i in 1 2 3 4 5 6; do
+            gh release view "$T" --repo "$REPO" >/dev/null 2>&1 && break
+            if [ "$i" = 6 ]; then
+              # shellcheck disable=SC2086
+              gh release create "$T" --repo "$REPO" --draft $pre --title "OmniChat $T" --generate-notes --verify-tag
+            else
+              sleep 20
+            fi
+          done
+          gh release upload "$T" --repo "$REPO" --clobber artifacts/*

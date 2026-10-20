@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- OmniChat servers are usually plain http:// on a LAN or Tailscale address (100.x.y.z, 192.168.x.y). macOS App
+       Transport Security blocks such navigations in the webview unless cleartext loads are allowed; without this the
+       launcher stays on "Server found" and never opens the server's UI.
+       Do not add NSAllowsLocalNetworking here: when it (or another ATS exception key) is present, macOS ignores
+       NSAllowsArbitraryLoads, so plain http to a Tailscale IP (100.x.y.z) stayed blocked. WKWebView loads are governed by
+       NSAllowsArbitraryLoadsInWebContent. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <true/>
+  </dict>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>OmniChat connects to your OmniChat server on the local network.</string>
+</dict>
+</plist>

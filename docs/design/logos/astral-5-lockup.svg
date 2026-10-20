@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 256" width="900" height="256">
+<defs>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%">
+<stop offset="0" stop-color="#f9c837" stop-opacity="0.45"/>
+<stop offset="1" stop-color="#f9c837" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="lav" cx="50%" cy="50%" r="50%">
+<stop offset="0" stop-color="#c9a6ff" stop-opacity="0.6"/>
+<stop offset="1" stop-color="#c9a6ff" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<circle cx="128" cy="128" r="120" fill="#2a2827"/>
+<circle cx="128" cy="128" r="104" fill="url(#glow)"/>
+<circle cx="128" cy="128" r="112" fill="none" stroke="#f4a747" stroke-width="3" opacity="0.6"/>
+<circle cx="128" cy="128" r="56" fill="url(#lav)"/>
+<circle cx="128" cy="128" r="80" fill="none" stroke="#f9c837" stroke-width="22"/>
+<path d="M192,128 L224,128 M183.4,160 L211.1,176 M160,183.4 L176,211.1 M128,192 L128,224 M96,183.4 L80,211.1 M72.6,160 L44.9,176 M64,128 L32,128 M72.6,96 L44.9,80 M96,72.6 L80,44.9 M128,64 L128,32 M160,72.6 L176,44.9 M183.4,96 L211.1,80" fill="none" stroke="#fbe9b6" stroke-width="5" stroke-linecap="round"/>
+<path d="M193.5,173.9 L202,204 L173.9,193.5 Z" fill="#f9c837"/>
+<path d="M128,94 Q133,123 162,128 Q133,133 128,162 Q123,133 94,128 Q123,123 128,94 Z" fill="#fbe9b6"/>
+<circle cx="128" cy="128" r="4" fill="#c9a6ff"/>
+<rect x="275" y="62" width="610" height="132" rx="66" fill="#2a2827" stroke="#f4a747" stroke-width="2"/>
+<text x="325" y="157" font-family="Georgia, 'Palatino Linotype', 'Times New Roman', serif" font-size="88" font-weight="700"><tspan fill="#fbe9b6">Omni</tspan><tspan fill="#f9c837">Chat</tspan></text>
+<path d="M850,88 Q852,98 862,100 Q852,102 850,112 Q848,102 838,100 Q848,98 850,88 Z" fill="#c9a6ff"/>
+</svg>

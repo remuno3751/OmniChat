@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/data
+**/.expo
+.release
+.git
+.github
+*.md
+!README.md
+**/*.db*
+**/.env

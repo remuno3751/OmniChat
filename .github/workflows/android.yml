@@ -1,0 +1,174 @@
+name: Android
+
+# Builds a sideloadable APK without EAS cloud: expo prebuild + Gradle assembleRelease.
+# Signed with your keystore if the ANDROID_KEYSTORE_* secrets exist (see docs/CLIENTS.md),
+# otherwise debug-signed (installs fine for personal use, cannot be uploaded to Google Play).
+# Attaches OmniChat-<version>.apk to the release of the tag (release.yml creates it as a draft;
+# the "attach" job creates the draft only if it is still missing).
+# The build job has only read permission and never touches the release: it uploads the APK as a
+# workflow artifact, and the attach job (write permission, no checkout) publishes it.
+# Manual only (Actions > Run workflow): the free CI minutes of the private repo are nearly used up, so nothing starts on push / tag / pull request.
+# Re-enable the triggers (push tags: ["v*"] ...) when the repo is public or the quota is raised. Releases are built locally (packaging/local/).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to attach the APK to, e.g. v1.2.3 (empty = build only)"
+        required: false
+      archs:
+        description: "CPU architectures (build only: use x86_64 for the Android emulator)"
+        required: false
+        default: "arm64-v8a,armeabi-v7a"
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TAG || github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      - name: Install app deps
+        run: npm ci --no-audit --no-fund
+        working-directory: app
+
+      - name: Stamp version (name from tag, versionCode = MAJOR*10000 + MINOR*100 + PATCH)
+        working-directory: app
+        run: |
+          v="${TAG#v}"; v="${v:-0.0.0}"
+          node -e '
+            const fs = require("fs");
+            const m = /^(\d+)\.(\d+)\.(\d+)/.exec(process.argv[1]) || [0, 0, 0, 0];
+            const j = JSON.parse(fs.readFileSync("app.json", "utf8"));
+            j.expo.version = m[1] + "." + m[2] + "." + m[3];
+            j.expo.android.versionCode = Math.max(1, (+m[1]) * 10000 + (+m[2]) * 100 + (+m[3]));
+            fs.writeFileSync("app.json", JSON.stringify(j, null, 2));
+            console.log(j.expo.version, j.expo.android.versionCode);
+          ' "$v"
+          echo "VERSION=${v:-dev}" >> "$GITHUB_ENV"
+
+      - name: Generate native project (not committed)
+        run: npx expo prebuild --platform android --no-install --clean
+        working-directory: app
+
+      - name: Check the node commands Gradle runs at configuration time
+        working-directory: app/android
+        run: |
+          set +e
+          for c in \
+            "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })" \
+            "require.resolve('expo-modules-autolinking/package.json', { paths: [require.resolve('expo/package.json')] })" \
+            "require.resolve('hermes-compiler/package.json', { paths: [require.resolve('react-native/package.json')] })" \
+            "require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })" \
+            "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"; do
+            node --print "$c" || echo "::warning::node --print failed: $c"
+          done
+          node -e "require('expo/scripts/resolveAppEntry')" .. android absolute || echo "::warning::resolveAppEntry failed"
+          # the command expo-autolinking-settings runs while Gradle configures the project: show its real error
+          (cd .. && node --no-warnings --eval "require(require.resolve(\"expo-modules-autolinking\", { paths: [require.resolve(\"expo/package.json\")] }))(process.argv.slice(1))" react-native-config --json --platform android > /tmp/rnconfig.json 2> /tmp/rnconfig.err; echo "exit=$?"; head -c 1500 /tmp/rnconfig.err; echo; head -c 300 /tmp/rnconfig.json) || true
+
+      - name: Decode keystore (if provided)
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          # only the file PATH goes to GITHUB_ENV; the passwords are passed to the Gradle step directly
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/omnichat.keystore"
+          echo "OMNICHAT_KEYSTORE_FILE=$RUNNER_TEMP/omnichat.keystore" >> "$GITHUB_ENV"
+
+      - name: Gradle assembleRelease
+        working-directory: app/android
+        env:
+          # read by ../android-signing.init.gradle; empty values are ignored when no keystore is set
+          OMNICHAT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          OMNICHAT_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          OMNICHAT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          # gradle.properties from prebuild has no trailing newline: add one first, or the last value (expo.inlineModules.watchedDirectories=[]) gets the text glued on
+          printf '\n%s\n' "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g" >> gradle.properties
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace \
+            --init-script ../android-signing.init.gradle \
+            -PreactNativeArchitectures=${{ github.event.inputs.archs || 'arm64-v8a,armeabi-v7a' }}
+
+      - name: Name the APK
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp app/android/app/build/outputs/apk/release/app-release.apk "out/OmniChat-${VERSION}.apk"
+          if [ "$HAS_KEYSTORE" != "true" ]; then
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: APK is DEBUG-signed (fine for sideloading, not for Google Play; updates need the same key)."
+            echo "debug-signed" > "out/OmniChat-${VERSION}.apk.NOTE.txt"
+          fi
+          cp "out/OmniChat-${VERSION}.apk" out/OmniChat.apk   # version-less alias for releases/latest/download/OmniChat.apk
+          (cd out && sha256sum "OmniChat-${VERSION}.apk" > "OmniChat-${VERSION}.apk.sha256" && sha256sum OmniChat.apk > OmniChat.apk.sha256)
+          ls -l out
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-apk
+          path: |
+            out/*.apk
+            out/*.sha256
+          retention-days: 7
+
+  attach:
+    name: Attach APK to GitHub Release
+    needs: apk
+    # only for a version tag push, or a manual run with a tag given
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      T: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      # no checkout: this job only moves files from the apk job to the release
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: android-apk
+          path: out
+
+      - name: Attach to GitHub Release
+        run: |
+          set -euo pipefail
+          ls -l out
+          pre=""; case "$T" in *-*) pre="--prerelease" ;; esac
+          for i in 1 2 3 4 5 6; do
+            gh release view "$T" --repo "$REPO" >/dev/null 2>&1 && break
+            if [ "$i" = 6 ]; then
+              # shellcheck disable=SC2086
+              gh release create "$T" --repo "$REPO" --draft $pre --title "OmniChat $T" --generate-notes --verify-tag
+            else
+              sleep 20
+            fi
+          done
+          gh release upload "$T" --repo "$REPO" --clobber out/*.apk out/*.sha256

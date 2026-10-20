@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 256" width="900" height="256">
+<defs>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%">
+<stop offset="0" stop-color="#f9c837" stop-opacity="0.45"/>
+<stop offset="1" stop-color="#f9c837" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<circle cx="128" cy="128" r="120" fill="#2a2827"/>
+<circle cx="128" cy="128" r="104" fill="url(#glow)"/>
+<circle cx="128" cy="128" r="112" fill="none" stroke="#f4a747" stroke-width="3" opacity="0.6"/>
+<ellipse cx="128" cy="128" rx="100" ry="40" fill="none" stroke="#fbe9b6" stroke-width="8" transform="rotate(30 128 128)"/>
+<ellipse cx="128" cy="128" rx="100" ry="40" fill="none" stroke="#f4a747" stroke-width="8" transform="rotate(-30 128 128)"/>
+<path d="M128,68 Q137,119 188,128 Q137,137 128,188 Q119,137 68,128 Q119,119 128,68 Z" fill="#f9c837"/>
+<circle cx="214.6" cy="178" r="6" fill="#fbe9b6"/>
+<circle cx="214.6" cy="78" r="6" fill="#fbe9b6"/>
+<circle cx="41.4" cy="78" r="6" fill="#fbe9b6"/>
+<rect x="275" y="62" width="610" height="132" rx="66" fill="#2a2827" stroke="#f4a747" stroke-width="2"/>
+<text x="325" y="157" font-family="Georgia, 'Palatino Linotype', 'Times New Roman', serif" font-size="88" font-weight="700"><tspan fill="#fbe9b6">Omni</tspan><tspan fill="#f9c837">Chat</tspan></text>
+<path d="M850,88 Q852,98 862,100 Q852,102 850,112 Q848,102 838,100 Q848,98 850,88 Z" fill="#c9a6ff"/>
+</svg>

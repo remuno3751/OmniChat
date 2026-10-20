@@ -1,0 +1,41 @@
+/* Frontier theme for the launcher / update windows (industrial signage: square corners, near-black, signal yellow).
+   Fonts: Space Grotesk (SIL OFL) and Syncopate (Apache 2.0), see fonts/. Loaded after launcher.css / update.css. */
+@font-face { font-family: "Space Grotesk"; font-weight: 400; src: url("fonts/SpaceGrotesk_400Regular.ttf") format("truetype"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 500; src: url("fonts/SpaceGrotesk_500Medium.ttf") format("truetype"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 700; src: url("fonts/SpaceGrotesk_700Bold.ttf") format("truetype"); }
+@font-face { font-family: "Syncopate"; font-weight: 700; src: url("fonts/Syncopate_700Bold.ttf") format("truetype"); }
+
+:root {
+  --bg: #fafafa; --card: #ffffff; --fg: #191919; --muted: #5e5e5e; --line: #d9d9d9; --signal: #fffa00;
+  --accent: #191919; --accent-fg: #ffffff; --err-bg: #fbe9e6; --err-fg: #b83222; --ok: #3b6200;
+  --hatch: rgba(25, 25, 25, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101113; --card: #17181a; --fg: #f2f2f2; --muted: #a0a2a8; --line: #3a3b40; --signal: #fffa00;
+    --accent: #c8af23; --accent-fg: #141414; --err-bg: #2a1511; --err-fg: #ef6a52; --ok: #c8d655;
+    --hatch: rgba(255, 255, 255, 0.05);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101113; --card: #17181a; --fg: #f2f2f2; --muted: #a0a2a8; --line: #3a3b40; --signal: #fffa00;
+  --accent: #c8af23; --accent-fg: #141414; --err-bg: #2a1511; --err-fg: #ef6a52; --ok: #c8d655;
+  --hatch: rgba(255, 255, 255, 0.05);
+}
+
+body {
+  font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
+  background-image: repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 9px);
+}
+main { border-radius: 0; border: 1px solid var(--line); border-top: 4px solid var(--signal); box-shadow: none; }
+.logo { display: block; border-radius: 0; background: none; object-fit: cover; }
+h1 { font-family: "Syncopate", "Space Grotesk", sans-serif; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; font-size: 18px; }
+label, .label { text-transform: uppercase; letter-spacing: .08em; font-size: 12px; font-weight: 700; }
+input, .notes, #error { border-radius: 0; }
+input { border-color: var(--line); }
+input:focus-visible, button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+button { border-radius: 0; font-family: inherit; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+button.link { text-transform: none; letter-spacing: 0; font-weight: 500; }
+button.secondary { border-color: var(--fg); font-weight: 700; }
+#error { border-left: 4px solid var(--err-fg); }
+.logo { border: 1px solid var(--line); }

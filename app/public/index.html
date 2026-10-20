@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <!-- viewport-fit=cover: draw under iOS notch / home indicator; #root padding below uses env(safe-area-inset-*) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+    <title>OmniChat</title>
+    <meta name="description" content="OmniChat - self-hosted multi-model chat" />
+
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111317" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <!-- iOS Safari "Add to Home Screen" -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="OmniChat" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      html,
+      body {
+        height: 100%;
+      }
+      @supports (height: 100dvh) {
+        html,
+        body {
+          height: 100dvh;
+        }
+      }
+      body {
+        overflow: hidden;
+        margin: 0;
+        background: #ffffff;
+        -webkit-text-size-adjust: 100%;
+        overscroll-behavior: none;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #111317;
+        }
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+        box-sizing: border-box;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>OmniChat needs JavaScript. / JavaScript を有効にしてください。</noscript>
+    <div id="root"></div>
+
+    <script>
+      // Service worker (app-shell cache for offline start). Only where browsers allow it:
+      // https:// or localhost. On plain-http LAN origins registration is skipped silently.
+      (function () {
+        try {
+          if (!('serviceWorker' in navigator)) return;
+          var h = location.hostname;
+          var ok = location.protocol === 'https:' || h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+          if (!ok) return;
+          window.addEventListener('load', function () {
+            navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function (reg) {
+              // A new version that finished installing waits; tell it to take over so the NEXT load uses it.
+              function arm(w) {
+                if (w && w.state === 'installed' && navigator.serviceWorker.controller) w.postMessage('SKIP_WAITING');
+              }
+              arm(reg.waiting);
+              reg.addEventListener('updatefound', function () {
+                var w = reg.installing;
+                if (!w) return;
+                w.addEventListener('statechange', function () { arm(w); });
+              });
+            }).catch(function () { /* ignore: app works without SW */ });
+          });
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
+  </body>
+</html>

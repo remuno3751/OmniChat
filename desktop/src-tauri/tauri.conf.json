@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OmniChat",
+  "version": "0.4.0-1",
+  "identifier": "dev.omnichat.app",
+  "build": {
+    "frontendDist": "../launcher"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost ws://127.0.0.1:* ws://localhost:* ws://[::1]:*; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors http: https:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "OmniChat desktop client",
+    "longDescription": "Thin desktop launcher for a self-hosted OmniChat server. It opens your server's web UI in a native window.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "template": "windows/installer.nsi",
+        "sidebarImage": "windows/sidebar.bmp",
+        "headerImage": "windows/header.bmp",
+        "installerIcon": "icons/icon.ico",
+        "languages": [
+          "Japanese",
+          "English"
+        ]
+      },
+      "wix": {
+        "language": "ja-JP"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
+      }
+    }
+  }
+}

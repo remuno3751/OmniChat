@@ -1,0 +1,16 @@
+{
+  "name": "omnichat-server-app",
+  "version": "1.0.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "description": "OmniChat Server: desktop app that runs and manages the OmniChat server (Tauri 2, Windows + Linux)",
+  "scripts": {
+    "tauri": "tauri",
+    "bundle": "node tools/prepare-bundle.mjs",
+    "dev": "npm run bundle && tauri dev",
+    "build": "npm run bundle && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.0"
+  }
+}

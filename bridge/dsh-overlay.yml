@@ -1,0 +1,7 @@
+# Launch-time overlay for `dsh --profile headless --patch <this file>`.
+# Selects the same default model the desktop profile uses, without editing ~/.dsh.
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: opencodex
+    model: lm-studio/lfm2.5-24b-a2b

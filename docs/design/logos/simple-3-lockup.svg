@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 256" width="880" height="256">
+  <defs>
+    <mask id="gap" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
+      <rect x="0" y="0" width="256" height="256" fill="#ffffff"/>
+      <path d="M130 30 H196 A30 30 0 0 1 226 60 V86 A30 30 0 0 1 196 116 L224 146 L180 116 H130 A30 30 0 0 1 100 86 V60 A30 30 0 0 1 130 30 Z" fill="#000000" stroke="#000000" stroke-width="30" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <g>
+    <path d="M64 60 H142 A36 36 0 0 1 178 96 V134 A36 36 0 0 1 142 170 H92 L56 214 L64 170 A36 36 0 0 1 28 134 V96 A36 36 0 0 1 64 60 Z" fill="#10a37f" mask="url(#gap)"/>
+    <path d="M130 30 H196 A30 30 0 0 1 226 60 V86 A30 30 0 0 1 196 116 L224 146 L180 116 H130 A30 30 0 0 1 100 86 V60 A30 30 0 0 1 130 30 Z" fill="none" stroke="#19c37d" stroke-width="14" stroke-linejoin="round"/>
+  </g>
+  <text x="290" y="160" font-family="Inter, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="112" font-weight="700"><tspan fill="#10a37f">Omni</tspan><tspan fill="#8b95a5">Chat</tspan></text>
+</svg>
