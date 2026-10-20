@@ -1,0 +1,30 @@
+<!--
+  WinSW (https://github.com/winsw/winsw, pinned v2.12.0) service definition.
+  At install time WinSW-x64.exe is copied to {app}\omnichat-service.exe next to this file
+  (the .exe and .xml must share the same base name).
+
+  The service runs run-service.cmd, which loads %ProgramData%\OmniChat\config.env
+  (PORT, DATA_DIR, ALLOW_REGISTRATION, SEARXNG_URL, ...) and then starts the bundled
+  runtime\node.exe dist\index.js.  Edit config.env (not this file) to change settings,
+  then restart the "OmniChat" service.
+  Runs as LocalSystem (WinSW default) so it can write to %ProgramData%\OmniChat.
+-->
+<service>
+  <id>OmniChat</id>
+  <name>OmniChat Server</name>
+  <description>OmniChat self-hosted AI chat server.</description>
+  <executable>%SystemRoot%\System32\cmd.exe</executable>
+  <arguments>/c ""%BASE%\run-service.cmd""</arguments>
+  <workingdirectory>%BASE%</workingdirectory>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>15 sec</stoptimeout>
+  <logpath>%ProgramData%\OmniChat\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>5120</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

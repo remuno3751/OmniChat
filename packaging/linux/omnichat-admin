@@ -1,0 +1,50 @@
+#!/bin/sh
+# OmniChat account administration on this server (Linux). Installed as /usr/local/bin/omnichat-admin.
+# Runs the server's admin CLI (dist/admin-cli.js) as the omnichat service user, with the same
+# /etc/omnichat/config.env that the service uses. Needs root (sudo).
+#   sudo omnichat-admin create <username> [--role admin|user]
+#   sudo omnichat-admin list
+#   sudo omnichat-admin set-password <username>
+#   sudo omnichat-admin role <username> admin|user
+#   sudo omnichat-admin disable <username>  |  sudo omnichat-admin enable <username>
+# The password is asked on the terminal, or taken from OMNICHAT_ADMIN_PASSWORD. Never put it on the command line.
+#   sudo --preserve-env=OMNICHAT_ADMIN_PASSWORD omnichat-admin create <username>
+set -eu
+
+PREFIX=/opt/omnichat
+CONF=/etc/omnichat/config.env
+RUN_USER=omnichat
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "omnichat-admin must run as root. Try: sudo omnichat-admin $*" >&2
+  exit 1
+fi
+[ -f "$CONF" ] || { echo "$CONF not found. Install OmniChat first (sudo ./install.sh)." >&2; exit 1; }
+[ -x "$PREFIX/runtime/node" ] || { echo "$PREFIX/runtime/node not found. Reinstall OmniChat." >&2; exit 1; }
+[ -f "$PREFIX/dist/admin-cli.js" ] || { echo "$PREFIX/dist/admin-cli.js not found. Reinstall OmniChat." >&2; exit 1; }
+command -v runuser >/dev/null 2>&1 || { echo "runuser (util-linux) is required." >&2; exit 1; }
+id "$RUN_USER" >/dev/null 2>&1 || { echo "service user '$RUN_USER' does not exist. Reinstall OmniChat." >&2; exit 1; }
+
+# config.env is NOT sourced: it is read as plain KEY=VALUE lines (the value is everything after the first '=').
+# Lines that are comments, have no '=', or have a key that is not a plain name are skipped. Keys that would change
+# how the shell, the runtime or the loader behave are refused.
+cr=$(printf '\r')
+while IFS= read -r line || [ -n "$line" ]; do
+  line=${line%"$cr"}
+  case "$line" in *=*) ;; *) continue ;; esac
+  key=${line%%=*}
+  val=${line#*=}
+  case "$key" in ''|[0-9]*|*[!A-Za-z0-9_]*) continue ;; esac
+  case "$key" in
+    PATH|IFS|ENV|BASH_ENV|CDPATH|NODE_OPTIONS|NODE_PATH|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED|LD_*|DYLD_*)
+      echo "config.env: ignoring $key (not allowed for omnichat-admin)" >&2
+      continue ;;
+  esac
+  export "$key=$val"
+done < "$CONF"
+
+# same runtime settings as omnichat.service
+export NODE_ENV=production
+export WEB_DIR="$PREFIX/web"
+cd "$PREFIX"
+exec runuser -u "$RUN_USER" -- "$PREFIX/runtime/node" "$PREFIX/dist/admin-cli.js" "$@"

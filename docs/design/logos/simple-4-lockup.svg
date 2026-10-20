@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 256" width="880" height="256">
+  <g>
+    <path d="M128 120 C112 88 90 66 64 66 C40 66 28 90 28 120 C28 150 40 174 64 174 C90 174 112 152 128 120 C144 88 166 66 192 66 C216 66 228 90 228 120 C228 144 220 158 206 168 L222 210 L182 176 C156 174 140 152 128 120 Z" fill="none" stroke="#10a37f" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="128" cy="120" r="14" fill="#19c37d"/>
+  </g>
+  <text x="290" y="160" font-family="Inter, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="112" font-weight="700"><tspan fill="#10a37f">Omni</tspan><tspan fill="#8b95a5">Chat</tspan></text>
+</svg>

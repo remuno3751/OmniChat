@@ -1,0 +1,38 @@
+{
+  "name": "omnichat-server",
+  "version": "0.5.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --env-file=test.env --test --test-concurrency=2 src/*.test.ts src/providers/*.test.ts src/updater/*.test.ts",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').copyFileSync('src/plugin-host.mjs','dist/plugin-host.mjs')\"",
+    "plugin:new": "tsx scripts/plugin-new.mts",
+    "plugin:check": "tsx scripts/plugin-check.mts",
+    "start:prod": "node dist/index.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "@fastify/static": "^10.1.6",
+    "docx": "^9.11.0",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.0.0",
+    "jszip": "^3.10.2",
+    "pdfjs-dist": "^6.4.299",
+    "pptxgenjs": "^4.0.1",
+    "ws": "^8.18.0",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Blocks commits that contain signing keys or private keys, even when forced with `git add -f`.
+# Install (once per clone):  sh packaging/local/git-hooks/install.sh
+bad=$(git diff --cached --name-only --diff-filter=AM | grep -iE '\.(keystore|jks|p12|pfx|pem|key|b64|mobileprovision)$|(^|/)(keystore\.properties|secret\.key|local-admin\.token)$')
+if [ -n "$bad" ]; then
+  echo "BLOCKED: signing keys / secrets must never be committed:" >&2
+  echo "$bad" | sed 's/^/  /' >&2
+  echo "Remove them with: git reset HEAD <file>" >&2
+  exit 1
+fi
+if git diff --cached -U0 --no-color | grep -qE '^\+.*(-----BEGIN [A-Z ]*PRIVATE KEY-----|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})'; then
+  echo "BLOCKED: a private key or access token appears in the staged changes." >&2
+  exit 1
+fi
+exit 0

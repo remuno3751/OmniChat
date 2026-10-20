@@ -1,0 +1,167 @@
+// Static tip entries for the sections: modelload, context, themes, privacy. All text lives in strings2.ts (tips.* keys).
+import type { TipEntry } from './types';
+
+export const SECTIONS_2: TipEntry[] = [
+  // ---- modelload ----
+  {
+    id: 'modelload.choices',
+    section: 'modelload',
+    titleKey: 'tips.modelload.choices.title',
+    bodyKey: 'tips.modelload.choices.body',
+    keywordsKey: 'tips.modelload.choices.kw',
+  },
+  {
+    id: 'modelload.default',
+    section: 'modelload',
+    titleKey: 'tips.modelload.default.title',
+    bodyKey: 'tips.modelload.default.body',
+    keywordsKey: 'tips.modelload.default.kw',
+    action: { action: { kind: 'settings', page: 'chat' } },
+  },
+  {
+    id: 'modelload.scope',
+    section: 'modelload',
+    titleKey: 'tips.modelload.scope.title',
+    bodyKey: 'tips.modelload.scope.body',
+    keywordsKey: 'tips.modelload.scope.kw',
+  },
+  {
+    id: 'modelload.connect',
+    section: 'modelload',
+    titleKey: 'tips.modelload.connect.title',
+    bodyKey: 'tips.modelload.connect.body',
+    keywordsKey: 'tips.modelload.connect.kw',
+    action: { action: { kind: 'settings', page: 'models' } },
+  },
+
+  // ---- context ----
+  {
+    id: 'context.bar',
+    section: 'context',
+    titleKey: 'tips.context.bar.title',
+    bodyKey: 'tips.context.bar.body',
+    keywordsKey: 'tips.context.bar.kw',
+  },
+  {
+    id: 'context.compact',
+    section: 'context',
+    titleKey: 'tips.context.compact.title',
+    bodyKey: 'tips.context.compact.body',
+    exampleKey: 'tips.context.compact.example',
+    keywordsKey: 'tips.context.compact.kw',
+  },
+  {
+    id: 'context.auto',
+    section: 'context',
+    titleKey: 'tips.context.auto.title',
+    bodyKey: 'tips.context.auto.body',
+    keywordsKey: 'tips.context.auto.kw',
+    action: { action: { kind: 'settings', page: 'chat' } },
+  },
+  {
+    id: 'context.overflow',
+    section: 'context',
+    titleKey: 'tips.context.overflow.title',
+    bodyKey: 'tips.context.overflow.body',
+    keywordsKey: 'tips.context.overflow.kw',
+    action: { action: { kind: 'settings', page: 'chat' } },
+  },
+  {
+    id: 'context.usage',
+    section: 'context',
+    titleKey: 'tips.context.usage.title',
+    bodyKey: 'tips.context.usage.body',
+    exampleKey: 'tips.context.usage.example',
+    keywordsKey: 'tips.context.usage.kw',
+    action: { action: { kind: 'settings', page: 'connections', sub: 'usage' } },
+  },
+
+  // ---- themes ----
+  {
+    id: 'themes.names',
+    section: 'themes',
+    titleKey: 'tips.themes.names.title',
+    bodyKey: 'tips.themes.names.body',
+    keywordsKey: 'tips.themes.names.kw',
+    action: { action: { kind: 'settings', page: 'appearance' } },
+  },
+  {
+    id: 'themes.mode',
+    section: 'themes',
+    titleKey: 'tips.themes.mode.title',
+    bodyKey: 'tips.themes.mode.body',
+    keywordsKey: 'tips.themes.mode.kw',
+    action: { action: { kind: 'settings', page: 'appearance' } },
+  },
+  {
+    id: 'themes.motion',
+    section: 'themes',
+    titleKey: 'tips.themes.motion.title',
+    bodyKey: 'tips.themes.motion.body',
+    keywordsKey: 'tips.themes.motion.kw',
+    action: { action: { kind: 'settings', page: 'appearance' } },
+  },
+  {
+    id: 'themes.size',
+    section: 'themes',
+    titleKey: 'tips.themes.size.title',
+    bodyKey: 'tips.themes.size.body',
+    keywordsKey: 'tips.themes.size.kw',
+    action: { action: { kind: 'settings', page: 'appearance' } },
+  },
+  {
+    id: 'themes.pets',
+    section: 'themes',
+    titleKey: 'tips.themes.pets.title',
+    bodyKey: 'tips.themes.pets.body',
+    keywordsKey: 'tips.themes.pets.kw',
+    action: { action: { kind: 'settings', page: 'appearance' } },
+  },
+
+  // ---- privacy ----
+  {
+    id: 'privacy.server',
+    section: 'privacy',
+    titleKey: 'tips.privacy.server.title',
+    bodyKey: 'tips.privacy.server.body',
+    keywordsKey: 'tips.privacy.server.kw',
+  },
+  {
+    id: 'privacy.apikeys',
+    section: 'privacy',
+    titleKey: 'tips.privacy.apikeys.title',
+    bodyKey: 'tips.privacy.apikeys.body',
+    keywordsKey: 'tips.privacy.apikeys.kw',
+  },
+  {
+    id: 'privacy.device',
+    section: 'privacy',
+    titleKey: 'tips.privacy.device.title',
+    bodyKey: 'tips.privacy.device.body',
+    keywordsKey: 'tips.privacy.device.kw',
+  },
+  {
+    id: 'privacy.ephemeral',
+    section: 'privacy',
+    titleKey: 'tips.privacy.ephemeral.title',
+    bodyKey: 'tips.privacy.ephemeral.body',
+    keywordsKey: 'tips.privacy.ephemeral.kw',
+    action: { action: { kind: 'ephemeral' }, labelKey: 'tips.privacy.ephemeral.btn' },
+  },
+  {
+    id: 'privacy.export',
+    section: 'privacy',
+    titleKey: 'tips.privacy.export.title',
+    bodyKey: 'tips.privacy.export.body',
+    keywordsKey: 'tips.privacy.export.kw',
+    action: { action: { kind: 'settings', page: 'connections' } },
+  },
+  {
+    id: 'privacy.admin',
+    section: 'privacy',
+    titleKey: 'tips.privacy.admin.title',
+    bodyKey: 'tips.privacy.admin.body',
+    keywordsKey: 'tips.privacy.admin.kw',
+    action: { action: { kind: 'settings', page: 'server' } },
+  },
+];

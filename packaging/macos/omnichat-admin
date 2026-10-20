@@ -1,0 +1,46 @@
+#!/bin/sh
+# OmniChat account administration on this Mac. Installed as omnichat-admin by install.sh, which fills in
+# the two placeholders below (the file in the repository is a template and is not meant to run as is).
+# Runs the server's admin CLI (dist/admin-cli.js) with the same config.env that the service uses.
+# Run it WITHOUT sudo, as the account that runs OmniChat (its data directory belongs to that account):
+#   omnichat-admin create <username> [--role admin|user]
+#   omnichat-admin list
+#   omnichat-admin set-password <username>
+#   omnichat-admin role <username> admin|user
+#   omnichat-admin disable <username>  |  omnichat-admin enable <username>
+# The password is asked on the terminal, or taken from OMNICHAT_ADMIN_PASSWORD. Never put it on the command line.
+set -eu
+
+CONF="@CONF@"
+PREFIX="@PREFIX@"
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "Do not run omnichat-admin with sudo: run it from your own account (the data belongs to that account)." >&2
+  exit 1
+fi
+[ -f "$CONF" ] || { echo "$CONF not found. Install OmniChat first (see install.sh)." >&2; exit 1; }
+[ -x "$PREFIX/runtime/node" ] || { echo "$PREFIX/runtime/node not found. Reinstall OmniChat." >&2; exit 1; }
+[ -f "$PREFIX/dist/admin-cli.js" ] || { echo "$PREFIX/dist/admin-cli.js not found. Reinstall OmniChat." >&2; exit 1; }
+
+# config.env is NOT sourced (the default DATA_DIR contains a space): it is read as plain KEY=VALUE lines,
+# the value is everything after the first '=' (internal spaces kept, no quotes, no expansion).
+cr=$(printf '\r')
+while IFS= read -r line || [ -n "$line" ]; do
+  line=${line%"$cr"}
+  case "$line" in *=*) ;; *) continue ;; esac
+  key=${line%%=*}
+  val=${line#*=}
+  case "$key" in ''|[0-9]*|*[!A-Za-z0-9_]*) continue ;; esac
+  case "$key" in
+    PATH|IFS|ENV|BASH_ENV|CDPATH|NODE_OPTIONS|NODE_PATH|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED|DYLD_*|LD_*)
+      echo "config.env: ignoring $key (not allowed for omnichat-admin)" >&2
+      continue ;;
+  esac
+  export "$key=$val"
+done < "$CONF"
+
+# same runtime settings as run.sh
+export NODE_ENV=production
+export WEB_DIR="$PREFIX/web"
+cd "$PREFIX" || exit 1
+exec "$PREFIX/runtime/node" dist/admin-cli.js "$@"

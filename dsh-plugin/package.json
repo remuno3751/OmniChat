@@ -1,0 +1,39 @@
+{
+  "name": "@omnichat/dsh-bridge",
+  "version": "1.0.0",
+  "description": "OmniChat bridge as a DeepSeek Harness (dsh) plugin: drive live dsh sessions from OmniChat and mirror GUI sessions in real time.",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client/bundle.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19 || >=24"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "pack": "npm pack"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes"
+      ]
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "devDependencies": {
+    "ws": "^8.18.0"
+  }
+}

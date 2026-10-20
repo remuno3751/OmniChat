@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Least privilege: the local launcher page may only use app commands (no fs/shell/http plugins). Remote server pages get no capability at all (no IPC).",
+  "windows": ["main"],
+  "permissions": []
+}

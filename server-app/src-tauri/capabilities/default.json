@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Least privilege: the bundled local UI may only call the app's own commands (no fs/shell/http plugins).",
+  "windows": ["main"],
+  "permissions": []
+}

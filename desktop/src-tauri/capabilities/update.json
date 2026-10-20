@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "update",
+  "description": "The update popup window may call only the update_* app commands (no fs/shell/http plugins). Remote server pages never get IPC.",
+  "windows": ["update"],
+  "permissions": []
+}

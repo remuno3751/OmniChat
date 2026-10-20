@@ -1,0 +1,20 @@
+{
+  "id": "current-time",
+  "name": "Current time",
+  "version": "1.0.0",
+  "description": "Tells the model the current date and time (optionally in an IANA time zone).",
+  "main": "index.mjs",
+  "tools": [
+    {
+      "name": "current_time",
+      "description": "Get the current date and time. Use it whenever the user asks what time or date it is.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timezone": { "type": "string", "description": "Optional IANA time zone, e.g. Asia/Tokyo or UTC. Defaults to the server's time zone." }
+        }
+      },
+      "permissions": []
+    }
+  ]
+}

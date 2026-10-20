@@ -1,0 +1,19 @@
+{
+  "id": "fetch-url",
+  "name": "Fetch URL",
+  "version": "1.0.0",
+  "description": "Downloads a web page or text resource and returns its readable text.",
+  "main": "index.mjs",
+  "tools": [
+    {
+      "name": "fetch_url",
+      "description": "Fetch an http(s) URL and return its text content (HTML is reduced to plain text, truncated).",
+      "parameters": {
+        "type": "object",
+        "properties": { "url": { "type": "string", "description": "Absolute http:// or https:// URL" } },
+        "required": ["url"]
+      },
+      "permissions": ["network"]
+    }
+  ]
+}

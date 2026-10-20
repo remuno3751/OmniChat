@@ -1,0 +1,117 @@
+{
+  "expo": {
+    "name": "OmniChat",
+    "slug": "omnichat",
+    "scheme": "omnichat",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/app-icons/simple-contrast.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.omnichat.app"
+    },
+    "android": {
+      "package": "dev.omnichat.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/app-icons/simple-contrast-foreground.png",
+        "monochromeImage": "./assets/omnichat-adaptive-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "OmniChat",
+      "shortName": "OmniChat",
+      "backgroundColor": "#ffffff",
+      "themeColor": "#ffffff"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
+        "expo-alternate-app-icons",
+        [
+          {
+            "name": "SimpleDark",
+            "ios": "./assets/app-icons/simple-dark.png",
+            "android": {
+              "foregroundImage": "./assets/app-icons/simple-dark-foreground.png",
+              "backgroundColor": "#0a0a0c"
+            }
+          },
+          {
+            "name": "SimpleSepia",
+            "ios": "./assets/app-icons/simple-sepia.png",
+            "android": {
+              "foregroundImage": "./assets/app-icons/simple-sepia-foreground.png",
+              "backgroundColor": "#fbf5e6"
+            }
+          },
+          {
+            "name": "SimpleLight",
+            "ios": "./assets/app-icons/simple-light.png",
+            "android": {
+              "foregroundImage": "./assets/app-icons/simple-light-foreground.png",
+              "backgroundColor": "#12906c"
+            }
+          },
+          {
+            "name": "FrontierLight",
+            "ios": "./assets/app-icons/frontier-light.png",
+            "android": {
+              "foregroundImage": "./assets/app-icons/frontier-light-foreground.png",
+              "backgroundColor": "#ffffff"
+            }
+          },
+          {
+            "name": "FrontierDark",
+            "ios": "./assets/app-icons/frontier-dark.png",
+            "android": {
+              "foregroundImage": "./assets/app-icons/frontier-dark-foreground.png",
+              "backgroundColor": "#0c0d0f"
+            }
+          },
+          {
+            "name": "AstralLight",
+            "ios": "./assets/app-icons/astral-light.png",
+            "android": {
+              "foregroundImage": "./assets/app-icons/astral-light-foreground.png",
+              "backgroundColor": "#fdfaf3"
+            }
+          },
+          {
+            "name": "AstralDark",
+            "ios": "./assets/app-icons/astral-dark.png",
+            "android": {
+              "foregroundImage": "./assets/app-icons/astral-dark-foreground.png",
+              "backgroundColor": "#161b2b"
+            }
+          }
+        ]
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "OmniChat uses Face ID to unlock the Code screen."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "チャットに添付する写真を選ぶために、写真へのアクセスを使います。 Allow access to your photos to attach pictures to a chat."
+        }
+      ]
+    ]
+  }
+}

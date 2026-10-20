@@ -1,0 +1,38 @@
+[Unit]
+Description=OmniChat server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=omnichat
+Group=omnichat
+WorkingDirectory=/opt/omnichat
+EnvironmentFile=/etc/omnichat/config.env
+Environment=NODE_ENV=production
+Environment=WEB_DIR=/opt/omnichat/web
+# Restart=always restarts the server after exit 75 (self-update). Note: EnvironmentFile= overrides Environment=,
+# so these two keys must not be set in /etc/omnichat/config.env.
+Environment=OMNICHAT_INSTALL_TYPE=linux-service
+Environment=OMNICHAT_SUPERVISED=1
+ExecStart=/opt/omnichat/runtime/node /opt/omnichat/dist/boot.js
+Restart=always
+RestartSec=5
+# hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/omnichat
+UMask=0077
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictNamespaces=true
+# MemoryDenyWriteExecute is deliberately NOT set: Node.js needs writable+executable memory (JIT)
+
+[Install]
+WantedBy=multi-user.target

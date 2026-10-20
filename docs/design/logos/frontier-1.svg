@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <polygon points="68,12 188,12 244,68 244,188 188,244 68,244 12,188 12,68" fill="#141414" stroke="#c8af23" stroke-width="3" stroke-linejoin="miter"/>
+  <g fill="none" stroke="#fffa00" stroke-width="12" stroke-linejoin="miter">
+    <path d="M48,100 V48 H100"/>
+    <path d="M156,48 H208 V100"/>
+    <path d="M208,132 V176 H156"/>
+    <path d="M48,124 V176 H92"/>
+  </g>
+  <polygon points="56,170 104,170 60,216" fill="#fffa00"/>
+  <polygon points="128,96 152,128 128,160 104,128" fill="#fffa00"/>
+  <path d="M72,128 H88 M168,128 H184" fill="none" stroke="#c8af23" stroke-width="3"/>
+</svg>

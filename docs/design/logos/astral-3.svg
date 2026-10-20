@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<defs>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%">
+<stop offset="0" stop-color="#f9c837" stop-opacity="0.45"/>
+<stop offset="1" stop-color="#f9c837" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<circle cx="128" cy="128" r="120" fill="#2a2827"/>
+<circle cx="128" cy="128" r="104" fill="url(#glow)"/>
+<circle cx="128" cy="128" r="112" fill="none" stroke="#f4a747" stroke-width="3" opacity="0.6"/>
+<path d="M42,72 H214 A10,10 0 0 1 224,82 V114 A14,14 0 0 0 224,142 V174 A10,10 0 0 1 214,184 H42 A10,10 0 0 1 32,174 V142 A14,14 0 0 0 32,114 V82 A10,10 0 0 1 42,72 Z" fill="#fbe9b6"/>
+<line x1="88" y1="84" x2="88" y2="172" stroke="#2a2827" stroke-width="3" stroke-dasharray="6 6"/>
+<circle cx="60" cy="114" r="6" fill="#f4a747"/>
+<circle cx="60" cy="128" r="6" fill="#f4a747"/>
+<circle cx="60" cy="142" r="6" fill="#f4a747"/>
+<path d="M156,94 Q161,123 190,128 Q161,133 156,162 Q151,133 122,128 Q151,123 156,94 Z" fill="#f9c837" stroke="#2a2827" stroke-width="3" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,43 @@
+# OmniChat server.   Start:  docker compose up -d      Update:  docker compose pull && docker compose up -d
+# Image: ghcr.io/<GitHubユーザー名またはOrg>/omnichat  (OMNICHAT_IMAGE で上書き)
+services:
+  omnichat:
+    image: ${OMNICHAT_IMAGE:-ghcr.io/remuno3751/omnichat:latest}
+    # ソースからビルドする場合は上の image 行の代わりに:
+    # build: .
+    container_name: omnichat
+    restart: unless-stopped
+    ports:
+      # 既定はこの PC(ループバック)からだけアクセスできる 127.0.0.1 に公開します。
+      # 他の端末から使う場合は 0.0.0.0 に変えるか、リバースプロキシ(Caddy など)経由にしてください。
+      # 管理者は HTTP からは作れないため、公開前に次で作成しておくこと:
+      #   docker exec -it omnichat node dist/admin-cli.js create <名前>
+      - "127.0.0.1:${OMNICHAT_PORT:-8787}:8787"
+    volumes:
+      - omnichat-data:/data
+    environment:
+      PORT: "8787"
+      # 0: 自己登録を禁止(既定) / 1: 管理者を作成した後は誰でも一般ユーザーとして登録可
+      # (管理者の作成は上の docker exec ... admin-cli.js create で行う。--role user で一般ユーザーも作れる)
+      ALLOW_REGISTRATION: "${ALLOW_REGISTRATION:-0}"
+      # --- SearXNG (任意) ---
+      # 同じ compose ネットワークに SearXNG コンテナがある場合(下の networks を有効化):
+      # SEARXNG_URL: "http://searxng:8080"
+      # ホストに公開された SearXNG(例: 8888)を使う場合:
+      # SEARXNG_URL: "http://host.docker.internal:8888"
+    # Linux ホストで host.docker.internal を使うために必要(Docker Desktop では不要だが無害)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # 既存の SearXNG compose ネットワークに参加する場合は下をコメント解除し、
+    # 末尾の networks の external 名を `docker network ls` で確認した名前に合わせる。
+    # networks:
+    #   - default
+    #   - searxng
+
+volumes:
+  omnichat-data:
+
+# networks:
+#   searxng:
+#     external: true
+#     name: searxng_default   # SearXNG 側 compose プロジェクトのネットワーク名

@@ -1,0 +1,17 @@
+OmniChat
+Copyright (C) 2026 remuno
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, version 3 of the License.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License (the
+LICENSE file) for more details.
+
+Source code: https://github.com/remuno3751/omnichat
+
+The OmniChat name and logo (app icons and the other images listed in TRADEMARKS.md) are NOT covered by the AGPL: all rights
+are reserved by the author and they may be used only as described in TRADEMARKS.md. Forks that are distributed must replace them.
+
+app/LICENSE is the MIT notice of the Expo project template that app/ was started from; it is kept for those parts.
+Third-party components keep their own licenses (see THIRD_PARTY_NOTICES.txt).

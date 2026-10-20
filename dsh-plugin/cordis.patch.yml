@@ -1,0 +1,22 @@
+# Bundle patch for @omnichat/dsh-bridge. Installed automatically by
+# `dsh plugin --profile <name> add <path-to-tgz>`.
+# Override any value later with a `- id: omnichat-bridge` + `config:` entry in the
+# profile's own cordis.patch.yml (see README.md). Secrets come from the environment.
+- insert:
+    - id: omnichat-bridge
+      name: '@omnichat/dsh-bridge'
+      config:
+        # Mode: local (default) listens on 127.0.0.1 for the OmniChat app; remote dials out to a server.
+        # Unset OMNICHAT_MODE and OMNICHAT_SERVER_URL => local. Setting OMNICHAT_SERVER_URL (old env-based
+        # remote setups) selects remote, so they keep working. listenPort is optional (default 19401).
+        mode: !!js process.env.OMNICHAT_MODE || (process.env.OMNICHAT_SERVER_URL && 'remote') || 'local'
+        listenPort: !!js process.env.OMNICHAT_LOCAL_PORT
+        serverUrl: !!js process.env.OMNICHAT_SERVER_URL
+        name: !!js process.env.OMNICHAT_NAME
+        token: !!js process.env.OMNICHAT_TOKEN
+        username: !!js process.env.OMNICHAT_USERNAME
+        password: !!js process.env.OMNICHAT_PASSWORD
+        cwd: !!js process.env.OMNICHAT_CWD
+        mirror: true
+        mirrorScope: all
+        approvals: gui

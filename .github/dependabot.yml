@@ -1,0 +1,32 @@
+# Weekly update PRs for GitHub Actions and the npm projects.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: "/server"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: "/app"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: "/bridge"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: "/dsh-plugin"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: "/cli"
+    schedule:
+      interval: weekly

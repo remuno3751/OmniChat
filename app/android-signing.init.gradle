@@ -1,0 +1,26 @@
+// Gradle init script used by .github/workflows/android.yml (and usable locally):
+//   ./gradlew assembleRelease --init-script ../android-signing.init.gradle
+// Signs the release APK with your own keystore when these env vars are set; otherwise it does
+// nothing and the Expo template falls back to the debug keystore (installable, NOT for stores).
+//   OMNICHAT_KEYSTORE_FILE, OMNICHAT_KEYSTORE_PASSWORD, OMNICHAT_KEY_ALIAS, OMNICHAT_KEY_PASSWORD
+allprojects {
+    afterEvaluate { p ->
+        def storeFile = System.getenv('OMNICHAT_KEYSTORE_FILE')
+        if (!storeFile || !p.plugins.hasPlugin('com.android.application')) return
+        p.android {
+            signingConfigs {
+                omnichat {
+                    storeFile p.file(storeFile)
+                    storePassword System.getenv('OMNICHAT_KEYSTORE_PASSWORD')
+                    keyAlias System.getenv('OMNICHAT_KEY_ALIAS')
+                    keyPassword System.getenv('OMNICHAT_KEY_PASSWORD')
+                }
+            }
+            buildTypes {
+                release {
+                    signingConfig signingConfigs.omnichat
+                }
+            }
+        }
+    }
+}

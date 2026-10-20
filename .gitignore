@@ -1,0 +1,56 @@
+node_modules/
+dist/
+data/
+*.db
+*.db-*
+*.sqlite*
+.expo/
+web-build/
+.env
+*.env
+!config.env.example
+!server/test.env
+.release/
+*.log
+*.tgz
+
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# dsh-plugin ships its source as plain ESM in dist/ (no build step)
+!dsh-plugin/dist/
+
+# game screenshots used only as private design references (not redistributable)
+docs/design/refs/*/*
+!docs/design/refs/*/.gitkeep
+
+server-app/node_modules/
+server-app/src-tauri/target/
+server-app/src-tauri/gen/
+server-app/src-tauri/bundle/
+out/
+
+# signing keys and secrets: never commit these (Android release keystore, certificates, private keys, base64 copies)
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.crt
+*.b64
+keystore.properties
+local.properties
+*.mobileprovision
+secret.key
+local-admin.token
+out-bundle/
+out-windows/
+out-windows-*/
+out-android/
+
+# blog drafts: never part of the repository
+draft-*.md
+out-mac-*/

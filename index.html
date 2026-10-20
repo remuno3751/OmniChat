@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLMについて簡単に解説</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            margin: 2rem auto;
+            max-width: 600px;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1 {
+            font-size: 1.8rem;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        h2 {
+            font-size: 1.3rem;
+            margin-top: 1.4rem;
+            color: #2c5f7a;
+        }
+        p { margin-bottom: 1rem; }
+        .tagline {
+            font-weight: bold;
+            color: #444;
+            margin-bottom: 0.5rem;
+        }
+        ul { padding-left: 1.4rem; }
+        li { margin-bottom: 0.4rem; }
+    </style>
+</head>
+<body>
+    <h1>LLM（大規模言語モデル）とは？</h1>
+    <p class="tagline">LLM = Large Language Model（大規模言語モデル）。日本語をはじめとする複数の自然言語を理解・生成できる AI 技術です。</p>
+
+    <h2>定義</h2>
+    <p>LLM は「Large Language Model」の略称で、膨大なテキストデータからパターンを学習し、新しいプロンプトに対して文章や回答を生成する深層学習モデル（Transformer 系アーキテクチャが主流）です。日本語でも自然に話せたり、翻訳や要約ができるようになります。</p>
+
+    <h2>どうやって動くの？</h2>
+    <p>大まかに言うと、以下のステップを繰り返しています：</p>
+    <ul>
+        <li><strong>学習</strong> — Internet 上の膨大なテキストを読み込み、言葉のつながりや文法、知識を学びます。</li>
+        <li><strong>推論</strong> — ユーザーが入力したプロンプトを受け取り、次に続く文字列（トークン）を確率的に最もらしい順に並べ、テキストとして出力します。</li>
+    </ul>
+
+    <h2>よくある使い道</h2>
+    <ul>
+        <li><strong>会話・チャット</strong> — 質問に答えたり、アイデア出しをしたりします。</li>
+        <li><strong>翻訳</strong> — 日本語と英語など言語間の変換。</li>
+        <br>
+        <li><strong>要約</strong> — 長い記事やレポートを短くまとめます。</li>
+    </ul>
+
+    <h2>注意点</h2>
+    <p>LLM は「知っている」わけではなく、学習したデータに基づいて確からしい（もっともらしい）出力をしているにすぎません。事実と異なる情報を生成する「ハルシネーション」や、偏った回答が出る可能性もあるため、人間が必ず確認することが重要です。</p>
+</body>
+</html>

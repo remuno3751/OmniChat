@@ -1,0 +1,12 @@
+{
+  "name": "omnichat-cli",
+  "version": "0.1.0",
+  "description": "Command-line client for the OmniChat server (zero dependencies)",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "bin": { "omnichat": "bin/omnichat.mjs" },
+  "files": ["bin", "src", "README.md"],
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test test/*.test.mjs" },
+  "keywords": ["omnichat", "cli", "llm"]
+}

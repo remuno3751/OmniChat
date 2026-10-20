@@ -1,0 +1,63 @@
+# OmniChat v6: built-in web search, DSH through the client app (extends PROTOCOL-v3..v4)
+
+Decisions by the maintainer (2026-10-17): the server and the client are separate products. The **server app** (and the server) provides Web search itself, with no separate SearXNG required. **DSH (DeepSeek Harness) belongs to the client side**: the client app connects to the local DSH and relays to the server.
+
+## 1. Built-in web search (server, server-app UI)
+
+### 1.1 Backends
+- `SEARCH_BACKEND` = `auto` (default) | `builtin` | `searxng`. `auto`: SearXNG when `SEARXNG_URL` is set, otherwise the built-in backend. `GET /search/status` reports `{configured, backend: "builtin"|"searxng", engines: [{id, label, enabled, state: "ok"|"cooldown"|"error"|"disabled", lastError?, lastOkAt?}], reachable}`; the existing fields keep working (`host` only for searxng).
+- Built-in engines (server/src/search/builtin/*.ts, one module per engine, registered in a table so more can be added; every engine returns `SearchResult[]` `{title, url, snippet?}`):
+  - `wikipedia` (official MediaWiki API; language from `SEARCH_LANG`, default `ja` then `en`),
+  - `bing-rss` (keyless RSS: `https://www.bing.com/search?format=rss&q=...&mkt=<ja-JP>`; best effort),
+  - `duckduckgo` (keyless `https://html.duckduckgo.com/html/` POST; best effort; expect CAPTCHA now and then),
+  - `brave` (official API, needs `BRAVE_API_KEY`; `https://api.search.brave.com/res/v1/web/search`, header `X-Subscription-Token`),
+  - `tavily` (official API, needs `TAVILY_API_KEY`).
+- `SEARCH_ENGINES` (comma list of engine ids; default `bing-rss,wikipedia,duckduckgo`, plus `brave`/`tavily` automatically first when their key is set). Engines run in parallel with a per-engine timeout (`SEARCH_ENGINE_TIMEOUT_MS`, default 6000), results are merged (round-robin by engine rank), de-duplicated by normalised URL, trimmed to the existing `SEARCH_MAX_RESULTS`. An engine that fails 3 times in a row goes into a cooldown (10 min, doubling up to 1 h); a CAPTCHA/403/429 counts as a failure and is shown in status. Never throws: zero results -> `[]` and the existing "no results" path; if every enabled engine is in error the tool error lists the engines and reasons (same style as the SearXNG error).
+- Politeness/safety: fixed honest User-Agent (`OmniChat/<version> (+https://github.com/remuno3751/omnichat)`), no cookies, no more than 1 request per engine per search, cache identical queries for 60 s (LRU 100), outbound requests only to the engine's own https host (reuse the SSRF guard in server/src/), response size cap 1 MB, queries truncated to 200 chars. API keys come from env/config.env only, never returned by any endpoint (status shows `keySet: boolean`), never logged.
+- `OMNICHAT_SEARCH_BASE_<ENGINE>` env overrides for tests (fake upstreams). Docs: docs/SEARCH.md gets a new section (Japanese) including the terms-of-service warning for unofficial keyless engines and the recommendation to use Brave/Tavily API keys for reliability.
+
+### 1.1b Three choices, selectable in the client's Plugins tab (decided 2026-10-17, supersedes the `SEARCH_BACKEND=auto` default above)
+The user can choose which web search is used; exactly three options stay available:
+1. **SearXNG (recommended, always listed first with an 'おすすめ / Recommended' badge)**: needs a SearXNG instance URL (`searxngUrl`).
+2. **内蔵 / Built-in (no key)**: the keyless engines built now (wikipedia, bing-rss, duckduckgo; engine checkboxes).
+3. **API キー式 / API services**: Brave Search API and Tavily (the user enters one or both keys; `engines` among `brave`, `tavily`).
+- Server-wide setting `search: {mode: "searxng"|"builtin"|"api", fallback: boolean, searxngUrl: string|null, engines: {builtin: string[], api: string[]}}` stored in the DB (table `server_settings`, key/value JSON, new in a migration) and editable at runtime WITHOUT restart: `GET /search/config` (any user: mode, fallback, searxngUrl host only, engines, `keySet: {brave: boolean, tavily: boolean}`, never the keys), `PUT /search/config` (**admin only**; body may include `braveApiKey`/`tavilyApiKey` which are stored encrypted in the DB with the same AES-256-GCM `enc1:` mechanism as provider API keys, `null` removes a key, keys are never returned). Env/config.env values (`SEARXNG_URL`, `SEARCH_BACKEND`, `SEARCH_ENGINES`, `BRAVE_API_KEY`, `TAVILY_API_KEY`) stay supported as DEFAULTS: DB value wins when set. Default `mode` when nothing is set: `searxng` if SEARXNG_URL/searxngUrl is set, else `builtin`.
+- `fallback` (default true): when the selected mode returns an error or zero results because its engines are failing, the server automatically tries the other configured modes in the order searxng -> builtin -> api (only modes that are usable: URL set / keys set), and the search result records which backend answered (`usedBackend`) so the UI can show it.
+- `GET /search/status` additionally reports per option `{id: "searxng"|"builtin"|"api", configured, reachable, state, lastError?, engines?: [...]}` and `active: <mode>`; `POST /search/test` (admin) accepts `{query, mode?}` to test one option explicitly (default: the active one).
+- Client UI (Settings > Plugins > Web 検索 card): three option cards (radio selection, 'おすすめ' badge on SearXNG, each with its own status line and its own settings: SearXNG URL; built-in engine checkboxes with live engine states; Brave/Tavily key fields, 設定済み when set, with a link text to get a key), a 'Use this' action, a 'Test' button per option, an 'Automatic fallback' switch, and which one is currently active. Non-admins see the same card read-only ('管理者のみ変更できます'). Changes take effect immediately.
+- Server app (server-app/ui): the same three choices in its Settings page (kept simple), using the same API through `/local-admin` (so there is one source of truth: the DB; the earlier idea of writing keys into config.env is dropped).
+
+### 1.2 Server app UI (server-app/ui, kept simple)
+- Settings screen section 'Web 検索': mode (組み込み / 外部 SearXNG), engine checkboxes with the live state (from /local-admin or /search/status), fields for Brave and Tavily API keys (password inputs; saved into config.env; shown as 設定済み when set), SearXNG URL field (existing), a 'Test search' button (query box, shows the first results or the per-engine errors). Writes `SEARCH_BACKEND`, `SEARCH_ENGINES`, `BRAVE_API_KEY`, `TAVILY_API_KEY`, `SEARXNG_URL` to config.env (the existing editing code), restart prompt as for the other settings. Needs a `/local-admin` endpoint `POST /local-admin/search/test {query}` (loopback + token like the others).
+- The client's Settings > Plugins > Web search card (app/src/components/SearchIntegration.tsx) is updated: when backend is `builtin` it shows the engine list with states and a short explanation (no SearXNG needed), when searxng the current guide.
+
+## 2. DSH through the client app (dsh-plugin, app/src, docs)
+
+### 2.1 Why and shape
+Today the dsh plugin connects out to the OmniChat server with a token (`serverUrl`, `token`). New default: **the plugin listens on loopback; the client app (web or desktop) connects to it and relays frames to the server**, using the user's own login. No server token in env vars, no inbound network port on the DSH PC, DSH is not coupled to the server.
+
+```
+ dsh (plugin, listens 127.0.0.1:19401)  <--local WS-->  client app (relay)  <--WS /bridge (user token)-->  server
+```
+The frames are exactly the existing bridge protocol (BRIDGE.md, BRIDGE-v2.md, PROTOCOL-v4.md sections 3, 4, 6); the relay forwards them verbatim in both directions. The server does not change: it still sees one bridge connection per (user, bridge name).
+
+### 2.2 Plugin local mode (dsh-plugin/dist)
+- Config: `mode: "local" | "remote"` (default `local`; `remote` = the current behaviour with `serverUrl` + token, kept for headless/PC-to-server use). Local mode keys: `listenPort` (default 19401), `name` (bridge name, as today), `cwd`, `approvals`, etc. as today.
+- Binds ONLY to `127.0.0.1` (and `::1`), never 0.0.0.0. WebSocket server path `/omnichat-bridge`. Security (any web page in the user's browser can try `ws://127.0.0.1:19401`): (1) a random pairing token (32 bytes, base64url) created on first start and stored in `<DSH_HOME>/omnichat-bridge.json` (mode 600 where supported), shown once in the dsh log and via a local `GET /pair-info` is NOT provided; (2) the client must send it in the first frame `{type:"hello", pairing:"<token>", client:"omnichat-app", version}`; wrong/missing -> close 4401 after 2 s and count failures (5 failures -> 60 s lockout); (3) `Origin` check: connections from a browser must carry an Origin that is in `allowedOrigins` (config list; the pairing step adds the OmniChat server origin; the Tauri client origins `tauri://localhost`, `http://tauri.localhost`, `https://tauri.localhost` are allowed by default); a non-browser client without Origin is allowed only with a valid pairing token; (4) one active client at a time (a new authenticated client replaces the old one, with close 4000 to the old).
+- After a valid hello the plugin sends `{type:"ready", name, cwd, version, ...}` and from then on behaves exactly as it does after authenticating to the server today; when the client disconnects, running runs continue and the plugin keeps buffering events for 60 s (cap 2 MB) so a quick reconnect resumes (`resume:{sinceSeq}` optional, best effort).
+- Pairing UX: the plugin logs `OmniChat pairing code: <token>` on every start until a client pairs, and `omnichat-bridge.json` is documented. A CLI helper `node dist/pair.js` (shipped in the tgz, no deps) prints the code and the local port.
+
+### 2.3 Client relay (app/src)
+- New module `app/src/dshRelay.ts` (+ small UI in the Plugins > DeepSeek Harness card): settings (DEVICE scope, not synced): `dsh: {enabled, port, pairing, bridgeName}`. When enabled and a user is logged in: (1) opens `ws://127.0.0.1:<port>/omnichat-bridge`, sends `hello` with the pairing code; (2) opens the server bridge socket exactly like the plugin did in remote mode (same URL/auth/`hello` frames as in server/src/bridges.ts: reuse that contract, authenticating with the app's token); (3) forwards frames verbatim both ways, preserving order, with bounded queues (2 MB) and back-pressure; (4) both sides reconnect with exponential backoff (1 s..30 s, jitter); (5) status events for the UI: `local: off|connecting|connected|auth-failed`, `server: off|connecting|connected`, `bridgeName`, last error, frames counters. Runs while the app is open (web tab or desktop client); the desktop Tauri client keeps relaying while its window is hidden in the tray if the webview stays alive (note the limitation; do not add Rust code in this task unless needed).
+- Only when `Platform.OS === 'web'` (the desktop client is the web UI in a webview). Native phone builds show 'PC 用の機能です'.
+- UI (Settings > Plugins > DeepSeek Harness card, app/src/components/DshIntegration.tsx): replaces the old token/env steps by: 1 install the plugin (`dsh plugin --profile desktop add ...tgz`, GUI closed), 2 start DSH, copy the pairing code from the dsh log or run `node pair.js`, 3 paste it here and press Connect (status ticks for local/server), 4 add the provider (button), 5 test. Keep the 'remote mode (PC to server directly)' as a collapsed advanced section with the old token flow (the token endpoint POST /bridges/token stays). Strings in ja + en.
+
+### 2.4 Tests/verification
+- dsh-plugin tests: local mode handshake, wrong pairing, lockout, Origin rules, one-client replacement, buffering/resume, loopback-only bind (check the address), remote mode unchanged.
+- app: a node test for the relay's forwarding/reconnect logic (extract the logic into a pure module with injectable WebSocket factories; tests in `app/src/__tests__` run by `node --test` through tsx, add the script `npm run test:relay`).
+- Real end-to-end on this PC (manager's job): fake dsh app as in earlier work (bridge/ has fake-dsh) -> plugin local mode -> relay (run the relay module under Node with the `ws` package or in the browser pane) -> real server -> a chat message through the dsh-bridge provider; then the real thing is done by the maintainer.
+
+## 3. Ownership
+- M9 (search): server/src/search/**, server/src/routes-tools.ts, server/src/local-admin*, server-app/ui + src-tauri settings keys, docs/SEARCH.md, app/src/components/SearchIntegration.tsx, tests.
+- M10 (DSH relay): dsh-plugin/**, app/src/dshRelay*, app/src/components/DshIntegration.tsx, device settings/i18n strings for it, docs/DSH.md, tests.
+- Both: app/src/i18n/{ja,en}.ts additions are additive (new keys only; keep the files sorted by the existing convention) and `node scripts/check-i18n.mjs` must pass.

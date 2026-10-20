@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>OmniChat Update</title>
+<link rel="stylesheet" href="update.css">
+<link rel="stylesheet" href="frontier.css">
+</head>
+<body>
+<main>
+  <img class="logo" src="logo.png" alt="" width="56" height="56">
+  <h1 id="title"></h1>
+  <p id="versions" class="muted"></p>
+
+  <section id="notes-wrap" hidden>
+    <div id="notes-label" class="label"></div>
+    <div id="notes" class="notes"></div>
+  </section>
+
+  <p id="status" role="status" aria-live="polite" class="muted" hidden></p>
+  <section id="error" role="alert" hidden>
+    <strong id="err-title"></strong>
+    <p id="err-body"></p>
+  </section>
+
+  <div class="actions">
+    <button id="install" type="button"></button>
+    <div class="row">
+      <button id="skip" type="button" class="secondary"></button>
+      <button id="later" type="button" class="secondary"></button>
+    </div>
+  </div>
+</main>
+<script src="update.js"></script>
+</body>
+</html>
