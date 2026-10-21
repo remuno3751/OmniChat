@@ -90,7 +90,7 @@
 ## クイックスタート
 
 1. サーバーを入れる(下の[インストール](#インストールサーバー)。手元で試すだけなら[開発用の起動](#開発用の起動))。
-2. **管理者を 1 人作ります。** 最初の管理者は HTTP からは作れず、サーバーの PC で `sudo omnichat-admin create <ユーザー名>`(Docker は `docker exec -it omnichat node dist/admin-cli.js create <ユーザー名>`)を実行します。パスワードは対話入力で、8 文字以上です。次にブラウザで `http://<サーバー>:8787/` を開いてその管理者でログインします。他の人の登録は `ALLOW_REGISTRATION=1` にすると、管理者の作成後に一般ユーザーとして受け付けます。詳しくは [docs/INSTALL.md](docs/INSTALL.md) を参照してください。（「OmniChat Server」アプリからの作成は提供予定です。）
+2. **管理者を 1 人作ります。** 最初の管理者は HTTP からは作れず、サーバーの PC で `sudo omnichat-admin create <ユーザー名>`(Docker は `docker exec -it omnichat node dist/admin-cli.js create <ユーザー名>`)を実行します。パスワードは対話入力で、8 文字以上です。次にブラウザで `http://<サーバー>:8787/` を開いてその管理者でログインします。他の人の登録は `ALLOW_REGISTRATION=1` にすると、管理者の作成後に一般ユーザーとして受け付けます。詳しくは [docs/INSTALL.md](docs/INSTALL.md) を参照してください。（Windows の「OmniChat Server」アプリでは、画面の中からも作成できます。）
 3. サイドバー下部の **Settings** → **Providers** → **+ Add provider** で接続先を追加します。プリセット(OpenAI / DeepSeek / Ollama / LM Studio / DeepSeek Harness)から選ぶと URL が入ります。サーバー PC 上で LM Studio や Ollama が動いていれば「Auto-detected on the server」に出るので **Add** で追加できます。API キーはサーバー側にのみ保存され、クライアントには返りません。
 4. チャット画面上部のモデルボタンでモデルを選び、メッセージを送ります。
 
@@ -225,23 +225,22 @@ cd app && npx expo start                  # 実機は Expo Go でQRを読む
 
 **実機・ローカルで確認したもの**(開発時の記録に基づく)
 
-- サーバーの自動テスト(`node:test`、`cd server && npm test`)。CI でも型検査とテストを実行する設定です。
-- 実サーバー + 実 LM Studio での確認(チャット、思考レーン、メトリクス、コンテキスト、ロード/アンロード、ツール呼び出し)。実際のモデルがプラグインのツールを呼ぶところまで確認。
-- アプリの UI をブラウザ(デスクトップ幅。フェーズ 1 はスマホ幅も)で実サーバーに対して確認。
-- 組み立て済みサーバーの単体起動(`/healthz`、`/version`、Web クライアント、DB)。
-- Windows: デスクトップ(NSIS / MSI)とサーバーアプリ(NSIS)を実際にビルドし、インストールの動作を確認(上書き更新とアンインストールは、実機での確認が途中)。Android: リリース APK のビルド(Android Studio 同梱の JDK、ローカル)と、エミュレーターでの起動・操作の確認。
-- PWA(Service Worker・インストール可能判定・オフライン再読込)は Edge で実測。
-- dsh デーモン型ブリッジ(開発者の PC の dsh 44.0.0)、dsh プラグイン(dsh 0.2.0-rc.2、`web` プロファイル)。
+- サーバーの自動テスト(`node:test`、`cd server && npm test`)、アプリのテスト、プラグインのテスト、型検査。
+- 実サーバー + 実 LM Studio での確認(チャット、思考レーン、メトリクス、コンテキスト、ロード/アンロード、ツール呼び出し)。LM Studio の画像入力(Gemma 4 E4B)。
+- llama.cpp(Strata と Bonsai の 2 モデル)の実機: モデル一覧、コンテキスト上限、画像対応の判定。
+- 実物の SearXNG での Web 検索。
+- アプリの UI をブラウザ(デスクトップ幅。フェーズ 1 はスマホ幅も)で実サーバーに対して確認。PWA(Service Worker・インストール可能判定・オフライン再読込)は Edge で実測。
+- Windows: デスクトップ(NSIS / MSI)とサーバーアプリ(NSIS)を実際にビルドし、インストールして確認。macOS: デスクトップクライアントを実機で広く確認(サーバーは軽微な確認のみ)。Android: リリース APK のビルドと、実機でのアプリの更新。
+- 自動更新を実際のリリースで確認: サーバー(0.4.0-beta.4 から 0.5.0)、DSH プラグイン(取得とチェックサム)、デスクトップの更新のお知らせ。
+- dsh デーモン型ブリッジ(dsh 44.0.0)、dsh プラグイン(dsh 0.2.0-rc.2、実際の dsh とのペアリング、GUI セッションのミラー、モデルの取り込み)。
 
-**ローカルでは実行していないもの(CI での初回実行が初めての検証になる)**
+**未確認のもの**
 
-- Docker イメージのビルドと Compose の起動、Inno Setup(ヘッドレス版サーバーのインストーラー)のコンパイル、Linux/macOS の `install.sh` の実行。これらは、リポジトリを公開して GitHub Actions を使えるようになってから、初めて実行します。
-- Linux のデスクトップ / サーバーアプリのビルド。macOS 版は、別の Mac での手元ビルドです(本番の署名・公証なし)。
-- Android の実機での動作(エミュレーターでの確認のみ)。
-- 実物の SearXNG との接続(検索まわりのテストと確認は、偽の SearXNG サーバーだけを使用)。
-- LM Studio 以外(Ollama / llama.cpp / vLLM)の実機。アダプターの実機確認の記録は LM Studio のみ。
-- iOS(Safari / PWA)、Android 実機、Firefox の実機動作(機能チェックのみ)。
-- dsh プラグインの `desktop` プロファイルへのインストールと、ユーザー自身の実際の GUI に対する入力・同期の確認。
+- Docker イメージのビルドと Compose の起動、Linux / macOS の `install.sh`、Linux のデスクトップ / サーバーアプリのビルド。**Linux は一度も動かしていません。動かした方は、結果を教えてください**(Issue で歓迎します)。
+- macOS のサーバーは、軽微な確認だけです。
+- iOS(Safari / PWA)の実機と、Firefox の実際の動作。
+- Ollama と vLLM の実機(LM Studio と llama.cpp は確認済み)。
+- Windows のデスクトップクライアントが、通常の起動で、自分で静かに更新する動作。
 
 **既知の制約**
 
@@ -255,10 +254,10 @@ cd app && npx expo start                  # 実機は Expo Go でQRを読む
 詳細は各文書の該当箇所を参照してください。
 
 - **認証**: ユーザー名 + パスワード(8 文字以上、scrypt で保存)。ログインのたびに端末ごとのトークンを発行(DB にはハッシュのみ)。同じ IP + ユーザー名で 5 分間に 10 回失敗するとログインを一時拒否。管理者は HTTP からは作れず、サーバー上の `omnichat-admin create` で作ります。自己登録(一般ユーザー)は管理者がいて `ALLOW_REGISTRATION=1` のときだけ。
-- **通信は HTTP が既定**です。LAN / Tailscale の外に出すときは HTTPS(Tailscale Serve / Caddy 等)を必ず付けてください([docs/INSTALL.md](docs/INSTALL.md))。WebSocket の認証トークンは URL のクエリ(`/ws?token=`)で渡されるため、リバースプロキシのアクセスログに残らないよう注意してください。
+- **OmniChat 自身は HTTPS に対応しません。** LAN では HTTP のままで、Tailscale 経由の通信は WireGuard で暗号化されます。それより外に出すときは、前段で HTTPS にしてください(例: Tailscale Serve。[docs/INSTALL.md](docs/INSTALL.md))。Tailscale Funnel はインターネットに公開する機能で、INSTALL.md の注意に従う場合を除き、おすすめしません。WebSocket の認証トークンは URL のクエリ(`/ws?token=`)で渡されるため、リバースプロキシのアクセスログに残らないよう注意してください。
 - **API キー(`ocsk-…`)**は `/v1/*` 専用で、DB にはハッシュのみ保存。端末トークンは `/v1/*` では使えず、API キーは他の API では使えません。
-- **プロバイダーの API キー**はサーバーの DB に**平文で**保存されます。バックアップ(`omnichat-*.db`)にも含まれるため、保管場所とファイル権限に注意してください([docs/BACKUP.md](docs/BACKUP.md))。エクスポート JSON には含まれません。
-- **プラグインはサーバープロセス内で、サーバーの OS 権限のまま動きます**。`permissions` は承認ダイアログ用の宣言で、サンドボックスではありません。信頼できるものだけを置いてください(Windows サービス版は LocalSystem で動きます)([docs/PLUGINS.md](docs/PLUGINS.md))。
+- **プロバイダーの API キー**は暗号化(AES-256-GCM)して保存します。鍵は環境変数 `OMNICHAT_SECRET_KEY`、または、データフォルダの `secret.key` です。バックアップ(`omnichat-*.db`)には暗号化された値だけが入り、鍵のファイルは入りません。`secret.key` はバックアップとは別の場所に保管してください。鍵がないサーバーに復元すると、保存したキーは使えません。エクスポート JSON には含まれません([docs/BACKUP.md](docs/BACKUP.md))。
+- **プラグインは完全なサンドボックスではありません。** 管理画面から導入したプラグインは、別の Node プロセス(`--permission`)で動きます。読めるのはプラグイン自身のフォルダだけで、ファイルの書き込みと子プロセスの起動はできず、環境変数は空で、メモリと時間にも上限があります。ただし、ネットワークはこの仕組みでは止められません(`ctx.fetch` だけを仲介します)。手で置いたプラグインは、従来どおりサーバーのプロセス内で、サーバーの OS 権限のまま動きます。`permissions` は承認ダイアログ用の宣言で、サンドボックスではありません。信頼できるものだけを置いてください(Windows サービス版は LocalSystem で動きます)([docs/PLUGINS.md](docs/PLUGINS.md))。
 - **dsh の headless ブリッジは承認なしでツール(シェル・ファイル操作)を実行**します。OmniChat のアカウントを持つ人は、ブリッジの PC を操作できます。強いパスワード、HTTPS、専用の作業フォルダ(`--cwd`)で使ってください。プラグイン版は dsh の承認ポリシー(`ask`)に従います([docs/DSH.md](docs/DSH.md))。
 - `web_search` と `fetch_url` のようなネットワーク系ツールは、サーバーから見えるアドレス(LAN・localhost を含む)へリクエストできます。承認ダイアログで引数を確認してください。
 - CORS は既定で全オリジンを許可します(`CORS_ORIGIN` で制限可能)。認証は Authorization ヘッダーのトークンなので Cookie 経由の CSRF は想定していません。

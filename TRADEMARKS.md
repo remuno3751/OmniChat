@@ -20,6 +20,7 @@ OmniChat の**ソースコード**は AGPL-3.0 で公開しています([LICENSE
 
 - このリポジトリの**公式の配布物**(公式サイトまたは公式の Releases にあるもの)を、そのまま配布すること。
 - 事実を述べるための参照(「OmniChat 対応」「OmniChat のフォーク」など)。作者の公認だと誤解させない書き方で。
+- OmniChat を紹介・拡散するための、SNS、ブログ、記事、動画などでの**ロゴ(改変しないもの)の利用**。作者の公認や提携を受けているかのように見せないこと。
 - 開発とプルリクエストのために、このリポジトリをコピー(GitHub の Fork を含む)し、ロゴの画像を**変更せずに**そのまま含めておくこと。
 
 ### してはいけないこと(作者の書面の許可がある場合を除く)
@@ -60,6 +61,7 @@ The **source code** of OmniChat is published under AGPL-3.0 ([LICENSE](LICENSE))
 
 - Redistributing the **official builds** (from the official site or the official Releases page) unchanged.
 - Factual references ("compatible with OmniChat", "a fork of OmniChat") that do not suggest the author endorses your project.
+- **Using the logo (unmodified)** to introduce or spread OmniChat on social media, blogs, articles, videos and the like, as long as it does not suggest endorsement or affiliation by the author.
 - Copying this repository (including a GitHub fork) for development and pull requests, keeping the logo files **unmodified**.
 
 ### Not allowed without the author's written permission

@@ -109,7 +109,7 @@ Web 版は Expo(react-native-web)の静的書き出しで、PWA(Web App Manifest
 
 ## 5. HTTPS / Tailscale のヒント
 
-- 外出先から使うなら Tailscale が簡単です。サーバー PC で `tailscale serve --bg 8787`(または `tailscale funnel` は公開になるので非推奨)を実行すると `https://<machine>.<tailnet>.ts.net` で HTTPS 接続できます。PWA の Service Worker とブラウザの「安全な接続」表示も有効になります。
+- 外出先から使うなら Tailscale が簡単です。サーバー PC で `tailscale serve --bg 8787`(`tailscale funnel` はインターネットに公開する機能なので、INSTALL.md の注意に従う場合だけ使ってください)を実行すると `https://<machine>.<tailnet>.ts.net` で HTTPS 接続できます。PWA の Service Worker とブラウザの「安全な接続」表示も有効になります。
 - `http://192.168.x.x:8787` は自宅 LAN 内での利用に留めてください(通信は暗号化されません)。
 - 自己署名証明書は Safari / ランチャーで警告・拒否されます。信頼された証明書(Tailscale、Let's Encrypt)か、OS に CA を登録してください。
 - ランチャーのエラー表示: 「接続できません」= サーバー停止 / URL・ポート違い / 別ネットワーク、「証明書の検証に失敗」= 期限切れ・自己署名・名前不一致、「OmniChat サーバーではありません」= `/version` が別のサービス、「HTTPS から HTTP へリダイレクト」= リバースプロキシ設定。

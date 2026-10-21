@@ -172,13 +172,17 @@ Version 0.5.0 (DSH plugin 1.0.0). See [CHANGELOG.md](CHANGELOG.md) (Japanese) fo
 - Windows builds (desktop NSIS/MSI and the server app) and install; Android release APK build and in-app update on a device; macOS DMG built on a Mac.
 - Automatic update paths against a real release: the server (0.4.0-beta.4 → 0.5.0), the DSH plugin (fetch and checksum), and the desktop update prompt.
 - dsh plugin with a real dsh (pairing from the desktop app, GUI session mirroring, model import).
+- llama.cpp (two models, Strata and Bonsai) on real hardware: model list, context limit and image-support detection. LM Studio image input (Gemma 4 E4B).
+- Web search against a real SearXNG instance.
+- The macOS client app (widely) and the macOS server (lightly).
+- In-app update of the Android app on a real device.
 
 **Not verified**
 
-- Docker image build and Compose, Linux / macOS install scripts, Linux desktop and server-app builds.
-- Real devices for iOS (Safari/PWA) and some Android behavior; Firefox in practice.
-- LM Studio is the only backend verified on real hardware; Ollama / llama.cpp / vLLM are not.
-- A real SearXNG instance (search tests used a fake server).
+- Docker image build and Compose, the Linux / macOS install scripts, Linux desktop and server-app builds. **Linux has not been tried at all: if you run it there, please report how it went** (an issue is welcome).
+- The macOS server was only checked lightly (the macOS client was checked widely).
+- iOS (Safari/PWA) on a real device, and Firefox in practice.
+- Ollama and vLLM on real hardware (LM Studio and llama.cpp have been checked).
 - The silent in-place update of the Windows desktop client in a normal (non-test) launch.
 
 **Known limitations**
@@ -192,10 +196,10 @@ Version 0.5.0 (DSH plugin 1.0.0). See [CHANGELOG.md](CHANGELOG.md) (Japanese) fo
 See the individual documents for details.
 
 - **Authentication:** username + password (8+ characters, stored with scrypt). A per-device token is issued at each login (only hashes are stored). Ten failures in five minutes from the same IP + username temporarily block login. The first administrator can only be created on the server with `omnichat-admin create`.
-- **HTTP is the default transport.** Before exposing the server beyond your LAN / Tailscale, put HTTPS in front of it ([docs/INSTALL.md](docs/INSTALL.md)). WebSocket tokens are passed in the URL query, so keep them out of reverse-proxy access logs.
+- **OmniChat does not terminate TLS itself.** On your LAN it speaks plain HTTP; over Tailscale the traffic is encrypted by WireGuard. Before exposing the server beyond that, put HTTPS in front of it (for example Tailscale Serve; see [docs/INSTALL.md](docs/INSTALL.md)). Tailscale Funnel makes the server public on the internet and is discouraged except as described there. WebSocket tokens are passed in the URL query, so keep them out of reverse-proxy access logs.
 - **API keys (`ocsk-…`)** are for `/v1/*` only and stored as hashes. Device tokens cannot be used on `/v1/*`.
-- **Provider API keys** are stored in the server's database **in plain text**, and are included in backups; protect the files and permissions ([docs/BACKUP.md](docs/BACKUP.md)). They are not included in exported JSON.
-- **Plugins run inside the server process with the server's OS permissions.** `permissions` is a declaration for the approval dialog, not a sandbox. Install only code you trust ([docs/PLUGINS.md](docs/PLUGINS.md)).
+- **Provider API keys** are encrypted at rest (AES-256-GCM). The key is `OMNICHAT_SECRET_KEY`, or the file `secret.key` in the data folder. A backup (`omnichat-*.db`) holds only the encrypted values, not the key file: keep `secret.key` apart from your backups, because a server restored without it cannot use the saved keys. They are not included in exported JSON ([docs/BACKUP.md](docs/BACKUP.md)).
+- **Plugins are not fully sandboxed.** Plugins installed from the admin screen run in a separate Node process started with `--permission`: they can read only their own folder, cannot write files or start processes, and get an empty environment, with memory and time limits. The network is not blocked by that model (only `ctx.fetch` is mediated), and plugins you place by hand still run inside the server process with its OS permissions. `permissions` is a declaration for the approval dialog, not a sandbox: install only code you trust ([docs/PLUGINS.md](docs/PLUGINS.md)).
 - **The dsh headless bridge runs tools (shell, file operations) without approval.** Anyone with an OmniChat account can operate that PC: use a strong password, HTTPS and a dedicated working folder. The plugin follows dsh's approval policy.
 - Network tools such as `web_search` and `fetch_url` can reach addresses visible from the server (including LAN and localhost); check the arguments in the approval dialog.
 - CORS allows all origins by default (restrict with `CORS_ORIGIN`). Authentication uses an Authorization header token, so cookie-based CSRF is not a concern.
