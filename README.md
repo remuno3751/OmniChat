@@ -29,6 +29,14 @@ The core that stores conversations and connects your devices. Run it on your own
 
 Docker image: coming soon. macOS / Linux: install from source (see [docs/INSTALL.md](docs/INSTALL.md), Japanese).
 
+### OmniChat VS (VS Code extension)
+
+Lets the AI work in the folder you have open in VS Code (chat, models, approvals) through your own server.
+
+[![OmniChat VS extension (.vsix)](https://img.shields.io/badge/VS_Code-.vsix-FFD400?style=for-the-badge&logo=visualstudiocode&logoColor=black&labelColor=111111)](https://github.com/remuno3751/omnichat/releases/latest/download/OmniChat-VS.vsix)
+
+Install: `code --install-extension OmniChat-VS.vsix --force`, then run "Reload Window". Setup and usage: [docs/VSCODE.md](docs/VSCODE.md) (Japanese).
+
 > **v0.5.0 is the first public version.** It is a 0.x release, so behavior may change, and some parts are not fully verified (see [Status and verification](#status-and-verification)). Please back up important data regularly.
 
 > **Note:** the installers are not code-signed, so your OS shows a warning on first launch.

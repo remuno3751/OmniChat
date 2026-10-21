@@ -30,6 +30,14 @@
 
 [すべてのリリース](https://github.com/remuno3751/omnichat/releases) ・ どれを入れるか迷ったら **[docs/DOWNLOAD.md](docs/DOWNLOAD.md)**(選び方・インストール手順・チェックサムの確認)をご覧ください。
 
+### OmniChat VS(VS Code 拡張機能)
+
+VS Code で開いているフォルダを、自分のサーバー経由で AI に操作させる拡張です(チャット、モデルの選択、承認)。
+
+[![OmniChat VS 拡張機能(.vsix)をダウンロード](https://img.shields.io/badge/VS_Code-.vsix-FFD400?style=for-the-badge&logo=visualstudiocode&logoColor=black&labelColor=111111)](https://github.com/remuno3751/omnichat/releases/latest/download/OmniChat-VS.vsix)
+
+インストール: `code --install-extension OmniChat-VS.vsix --force` を実行して、VS Code で「Reload Window」を実行します。設定と使い方は [docs/VSCODE.md](docs/VSCODE.md) を見てください。
+
 > **v0.5.0 は、一般公開の最初のバージョンです。** 0.x なので、仕様が変わることがあります。動作確認が十分でない部分もあります(下の「[状態と検証範囲](#状態と検証範囲)」)。大切なデータは、定期的にバックアップしてください。他の OS・.msi などは [Releases](https://github.com/remuno3751/omnichat/releases/latest) の表から選べます。
 
 > **注意**: インストーラーは署名していないため、初回に OS の警告が出ます(手順は [docs/DOWNLOAD.md](docs/DOWNLOAD.md#os-ごとのインストール手順))。
