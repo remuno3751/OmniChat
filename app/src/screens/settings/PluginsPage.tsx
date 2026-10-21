@@ -4,7 +4,12 @@ import { useBack } from '../../ui/useBack';
 import { DshIntegration } from '../../components/DshIntegration';
 import { P3SubScreen } from '../../components/ToolsSettings';
 import { SearchIntegration } from '../../components/SearchIntegration';
+import PluginsAdmin from '../../components/PluginsAdmin';
+import { useServerAdminAvailable } from '../../apiAdmin';
+import { Linking } from 'react-native';
 import { useT } from '../../i18n';
+import { SOURCE_URL } from '../../sourceLinks';
+import { toast } from '../../ui/toast';
 import type { SettingsPageId } from '../../settingsMeta';
 import { useTools } from '../../toolState';
 import { Btn, Hint } from '../../ui/kit';
@@ -17,6 +22,7 @@ import { PageFrame, Section } from './common';
 export default function PluginsPage({ onBack, onGoto }: { onBack: () => void; onGoto?: (page: SettingsPageId) => void }) {
   const tr = useT();
   const hasTools = !!useTools().value;
+  const serverAdmin = useServerAdminAvailable();
   const [open, setOpen] = useState(false);
   useBack(open, BACK_PRIORITY.SUBPAGE + 1, () => { setOpen(false); });
 
@@ -37,6 +43,15 @@ export default function PluginsPage({ onBack, onGoto }: { onBack: () => void; on
         </>
       ) : (
         <Hint>{tr('settings.unavailable')}</Hint>
+      )}
+      <Section title={tr('plugins.guide.title')} />
+      <Hint>{tr('plugins.guide.hint')}</Hint>
+      <Btn small label={tr('plugins.guide.btn')} onPress={() => { Linking.openURL(SOURCE_URL + '/blob/main/docs/PLUGINS.md').catch(() => toast(tr('update.openFailed'), 'error')); }} />
+      {serverAdmin && (
+        <>
+          <Section title={tr('plugins.admin.title')} />
+          <PluginsAdmin />
+        </>
       )}
     </PageFrame>
   );

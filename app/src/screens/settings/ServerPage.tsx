@@ -8,7 +8,6 @@ import { Btn, Check, Field, Hint } from '../../ui/kit';
 import { toast } from '../../ui/toast';
 import SearchIntegration from '../../components/SearchIntegration';
 import UpdatesSection from '../../components/UpdatesSection';
-import PluginsAdmin from '../../components/PluginsAdmin';
 import ServerUsers from './ServerUsers';
 import ServerMaintenance from './ServerMaintenance';
 import MaintenanceModeCard from './MaintenanceModeCard';
@@ -283,7 +282,7 @@ export default function ServerPage({ onBack }: { onBack: () => void }) {
       <SearchIntegration />
 
       <Section title={tr('admin.server.updates')} />
-      <UpdatesSection />
+      <UpdatesSection scope="server" />
 
       <Section title={tr('admin.server.usersTitle')} />
       <ServerUsers onChanged={onChanged} />
@@ -293,9 +292,6 @@ export default function ServerPage({ onBack }: { onBack: () => void }) {
 
       <Section title={tr('admin.server.maintenance')} />
       <ServerMaintenance onChanged={onChanged} />
-
-      <Section title={tr('plugins.admin.title')} />
-      <PluginsAdmin onChanged={onChanged} />
 
       <Section title={tr('admin.server.audit')} />
       <Card>

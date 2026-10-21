@@ -3,6 +3,7 @@ import { ActivityIndicator, Linking, Platform, ScrollView, Text, View } from 're
 import { api } from '../api';
 import { APP_VERSION } from '../appVersion';
 import { clientVersionLine, desktopVersionFromWindow } from '../clientVersion';
+import { SOURCE_LINKS } from '../sourceLinks';
 import { useT } from '../i18n';
 import { setAvailableUpdateVersion, skipDeviceUpdate, unskipDeviceUpdate } from '../updateStore';
 import { canApkUpdate, updateErrorText } from '../updateState';
@@ -67,7 +68,8 @@ export function failureOf(view: ApplyView, status: UpdateStatus | null, tr: (k: 
 }
 
 /** Settings > Updates. Non-admins see the versions and notes only. */
-export default function UpdatesSection() {
+export default function UpdatesSection({ scope = 'all' }: { scope?: 'all' | 'server' }) {
+  const serverOnly = scope === 'server';
   const t = useTheme();
   const tr = useT();
   const view = useApplyView();
@@ -186,12 +188,27 @@ export default function UpdatesSection() {
 
   return (
     <>
-      <Section title={tr('update.title')} />
+      {!serverOnly && (<>
+      <Section title={tr('update.appSection')} first />
+      <View style={{ gap: 6, minWidth: 0 }}>
+        <Text selectable style={{ color: t.text, fontSize: 14 }}>{(() => { const c = clientVersionLine(Platform.OS, APP_VERSION, desktopVersionFromWindow(globalThis as any)); return tr(c.key, { version: c.version }); })()}</Text>
+        <Hint>{tr(Platform.OS === 'android' ? 'update.appHint.android' : Platform.OS === 'web' ? 'update.appHint.web' : 'update.appHint.desktop')}</Hint>
+        {androidApk && latest && (
+          <View style={{ gap: 6 }}>
+            <Hint>{tr('update.apk.available', { version: latest.version })}</Hint>
+            <Hint>{tr('update.apk.hint')}</Hint>
+            <Btn small label={tr('update.apk.download')} onPress={openApk} />
+          </View>
+        )}
+      </View>
+
+      </>)}
+
+      {!serverOnly && <Section title={tr('update.serverSection')} />}
       {loadErr && !status && <Hint danger>{tr('update.loadFailed')}</Hint>}
       {status && (
         <View style={{ gap: 6, minWidth: 0 }}>
           <Text selectable style={{ color: t.text, fontSize: 14 }}>{tr('update.version', { version: status.current })}</Text>
-          <Text selectable style={{ color: t.text, fontSize: 14 }}>{(() => { const c = clientVersionLine(Platform.OS, APP_VERSION, desktopVersionFromWindow(globalThis as any)); return tr(c.key, { version: c.version }); })()}</Text>
           <Hint>{tr('update.installType', { type: tr(`update.install.${status.installType}`) })}</Hint>
           <Hint>{status.lastCheckedAt ? tr('update.lastChecked', { when: fmtAgo(status.lastCheckedAt) }) : tr('update.neverChecked')}</Hint>
           {status.lastError && <Hint danger>{tr(updateErrorText(status.lastError).key, updateErrorText(status.lastError).params)}</Hint>}
@@ -219,14 +236,6 @@ export default function UpdatesSection() {
             <ScrollView style={{ maxHeight: 220, borderWidth: 1, borderColor: t.border, borderRadius: 8, padding: 10 }} nestedScrollEnabled>
               <Text selectable style={{ color: t.text, fontSize: 13, lineHeight: 18 }}>{latest.notes || tr('update.notes.empty')}</Text>
             </ScrollView>
-          )}
-
-          {status?.updateAvailable && androidApk && (
-            <View style={{ gap: 6 }}>
-              <Hint>{tr('update.apk.available', { version: latest.version })}</Hint>
-              <Hint>{tr('update.apk.hint')}</Hint>
-              <Btn small label={tr('update.apk.download')} onPress={openApk} />
-            </View>
           )}
 
           {admin && status?.updateAvailable && !applying && (
@@ -295,6 +304,17 @@ export default function UpdatesSection() {
         </View>
       )}
       {!admin && status && <Hint>{tr('update.readOnly')}</Hint>}
+
+      {!serverOnly && (<>
+      <Section title={tr('update.sourceSection')} />
+      <Hint>{tr('update.sourceHint')}</Hint>
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+        <Btn small label={tr('update.src.repo')} onPress={() => { Linking.openURL(SOURCE_LINKS.repo).catch(() => toast(tr('update.openFailed'), 'error')); }} />
+        <Btn small label={tr('update.src.releases')} onPress={() => { Linking.openURL(SOURCE_LINKS.releases).catch(() => toast(tr('update.openFailed'), 'error')); }} />
+        <Btn small label={tr('update.src.license')} onPress={() => { Linking.openURL(SOURCE_LINKS.license).catch(() => toast(tr('update.openFailed'), 'error')); }} />
+        <Btn small label={tr('update.src.issues')} onPress={() => { Linking.openURL(SOURCE_LINKS.issues).catch(() => toast(tr('update.openFailed'), 'error')); }} />
+      </View>
+      </>)}
     </>
   );
 }

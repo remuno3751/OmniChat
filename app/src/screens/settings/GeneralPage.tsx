@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
-import { Text } from 'react-native';
-import { ApiError, api, getServerUrl } from '../../api';
+import { Linking, Platform, Text, View } from 'react-native';
+import { ApiError, api, getIsAdmin, getServerUrl } from '../../api';
+import { APP_VERSION } from '../../appVersion';
+import NotifySettings from '../../components/NotifySettings';
+import { SOURCE_LINKS } from '../../sourceLinks';
 import { useDeviceSetting } from '../../deviceSettings';
 import type { Language } from '../../deviceSettings';
 import { useT } from '../../i18n';
@@ -47,7 +50,14 @@ export default function GeneralPage({ onBack, onLogout }: { onBack: () => void; 
         ]}
       />
       <Section title={tr('settings.account')} />
-      <Text style={{ color: t.sub }}>{user?.username} @ {getServerUrl()}</Text>
+      <View style={{ gap: 4 }}>
+        <Text style={{ color: t.text, fontSize: 15, fontWeight: '600' }}>{user?.username}</Text>
+        <Text style={{ color: t.sub }}>{getIsAdmin() ? tr('general.role.admin') : tr('general.role.user')}</Text>
+        <Text selectable style={{ color: t.sub }}>{getServerUrl()}</Text>
+      </View>
+      <Section title={tr('general.notify')} />
+      <Hint>{tr('general.notifyHint')}</Hint>
+      <NotifySettings />
       <Section title={tr('settings.password.title')} />
       <Field label={tr('settings.password.current')} value={cur} onChangeText={setCur} secure />
       <Field label={tr('settings.password.new')} value={next} onChangeText={setNext} secure />
@@ -55,6 +65,13 @@ export default function GeneralPage({ onBack, onLogout }: { onBack: () => void; 
       {!!pwErr && <Text style={{ color: t.danger }} accessibilityRole="alert">{pwErr}</Text>}
       <Hint>{tr('settings.password.hint')}</Hint>
       <Btn label={tr('settings.password.change')} onPress={changePassword} disabled={busy || !cur || !next || !again} />
+      <Section title={tr('general.about')} />
+      <Text selectable style={{ color: t.text }}>{tr('general.aboutVersion', { version: APP_VERSION, platform: Platform.OS })}</Text>
+      <Hint>{tr('update.sourceHint')}</Hint>
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+        <Btn small label={tr('update.src.repo')} onPress={() => { Linking.openURL(SOURCE_LINKS.repo).catch(() => toast(tr('update.openFailed'), 'error')); }} />
+        <Btn small label={tr('update.src.license')} onPress={() => { Linking.openURL(SOURCE_LINKS.license).catch(() => toast(tr('update.openFailed'), 'error')); }} />
+      </View>
       <Section title={tr('settings.logout')} />
       <Btn danger label={tr('settings.logout')} onPress={onLogout} />
     </PageFrame>

@@ -19,6 +19,11 @@ before(async () => {
     lastAuth = req.headers["authorization"];
     lastBody = raw ? JSON.parse(raw) : undefined;
     const path = req.url ?? "";
+    if (path.startsWith("/lmstudio/") && lastBody?.response_format?.type === "json_object") {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "'response_format.type' must be 'json_schema' or 'text'" }));
+      return;
+    }
     if (path.startsWith("/err/")) {
       res.writeHead(401, { "Content-Type": "text/plain" });
       res.end("bad key " + "x".repeat(1000));
@@ -40,6 +45,9 @@ before(async () => {
         await sleep(2);
       }
       res.end();
+    } else if (path.startsWith("/lmstudio/")) {
+      res.write(chunk('{"ok":true}'));
+      res.end("data: [DONE]\n\n");
     } else if (path.startsWith("/hang/")) {
       res.write(chunk("first"));
       req.on("close", () => res.end());
@@ -108,4 +116,15 @@ test("abort stops the stream", async () => {
     }
   });
   assert.deepEqual(out, ["first"]);
+});
+
+test("json_object: a server that only knows json_schema gets one retry with an any-object schema", async () => {
+  const p = mk("/lmstudio/v1");
+  let text = "";
+  for await (const it of p.stream({ messages: [{ role: "user", content: "x" }], responseFormat: { type: "json_object" } } as any)) {
+    if (typeof it === "string") text += it;
+  }
+  assert.equal(lastBody.response_format.type, "json_schema");
+  assert.deepEqual(lastBody.response_format.json_schema.schema, { type: "object" });
+  assert.equal(text, '{"ok":true}');
 });

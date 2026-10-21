@@ -32,6 +32,14 @@ test("local-admin mirrors reach attachments, quotas and plugins as the first adm
   assert.equal((await adm("PUT", "/local-admin/quotas", { dailyTokens: -5 })).status, 400, "validation of the real route applies");
   const users = await adm("GET", "/local-admin/quotas/users");
   assert.equal(users.status, 200, users.text);
+  const uu = await adm("GET", "/local-admin/usage/users?days=7&tz=540");
+  assert.equal(uu.status, 200, uu.text);
+  assert.ok(Array.isArray(uu.json.users) && uu.json.totals);
+  const dd = await adm("GET", "/local-admin/usage/daily?scope=all&days=7&tz=540");
+  assert.equal(dd.status, 200, dd.text);
+  assert.equal(dd.json.days.length, 7);
+  const noUser = await adm("GET", "/local-admin/usage/daily?scope=all&days=7&user=nobody");
+  assert.equal(noUser.status, 404);
   const att = await adm("GET", "/local-admin/attachments");
   assert.equal(att.status, 200, att.text);
   const pl = await adm("GET", "/local-admin/plugins");

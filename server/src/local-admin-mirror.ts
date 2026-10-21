@@ -23,7 +23,7 @@ function adminToken(): string | null {
   return d.token;
 }
 
-const MAP = /^\/local-admin\/(attachments|plugins|quotas)(\/.*)?$/;
+const MAP = /^\/local-admin\/(attachments|plugins|quotas|usage)(\/.*)?$/;
 
 export function registerLocalAdminMirror(app: FastifyInstance): void {
   const handler = async (req: any, reply: any) => {
@@ -35,7 +35,7 @@ export function registerLocalAdminMirror(app: FastifyInstance): void {
     if (!token) { reply.code(409); return { error: "no administrator account exists", code: "no_admin" }; }
     const res = await app.inject({
       method: req.method,
-      url: url.replace("/local-admin/", "/admin/"),
+      url: url.startsWith("/local-admin/usage/") ? url.replace("/local-admin/usage/", "/usage/") : url.replace("/local-admin/", "/admin/"),
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       ...(req.body !== undefined && req.method !== "GET" && req.method !== "DELETE" ? { payload: JSON.stringify(req.body) } : {}),
     });
@@ -44,6 +44,8 @@ export function registerLocalAdminMirror(app: FastifyInstance): void {
     if (ct) reply.header("content-type", ct);
     return res.body;
   };
+  app.route({ method: "GET", url: "/local-admin/usage/users", handler });
+  app.route({ method: "GET", url: "/local-admin/usage/daily", handler });
   for (const path of ["attachments", "plugins", "plugins/inspect", "plugins/install", "plugins/:id", "plugins/:id/check-update", "quotas", "quotas/users", "quotas/users/:userId"]) {
     for (const method of ["GET", "PUT", "POST", "PATCH", "DELETE"] as const) {
       if (method === "GET" && !["attachments", "plugins", "quotas", "quotas/users"].includes(path)) continue;

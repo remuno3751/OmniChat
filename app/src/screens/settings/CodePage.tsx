@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import ApprovalRules from '../../components/ApprovalRules';
-import NotifySettings from '../../components/NotifySettings';
 import { LockPrompt } from '../../components/CodeLockGate';
 import { BACKGROUND_LOCK_OPTIONS, RELOCK_OPTIONS, markUnlocked } from '../../codeLock';
 import type { LockScope } from '../../codeLock';
@@ -36,7 +35,6 @@ export default function CodePage({ onBack, onLogout }: { onBack: () => void; onL
       <Section title={tr('code.rules')} first />
       <ApprovalRules />
       <Section title={tr('code.notify')} />
-      <NotifySettings />
       <Section title={tr('codelock.title')} />
       <CodeLockSection onLogout={onLogout} />
     </PageFrame>

@@ -6,20 +6,20 @@ import type { HistSub } from '../../components/HistorySettings';
 import { useT } from '../../i18n';
 import { useStore } from '../../store';
 import { useTheme } from '../../theme';
-import { Btn, useV3 } from '../../ui/kit';
+import { useV3 } from '../../ui/kit';
 import ApiKeysScreen from '../ApiKeysScreen';
 import DevicesScreen from '../DevicesScreen';
 import StatsScreen from '../StatsScreen';
 import UsageScreen from '../UsageScreen';
 import QuotaUsageCard from './QuotaUsageCard';
 import DesktopServerSwitch from '../../components/DesktopServerSwitch';
-import { PageFrame, Section } from './common';
+import { NavRow, PageFrame, Section } from './common';
 import { BACK_PRIORITY } from '../../backHandler';
 import { useBack } from '../../ui/useBack';
 
 export type ConnSub = 'stats' | 'devices' | 'apikeys' | 'usage';
 
-/** Settings > Connections: statistics, devices, API keys, history and the account / server. */
+/** Settings > Connections: usage, devices and keys, history, and the account / server. */
 export default function ConnectionsPage({ onBack, onLogout, initialSub, onOpenChat }: {
   onBack: () => void; onLogout: () => void; initialSub?: ConnSub;
   /** opens a chat from the Usage list (wired by App) */
@@ -43,14 +43,21 @@ export default function ConnectionsPage({ onBack, onLogout, initialSub, onOpenCh
   return (
     <PageFrame title={tr('settings.page.connections')} onBack={onBack}>
       {v3 && (
-        <View style={{ gap: 10 }}>
-          <Btn label={tr('settings.statistics')} onPress={() => setSub('stats')} />
-          <Btn label={tr('settings.usage')} onPress={() => setSub('usage')} />
-          <Btn label={tr('settings.devices')} onPress={() => setSub('devices')} />
-          <Btn label={tr('settings.apiKeys')} onPress={() => setSub('apikeys')} />
-        </View>
+        <>
+          <Section title={tr('conn.sec.usage')} first />
+          <View style={{ gap: 8 }}>
+            <NavRow title={tr('settings.statistics')} hint={tr('conn.hint.stats')} onPress={() => setSub('stats')} />
+            <NavRow title={tr('settings.usage')} hint={tr('conn.hint.usage')} onPress={() => setSub('usage')} />
+          </View>
+          <QuotaUsageCard />
+          <Section title={tr('conn.sec.access')} />
+          <View style={{ gap: 8 }}>
+            <NavRow title={tr('settings.devices')} hint={tr('conn.hint.devices')} onPress={() => setSub('devices')} />
+            <NavRow title={tr('settings.apiKeys')} hint={tr('conn.hint.apikeys')} onPress={() => setSub('apikeys')} />
+          </View>
+        </>
       )}
-      <QuotaUsageCard />
+      {!v3 && <QuotaUsageCard />}
       <HistoryEntries onPick={setHist} />
       <Section title={tr('settings.server')} />
       <Text style={{ color: t.sub }}>{user?.username} @ {getServerUrl()}</Text>

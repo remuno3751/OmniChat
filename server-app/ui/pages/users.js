@@ -120,7 +120,9 @@
       'users.grantsSaved': '許可を保存しました',
       'users.grantsAdminNote': '管理者は制限されません',
       'users.grantsLoadModels': 'モデルを読み込んでいます…',
-      'users.grantsNoModels': 'モデルが見つかりません'
+      'users.grantsNoModels': 'モデルが見つかりません',
+      'users.grantCtx': 'コンテキスト {n}', 'users.grantSelAll': 'すべて選ぶ', 'users.grantSelNone': 'すべて外す',
+      'users.grantFilter': 'モデルを検索', 'users.grantCount': '{n} / {total} 個を選択中', 'users.grantNoMatch': '一致するモデルがありません'
     },
     en: {
       'users.grants': 'Models',
@@ -137,7 +139,9 @@
       'users.grantsSaved': 'Access saved',
       'users.grantsAdminNote': 'Admins are not restricted',
       'users.grantsLoadModels': 'Loading models…',
-      'users.grantsNoModels': 'No models found'
+      'users.grantsNoModels': 'No models found',
+      'users.grantCtx': 'context {n}', 'users.grantSelAll': 'Select all', 'users.grantSelNone': 'Clear',
+      'users.grantFilter': 'Search models', 'users.grantCount': '{n} of {total} selected', 'users.grantNoMatch': 'No matching models'
     }
   });
 
@@ -310,6 +314,7 @@
 
         close = OC.modal({
           title: t('users.grantsTitle', { name: name }),
+          wide: true,
           body: [body, err],
           actions: [
             { text: t('common.cancel') },
@@ -322,6 +327,38 @@
         });
         box = OC.$('modal').firstChild;
 
+        function fmtBytes(n) { return n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.round(n / 1e6) + ' MB'; }
+        // same sub line as the chat model picker: quantization, size (VRAM when loaded), context
+        function stateLine(st) {
+          if (!st) return '';
+          var parts = [];
+          if (st.quantization) parts.push(st.quantization);
+          if (st.vramBytes) parts.push(fmtBytes(st.vramBytes) + ' VRAM'); else if (st.sizeBytes) parts.push(fmtBytes(st.sizeBytes));
+          var c = (st.loaded ? st.loadedContextLength : undefined) || st.contextLength;
+          if (c) parts.push(t('users.grantCtx', { n: c >= 1000 ? Math.round(c / 1024) + 'k' : c }));
+          return parts.join(' · ');
+        }
+        // the maker badge of the chat model picker (generated copy of the app's matching, see tools/gen-model-family.mjs)
+        function badge(m) {
+          var fam = window.OCFamily ? window.OCFamily.resolveFamily(m.id, m.state && m.state.publisher) : null;
+          var el = h('span', { cls: 'mbadge', attrs: { 'aria-hidden': 'true' } });
+          if (!fam) return el;
+          el.style.backgroundColor = fam.bg;
+          var path = fam.mark ? window.OCFamily.MARK_PATHS[fam.mark] : null;
+          if (path) {
+            var ns = 'http://www.w3.org/2000/svg';
+            var svg = document.createElementNS(ns, 'svg');
+            svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', '14'); svg.setAttribute('height', '14');
+            var p = document.createElementNS(ns, 'path');
+            p.setAttribute('d', path); p.setAttribute('fill', '#fff');
+            svg.appendChild(p); el.appendChild(svg);
+          } else {
+            el.textContent = fam.monogram;
+            if (fam.monogram.length > 1) el.classList.add('two');
+          }
+          return el;
+        }
+
         function renderPick(id) {
           var r = state.rows[id];
           OC.clear(r.pick);
@@ -329,22 +366,53 @@
           if (r.models === null) { r.pick.appendChild(h('p', { cls: 'hint', text: t('users.grantsLoadModels') })); return; }
           if (r.error) { r.pick.appendChild(h('p', { cls: 'alert', text: r.error, attrs: { role: 'alert' } })); return; }
           if (!r.models.length) { r.pick.appendChild(h('p', { cls: 'hint', text: t('users.grantsNoModels') })); return; }
-          r.models.forEach(function (m) {
-            var cb = h('input', { attrs: { type: 'checkbox' }, on: { change: function () {
-              var at = r.selected.indexOf(m.id);
-              if (cb.checked && at < 0) r.selected.push(m.id);
-              if (!cb.checked && at >= 0) r.selected.splice(at, 1);
-            } } });
-            cb.checked = r.selected.indexOf(m.id) >= 0;
-            r.pick.appendChild(h('label', { cls: 'check-row' }, [cb, h('span', { text: m.name || m.id })]));
-          });
+          var count = h('span', { cls: 'hint' });
+          var listBox = h('div', { cls: 'mlist' });
+          var boxes = {};
+          function updateCount() { count.textContent = t('users.grantCount', { n: r.selected.length, total: r.models.length }); }
+          function setAll(on) {
+            r.selected = on ? r.models.map(function (m) { return m.id; }) : [];
+            Object.keys(boxes).forEach(function (k) { boxes[k].checked = on; });
+            updateCount();
+          }
+          function drawList() {
+            OC.clear(listBox);
+            var q = (r.filter || '').trim().toLowerCase();
+            var shown = r.models.filter(function (m) { return !q || (m.name + ' ' + m.id).toLowerCase().indexOf(q) >= 0; });
+            boxes = {};
+            if (!shown.length) { listBox.appendChild(h('p', { cls: 'hint', text: t('users.grantNoMatch') })); return; }
+            shown.forEach(function (m) {
+              var cb = h('input', { attrs: { type: 'checkbox' }, on: { change: function () {
+                var at = r.selected.indexOf(m.id);
+                if (cb.checked && at < 0) r.selected.push(m.id);
+                if (!cb.checked && at >= 0) r.selected.splice(at, 1);
+                updateCount();
+              } } });
+              cb.checked = r.selected.indexOf(m.id) >= 0;
+              boxes[m.id] = cb;
+              var line = stateLine(m.state);
+              listBox.appendChild(h('label', { cls: 'mrow' }, [
+                cb, badge(m),
+                h('span', { cls: 'mtext' }, [h('span', { cls: 'mname', text: m.name || m.id, attrs: { title: m.id } }), line ? h('span', { cls: 'msub', text: line }) : null])
+              ]));
+            });
+          }
+          var tools = h('div', { cls: 'mtools' }, [
+            r.models.length > 8 ? h('input', { cls: 'mfilter', attrs: { type: 'search', placeholder: t('users.grantFilter'), 'aria-label': t('users.grantFilter') }, on: { input: function (e) { r.filter = e.target.value; drawList(); } } }) : null,
+            h('span', { cls: 'mbtns' }, [OC.btn(t('users.grantSelAll'), 'sm', function () { setAll(true); }), OC.btn(t('users.grantSelNone'), 'sm', function () { setAll(false); })]),
+            count
+          ]);
+          updateCount();
+          drawList();
+          r.pick.appendChild(tools);
+          r.pick.appendChild(listBox);
         }
 
         function loadModels(id) {
           var r = state.rows[id];
           if (r.models !== null) { renderPick(id); return; }
           OC.invoke('provider_models_get', { id: id, refresh: false }).then(function (res) {
-            r.models = ((res && res.models) || []).map(function (m) { return { id: m.id, name: m.name || m.id }; });
+            r.models = ((res && res.models) || []).map(function (m) { return { id: m.id, name: m.name || m.id, state: m.state || null }; });
             r.error = (res && res.error) || null;
             renderPick(id);
           }, function (e) {
@@ -373,11 +441,11 @@
             var pick = h('div', { cls: 'stack grant-pick' });
             var original = g && g.mode === 'list' ? g.models.slice() : [];
             state.rows[p.id] = { p: p, sel: sel, pick: pick, models: null, error: null, selected: original.slice(), original: cur, originalModels: original };
-            body.appendChild(h('div', { cls: 'list-item' }, [
-              h('div', { cls: 'grow' }, [h('strong', { text: p.name || '?' }), p.owner ? h('p', { cls: 'hint', text: p.owner }) : null]),
-              sel
+            body.appendChild(h('section', { cls: 'grant-prov' }, [
+              h('div', { cls: 'gp-head' }, [h('strong', { text: p.name || '?' }), p.owner ? h('span', { cls: 'hint', text: p.owner }) : null]),
+              sel,
+              pick
             ]));
-            body.appendChild(pick);
             if (cur === 'list') loadModels(p.id);
           });
         }

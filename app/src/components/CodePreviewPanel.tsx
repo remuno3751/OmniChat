@@ -6,6 +6,7 @@ import { useT, resolveLanguage } from '../i18n';
 import { useDevice } from '../deviceSettings';
 import { useTheme } from '../theme';
 import CodePreviewView from './CodePreviewView';
+import CodeText, { langOfPath } from './CodeText';
 
 /*
  * Side / full-screen panel that previews the HTML, CSS and JS a Code run wrote.
@@ -122,7 +123,7 @@ export default function CodePreviewPanel({ fs, entries, loading, source, pcReaso
           {asm.used.map((p) => (
             <View key={p}>
               <Text style={{ color: t.accent, fontFamily: MONO, fontSize: 12 }}>{p}</Text>
-              <Text selectable style={{ color: t.text, fontFamily: MONO, fontSize: 12 }}>{fs.get(p)?.content ?? ''}</Text>
+              <CodeText body={fs.get(p)?.content ?? ''} lang={langOfPath(p)} t={t} />
             </View>
           ))}
         </ScrollView>

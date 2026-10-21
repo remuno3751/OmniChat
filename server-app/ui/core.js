@@ -178,7 +178,7 @@
     var acts = (o.actions || []).map(function (a) {
       return OC.btn(a.text, a.cls, function () { var r = a.onClick ? a.onClick() : null; if (r !== true) close(); });
     });
-    var box = h('div', { cls: 'modal', attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': o.title } }, [h('h2', { text: o.title })].concat(o.body || [], [h('div', { cls: 'actions' }, acts)]));
+    var box = h('div', { cls: 'modal' + (o.wide ? ' wide' : ''), attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': o.title } }, [h('h2', { text: o.title })].concat(o.body || [], [h('div', { cls: 'actions' }, acts)]));
     OC.clear(wrap); wrap.appendChild(box); wrap.hidden = false; document.addEventListener('keydown', key);
     var first = box.querySelector('input,select,textarea') || box.querySelector('.btn.primary,.btn'); if (first) first.focus();
     return close;

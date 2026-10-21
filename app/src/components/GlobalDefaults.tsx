@@ -2,10 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { api } from '../api';
 import type { Effort } from '../protocol';
-import { applyUpsert, patchSettingsLocal, useStore } from '../store';
+import { applyUpsert, useStore } from '../store';
 import { useTheme } from '../theme';
 import { useT } from '../i18n';
-import { Btn, Check, Hint, Label, useDevMode } from '../ui/kit';
+import { Btn, Hint, Label, useDevMode } from '../ui/kit';
 import { toast } from '../ui/toast';
 import EffortPicker from './EffortPicker';
 import ParamsEditor, { draftToParams, paramsToDraft } from './ParamsEditor';
@@ -13,7 +13,7 @@ import type { ParamsDraft } from './ParamsEditor';
 import PromptEditor from './PromptEditor';
 
 /** Global system prompt, effort, (dev) sampling params and the developer-mode switch. Only rendered on a v3 server. */
-export default function GlobalDefaults({ onApiKeys }: { onApiKeys: () => void }) {
+export default function GlobalDefaults() {
   const t = useTheme();
   const tr = useT();
   const settings = useStore((s) => s.settings);
@@ -43,14 +43,6 @@ export default function GlobalDefaults({ onApiKeys }: { onApiKeys: () => void })
     } catch (e: any) { toast(e.message || tr('set.saveFailed'), 'error'); } finally { setBusy(false); }
   };
 
-  const toggleDev = async (v: boolean) => {
-    patchSettingsLocal({ devMode: v });
-    try { applyUpsert({ settings: await api.putSettings({ devMode: v }) }); } catch (e: any) {
-      patchSettingsLocal({ devMode: !v });
-      toast(e.message || tr('set.devModeFailed'), 'error');
-    }
-  };
-
   return (
     <View>
       <Text style={{ color: t.text, fontSize: 16, fontWeight: '700', marginTop: 24 }}>{tr('set.defaultsTitle')}</Text>
@@ -60,10 +52,6 @@ export default function GlobalDefaults({ onApiKeys }: { onApiKeys: () => void })
       <Hint>{tr('set.globalEffortHint')}</Hint>
       {dev && <View style={{ marginTop: 6 }}><ParamsEditor value={params} onChange={setParams} inheritFrom={tr('set.fromDefaults')} /></View>}
       <View style={{ marginTop: 12 }}><Btn primary label={busy ? tr('set.saving') : tr('set.saveDefaults')} disabled={busy} onPress={save} /></View>
-
-      <Text style={{ color: t.text, fontSize: 16, fontWeight: '700', marginTop: 24 }}>{tr('settings.page.developer')}</Text>
-      <Check label={tr('label.devMode')} value={dev} onChange={toggleDev} hint={tr('set.devModeHint')} />
-      {dev && <View style={{ marginTop: 10 }}><Btn label={tr('set.apiKeysBtn')} onPress={onApiKeys} /></View>}
     </View>
   );
 }

@@ -856,6 +856,8 @@ pub fn run() {
             extra::plugin_inspect,
             extra::plugin_install,
             extra::plugin_check_update,
+            extra::usage_users_get,
+            extra::usage_daily_get,
             extra::quotas_get,
             extra::quotas_set,
             extra::quota_users_get,

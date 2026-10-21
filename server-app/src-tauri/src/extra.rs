@@ -524,6 +524,31 @@ pub async fn plugin_check_update(app: AppHandle, id: String) -> Result<Value, St
     .await
 }
 
+/// Every user's tokens, active time and last activity (days = 0: all time; tz = minutes east of UTC).
+#[tauri::command]
+pub async fn usage_users_get(app: AppHandle, days: i64, tz: i64) -> Result<Value, String> {
+    if !(0..=3660).contains(&days) || !(-840..=840).contains(&tz) {
+        return Err("days / tz out of range".into());
+    }
+    blocking(move || admin_call(&app, "GET", &format!("/local-admin/usage/users?days={days}&tz={tz}"), None)).await
+}
+
+/// Daily token buckets of everybody (user_id None) or of one user; days 1..=3660, tz in minutes east of UTC.
+#[tauri::command]
+pub async fn usage_daily_get(app: AppHandle, user_id: Option<String>, days: i64, tz: i64) -> Result<Value, String> {
+    if !(1..=3660).contains(&days) || !(-840..=840).contains(&tz) {
+        return Err("days / tz out of range".into());
+    }
+    let user = match &user_id {
+        Some(id) => {
+            check_id(id)?;
+            format!("&user={id}")
+        }
+        None => String::new(),
+    };
+    blocking(move || admin_call(&app, "GET", &format!("/local-admin/usage/daily?scope=all&days={days}&tz={tz}{user}"), None)).await
+}
+
 #[tauri::command]
 pub async fn quotas_get(app: AppHandle) -> Result<Value, String> {
     blocking(move || admin_call(&app, "GET", "/local-admin/quotas", None)).await

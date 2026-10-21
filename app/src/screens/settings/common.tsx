@@ -1,5 +1,6 @@
 import React, { createContext, useContext } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Icon from '../../components/Icon';
 import { useTheme, useThemeDef } from '../../theme';
 import { Enter, Rule, SectionTitle, useFaces } from '../../ui/skin';
 import { ScreenHeader } from '../../ui/kit';
@@ -46,6 +47,25 @@ function PageTitle({ title }: { title: string }) {
   );
 }
 
+/** A tappable row that opens a sub-screen: title, one-line hint and a chevron. */
+export function NavRow({ title, hint, onPress }: { title: string; hint?: string; onPress: () => void }) {
+  const t = useTheme();
+  const th = useThemeDef();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={[styles.navRow, { borderColor: t.border, backgroundColor: t.panel, borderRadius: th.r(12) }]}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: t.text, fontSize: 15, fontWeight: '600' }}>{title}</Text>
+        {!!hint && <Text style={{ color: t.sub, fontSize: 12, marginTop: 2 }}>{hint}</Text>}
+      </View>
+      <Icon name="chevronRight" size={20} color={t.sub} />
+    </Pressable>
+  );
+}
+
 /** Section heading inside a page. */
 export function Section({ title, first }: { title: string; first?: boolean }) {
   return <SectionTitle title={title} first={first} simpleStyle={styles.section} />;
@@ -55,5 +75,6 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   body: { padding: 16, gap: 10, width: '100%', maxWidth: 720, alignSelf: 'center' },
   section: { fontSize: 16, fontWeight: '700' },
+  navRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12 },
   pageTitle: { fontSize: 20, fontWeight: '700', marginBottom: 4 },
 });

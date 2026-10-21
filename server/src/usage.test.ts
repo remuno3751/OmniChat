@@ -360,3 +360,25 @@ test("regular user sees only own rows; admin scope=all sees everyone; scope=mine
   assert.ok(Math.abs(allModels.json.models.reduce((s: number, x: any) => s + x.share, 0) - 1) < 1e-9);
   assert.equal(allModels.json.models[1].providerName, "BobProv");
 });
+
+test("usageByUser: per-user tokens, active slots, totals; users without answers are listed; eph_ rows are hidden", () => {
+  for (const [id, name] of [[U1, "pu-one"], [U2, "pu-two"], ["pu-idle", "pu-idle"]]) rawDb.prepare("INSERT OR IGNORE INTO users (id, username, salt, hash, created_at) VALUES (?,?,?,?,?)").run(id, name, "s", "h", T1);
+  const r = usage.usageByUser({}, 0, rawDb);
+  const u1 = r.users.find((u) => u.userId === U1)!;
+  const u2 = r.users.find((u) => u.userId === U2)!;
+  assert.equal(u1.totalTokens, 23 + 2);
+  assert.equal(u1.messages, 3);
+  assert.equal(u1.chats, 2);
+  assert.equal(u1.activeDays, 2, "day 17 and day 18 (UTC)");
+  assert.equal(u1.activeMinutes, 15, "three distinct 5-minute slots");
+  assert.equal(u1.lastActivity, T1 + DAY);
+  assert.equal(u2.totalTokens, 100);
+  assert.equal(r.totals.totalTokens, u1.totalTokens + u2.totalTokens, "the eph_ row is not counted");
+  assert.equal(r.totals.messages, 4);
+  assert.equal(r.totals.activeUsers, 2);
+  assert.equal(r.estimated, true);
+  const none = usage.usageByUser({ from: T1 + 2 * DAY }, 0, rawDb);
+  assert.equal(none.totals.totalTokens, 0);
+  assert.equal(none.users.length, r.users.length, "every user stays in the list");
+  assert.equal(none.users[0].lastActivity, null);
+});

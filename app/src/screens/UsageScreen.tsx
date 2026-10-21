@@ -6,6 +6,8 @@ import { resolveLanguage, useT } from '../i18n';
 import type { UsageChats, UsageDaily, UsageModels, UsageSummary } from '../protocol';
 import { useTheme, useThemeDef } from '../theme';
 import { Hint, ScreenHeader, Segmented } from '../ui/kit';
+import LineChart from '../components/LineChart';
+import UsageHeatmap from '../components/UsageHeatmap';
 import {
   dayLabel,
   formatTokens,
@@ -43,6 +45,10 @@ export default function UsageScreen({ onBack, onOpenChat }: { onBack: () => void
   const [err, setErr] = useState('');
   /** index of the selected day bar (null = none) */
   const [sel, setSel] = useState<number | null>(null);
+  /** daily chart: stacked bars or lines */
+  const [kind, setKind] = useState<'bar' | 'line'>('bar');
+  /** the last 26 weeks for the heat map (independent of the chosen period) */
+  const [heat, setHeat] = useState<UsageDaily['days'] | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   /** ignores answers of a period that is no longer shown */
   const seq = useRef(0);
@@ -64,6 +70,12 @@ export default function UsageScreen({ onBack, onOpenChat }: { onBack: () => void
       setErr(e instanceof ApiError && (e.status === 404 || e.status === 501) ? tr('usage.noServer') : tr('usage.error', { msg: e?.message || String(e) }));
     });
   }, [period, tr]);
+
+  useEffect(() => {
+    let alive = true;
+    api.usageDaily(182, tzOffsetMinutes()).then((r) => { if (alive) setHeat(r.days); }).catch(() => { if (alive) setHeat(null); });
+    return () => { alive = false; };
+  }, []);
 
   const summary = data?.summary;
   const totals = summary?.totals;
@@ -215,18 +227,43 @@ export default function UsageScreen({ onBack, onOpenChat }: { onBack: () => void
             {estimated && <Hint>{tr('usage.estimatedNote')}</Hint>}
 
             <Text style={[styles.section, { color: t.text }]}>{tr('usage.daily')}</Text>
-            <View style={[styles.card, { borderRadius: th.r(12), borderColor: t.border, backgroundColor: t.panel }]}>
-              {n > 0 && chart}
-              <View style={styles.legend}>
+            <Segmented<'bar' | 'line'>
+              options={[{ value: 'bar', label: tr('usage.kind.bar') }, { value: 'line', label: tr('usage.kind.line') }]}
+              value={kind}
+              onChange={setKind}
+            />
+            <View style={[styles.card, { borderRadius: th.r(12), borderColor: t.border, backgroundColor: t.panel, marginTop: 8 }]}>
+              {n > 0 && kind === 'bar' && chart}
+              {n > 0 && kind === 'line' && (
+                <LineChart
+                  title={tr('usage.daily')}
+                  series={[
+                    { name: tr('usage.legend.in'), color: cIn, unit: '', points: days.map((d) => d.promptTokens) },
+                    { name: tr('usage.legend.out'), color: cOut, unit: '', points: days.map((d) => Math.max(0, d.completionTokens - d.reasoningTokens)) },
+                    { name: tr('usage.legend.reasoning'), color: cThink, unit: '', points: days.map((d) => d.reasoningTokens) },
+                  ]}
+                />
+              )}
+              {kind === 'bar' && <View style={styles.legend}>
                 {legend.map((x) => (
                   <View key={x.l} style={styles.legendItem}>
                     <View style={[styles.swatch, { backgroundColor: x.c }]} />
                     <Text style={{ color: t.sub, fontSize: 12 }}>{x.l}</Text>
                   </View>
                 ))}
-              </View>
+              </View>}
               {sel != null && days[sel] && <Text style={{ color: t.text, fontSize: 12, marginTop: 8 }}>{detail(days[sel])}</Text>}
             </View>
+
+            {!!heat && heat.some((d) => d.totalTokens > 0) && (
+              <>
+                <Text style={[styles.section, { color: t.text }]}>{tr('usage.heat')}</Text>
+                <View style={[styles.card, { borderRadius: th.r(12), borderColor: t.border, backgroundColor: t.panel }]}>
+                  <UsageHeatmap days={heat} />
+                  <Hint>{tr('usage.heat.hint')}</Hint>
+                </View>
+              </>
+            )}
 
             {chats.length > 0 && (
               <>

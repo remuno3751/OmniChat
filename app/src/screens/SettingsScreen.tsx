@@ -97,7 +97,8 @@ export default function SettingsScreen({ onClose, onLogout, showBack, convId, in
       : [];
     const subs = r.key === 'connections' && v3 ? CONN_SUBS.map((s) => ({ key: s.key, title: tr(s.titleKey) })) : [];
     const subHits = q ? subs.filter((s) => hit(s.title)) : subs;
-    const subsShown = titleHit ? subs : subHits;
+    // the sub-entries show up once Connections is the selected page (or when a search matches them)
+    const subsShown = q ? (titleHit ? subs : subHits) : (cur?.page === 'connections' ? subs : []);
     const visible = !q || titleHit || matched.length > 0 || subHits.length > 0;
     return { ...r, visible, subLine: matched.length ? matched[0] : r.hint, subsShown };
   }).filter((r) => r.visible);

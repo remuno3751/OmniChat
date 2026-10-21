@@ -265,3 +265,68 @@ export function usageModels(f: UsageFilter, conn: DatabaseSync = sharedDb): Mode
   }));
   return { models, estimated: models.some((m) => m.estimatedMessages > 0) };
 }
+
+// ---------- per user (admin overview for the server app) ----------
+
+/** One bucket of "active time": a 5-minute slot that holds at least one answer of the user. */
+export const ACTIVE_SLOT_MS = 5 * 60_000;
+
+export interface UserUsageRow extends Agg {
+  userId: string;
+  username: string;
+  disabled: boolean;
+  chats: number;
+  /** distinct 5-minute slots with an answer x 5 minutes: a lower-bound estimate of the time spent chatting */
+  activeMinutes: number;
+  /** sum of the generation times (metrics.total_ms) */
+  generationMs: number;
+  /** distinct local days with an answer */
+  activeDays: number;
+  lastActivity: number | null;
+}
+export interface UsersUsageResponse {
+  from: number | null;
+  to: number | null;
+  tz: number;
+  users: UserUsageRow[];
+  totals: Agg & { users: number; activeUsers: number; chats: number; activeMinutes: number; generationMs: number };
+  estimated: boolean;
+}
+
+/** Every user (also those without answers), their tokens, active time and last activity. Ephemeral chats are not counted. */
+export function usageByUser(f: { from?: number | null; to?: number | null }, tz: number, conn: DatabaseSync = sharedDb): UsersUsageResponse {
+  const w = where({ userId: null, from: f.from ?? null, to: f.to ?? null });
+  const rows = conn.prepare(
+    `SELECT m.user_id AS userId, ${AGG_COLUMNS},
+       COUNT(DISTINCT m.conversation_id) AS chats,
+       COUNT(DISTINCT m.created_at / ${ACTIVE_SLOT_MS}) AS slots,
+       COUNT(DISTINCT (m.created_at + ${tz} * 60000) / ${DAY_MS}) AS activeDays,
+       COALESCE(SUM(m.total_ms), 0) AS generationMs,
+       MAX(m.created_at) AS lastActivity
+     FROM metrics m WHERE ${w.sql} GROUP BY m.user_id`,
+  ).all(...w.params) as unknown as Array<AggRow & { userId: string; chats: number; slots: number; activeDays: number; generationMs: number; lastActivity: number }>;
+  const byId = new Map(rows.map((r) => [r.userId, r]));
+  const users = conn.prepare("SELECT id, username, disabled_at FROM users ORDER BY created_at, rowid").all() as unknown as Array<{ id: string; username: string; disabled_at: number | null }>;
+  const out: UserUsageRow[] = users.map((u) => {
+    const r = byId.get(u.id);
+    const agg = r ? toAgg(r) : { promptTokens: 0, completionTokens: 0, reasoningTokens: 0, totalTokens: 0, messages: 0, estimatedMessages: 0 };
+    return {
+      userId: u.id, username: u.username, disabled: u.disabled_at != null, ...agg,
+      chats: r ? Number(r.chats) : 0,
+      activeMinutes: r ? Number(r.slots) * (ACTIVE_SLOT_MS / 60_000) : 0,
+      generationMs: r ? Math.round(Number(r.generationMs)) : 0,
+      activeDays: r ? Number(r.activeDays) : 0,
+      lastActivity: r ? Number(r.lastActivity) : null,
+    };
+  });
+  const sum = (k: keyof Agg) => out.reduce((a, u) => a + u[k], 0);
+  const all = conn.prepare(`SELECT COUNT(DISTINCT m.conversation_id) AS chats, COUNT(DISTINCT m.user_id || ':' || (m.created_at / ${ACTIVE_SLOT_MS})) AS slots FROM metrics m WHERE ${w.sql}`).get(...w.params) as unknown as { chats: number; slots: number };
+  const totals = {
+    promptTokens: sum("promptTokens"), completionTokens: sum("completionTokens"), reasoningTokens: sum("reasoningTokens"),
+    totalTokens: sum("totalTokens"), messages: sum("messages"), estimatedMessages: sum("estimatedMessages"),
+    users: out.length, activeUsers: out.filter((u) => u.messages > 0).length,
+    chats: Number(all.chats), activeMinutes: Number(all.slots) * (ACTIVE_SLOT_MS / 60_000),
+    generationMs: out.reduce((a, u) => a + u.generationMs, 0),
+  };
+  return { from: f.from ?? null, to: f.to ?? null, tz, users: out, totals, estimated: totals.estimatedMessages > 0 };
+}

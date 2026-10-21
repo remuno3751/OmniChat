@@ -116,3 +116,30 @@ export function sharePct(share: number): string {
   if (p < 1) return '<1%';
   return `${Math.round(p)}%`;
 }
+
+export interface HeatCell { day: string; total: number; level: 0 | 1 | 2 | 3 | 4 }
+
+/**
+ * Calendar for the heat map: one array per week (Sunday first), each with 7 slots (null before the first day / after the last).
+ * Level 0 = no tokens; 1..4 = up to 25 / 50 / 75 / 100 % of the busiest day.
+ */
+export function heatWeeks(days: { day: string; totalTokens: number }[]): (HeatCell | null)[][] {
+  const max = days.reduce((m, d) => Math.max(m, d.totalTokens), 0);
+  const level = (v: number): HeatCell['level'] => {
+    if (v <= 0 || max <= 0) return 0;
+    const r = v / max;
+    return r <= 0.25 ? 1 : r <= 0.5 ? 2 : r <= 0.75 ? 3 : 4;
+  };
+  const weeks: (HeatCell | null)[][] = [];
+  let week: (HeatCell | null)[] = [];
+  if (days.length) {
+    const first = new Date(days[0].day + 'T00:00:00Z').getUTCDay();
+    for (let i = 0; i < first; i++) week.push(null);
+  }
+  for (const d of days) {
+    week.push({ day: d.day, total: d.totalTokens, level: level(d.totalTokens) });
+    if (week.length === 7) { weeks.push(week); week = []; }
+  }
+  if (week.length) { while (week.length < 7) week.push(null); weeks.push(week); }
+  return weeks;
+}

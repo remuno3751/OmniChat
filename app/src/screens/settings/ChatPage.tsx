@@ -12,7 +12,6 @@ import type { RememberedPolicy } from '../../modelLoad';
 import { applyUpsert, useStore } from '../../store';
 import { Btn, Field, Hint, Label, useV3 } from '../../ui/kit';
 import { toast } from '../../ui/toast';
-import ApiKeysScreen from '../ApiKeysScreen';
 import TemplatesManager from '../../components/TemplatesManager';
 import { PageFrame, Section } from './common';
 import { MyAttachmentsSection } from './AttachmentAdminCard';
@@ -91,17 +90,14 @@ function ModelLoadSetting() {
 export default function ChatPage({ onBack }: { onBack: () => void }) {
   const tr = useT();
   const v3 = useV3();
-  const [apiKeys, setApiKeys] = useState(false);
   const [p3, setP3] = useState<P3Sub | null>(null);
   useBack(!!p3, BACK_PRIORITY.SUBPAGE + 1, () => { setP3(null); });
-  useBack(apiKeys, BACK_PRIORITY.SUBPAGE + 1, () => { setApiKeys(false); });
 
   if (p3) return <P3SubScreen sub={p3} onBack={() => setP3(null)} />;
-  if (apiKeys) return <ApiKeysScreen onBack={() => setApiKeys(false)} />;
 
   return (
     <PageFrame title={tr('settings.page.chat')} onBack={onBack}>
-      {v3 && <GlobalDefaults onApiKeys={() => setApiKeys(true)} />}
+      {v3 && <GlobalDefaults />}
       {v3 && <P3Entries onOpen={setP3} />}
       <EphemeralIdleSetting />
       <ModelLoadSetting />

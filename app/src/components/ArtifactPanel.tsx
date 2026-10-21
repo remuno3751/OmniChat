@@ -17,6 +17,7 @@ import XlsxPreview from './previews/XlsxPreview';
 import Icon from './Icon';
 import type { IconName } from './Icon';
 import Markdown from './Markdown';
+import CodeText from './CodeText';
 
 /*
  * Side panel for one artifact: Preview / Source tabs, Copy, Download (with format choices), Edit (local only),
@@ -210,7 +211,7 @@ export default function ArtifactPanel({ artifact, onClose, onUseInChat }: {
       />
     ) : (
       <ScrollView style={styles.fill} contentContainerStyle={styles.pad}>
-        <Text selectable style={[styles.mono, { color: t.text }]}>{content}</Text>
+        <CodeText body={content} lang={cur.type === 'markdown' ? 'md' : cur.type} t={t} />
       </ScrollView>
     );
   } else if (cur.type === 'html') {
@@ -229,7 +230,7 @@ export default function ArtifactPanel({ artifact, onClose, onUseInChat }: {
       body = (
         <ScrollView style={styles.fill} contentContainerStyle={styles.pad}>
           <Text style={[styles.note, { color: t.sub }]}>{tr('art.htmlWebOnly')}</Text>
-          <Text selectable style={[styles.mono, { color: t.text }]}>{content}</Text>
+          <CodeText body={content} lang="html" t={t} />
         </ScrollView>
       );
     }

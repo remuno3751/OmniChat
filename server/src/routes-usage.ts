@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { getConversationRow, db } from "./db.js";
 import { AuthError, authFromRequest } from "./auth.js";
-import { clampTz, parseMs, usageSummary, usageDaily, usageChats, usageModels, MAX_DAYS } from "./usage.js";
+import { clampTz, parseMs, usageSummary, usageDaily, usageChats, usageModels, usageByUser, DAY_MS, MAX_DAYS } from "./usage.js";
 
 /**
  * Token-usage analytics. All routes are auth-required.
@@ -49,7 +49,12 @@ export function registerUsageRoutes(app: FastifyInstance): void {
 
   app.get("/usage/daily", async (req) => {
     const q = req.query as Record<string, unknown>;
-    const userId = scopeUserId(req, q.scope);
+    let userId = scopeUserId(req, q.scope);
+    // admin only (scope=all is checked above): one named user instead of everybody
+    if (userId === null && typeof q.user === "string" && q.user !== "") {
+      if (!db.prepare("SELECT 1 FROM users WHERE id = ?").get(q.user)) throw new AuthError("User not found", 404);
+      userId = q.user;
+    }
     const days = parseInteger(q.days, 30, 0, MAX_DAYS, "days");
     return usageDaily({ userId, days, tz: clampTz(q.tz) });
   });
@@ -59,6 +64,16 @@ export function registerUsageRoutes(app: FastifyInstance): void {
     const userId = scopeUserId(req, q.scope);
     const limit = parseInteger(q.limit, 20, 1, 200, "limit");
     return usageChats({ userId, from: parseMs(q.from), to: parseMs(q.to) }, limit);
+  });
+
+  // Admin overview: every user's tokens, active time and last activity (days=0: all time; otherwise the last N local days incl. today).
+  app.get("/usage/users", async (req) => {
+    const q = req.query as Record<string, unknown>;
+    if (scopeUserId(req, "all") !== null) throw new AuthError("Admin only", 403);
+    const days = parseInteger(q.days, 30, 0, MAX_DAYS, "days");
+    const tz = clampTz(q.tz);
+    const from = days === 0 ? null : (Math.floor((Date.now() + tz * 60_000) / DAY_MS) - (days - 1)) * DAY_MS - tz * 60_000;
+    return usageByUser({ from }, tz);
   });
 
   app.get("/usage/models", async (req) => {

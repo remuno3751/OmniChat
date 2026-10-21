@@ -155,13 +155,30 @@ class OpenAICompatibleProvider implements ChatProvider {
     }
 
     if (req.debug) req.debug.response.status = res.status;
+    let errBody: string | null = null;
     if (!res.ok) {
-      let body = "";
       try {
-        body = await res.text();
+        errBody = await res.text();
       } catch {
-        /* ignore */
+        errBody = "";
       }
+      // Some servers (LM Studio) accept only json_schema / text in response_format and answer 400 to json_object:
+      // ask again once with a schema that allows any object, which gives the same JSON mode.
+      if (res.status === 400 && (body.response_format as { type?: string } | undefined)?.type === "json_object" && /response_format/i.test(errBody)) {
+        body.response_format = { type: "json_schema", json_schema: { name: "json_object", schema: { type: "object" } } };
+        try {
+          res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: req.signal });
+        } catch (e) {
+          const err = new Error(scrubUpstream(e instanceof Error ? e.message : String(e), this.cfg));
+          if (e instanceof Error) err.name = e.name;
+          throw err;
+        }
+        if (req.debug) req.debug.response.status = res.status;
+        errBody = res.ok ? null : await res.text().catch(() => "");
+      }
+    }
+    if (!res.ok) {
+      const body = errBody ?? "";
       const scrubbed = scrubUpstream(body, this.cfg);
       const snippet = scrubbed.slice(0, 300);
       if (req.debug) req.debug.response.raw = scrubbed.slice(0, 4000);
