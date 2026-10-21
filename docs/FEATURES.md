@@ -34,7 +34,7 @@
 - **プロジェクトの行**: `+`(そのプロジェクトに新しい会話)、`⋯`(プロジェクトの設定)
 - **会話の画面の上部**: 戻る、会話名、接続状態(LatencyBadge)、モデルの選択、**Chat settings** ボタン
 - **入力欄の上**: 文脈の使用量(ContextBar)
-- **入力欄の下**: 推論エフォートのチップ(Default / low / medium / high / max)、Web 検索のチップ(Inherit / Off / Auto / Always)、開発者モードでは応答形式のチップ
+- **入力欄の下**: 推論エフォートのチップ(Default / low / medium / high / max)、Web 検索のチップ(Inherit / Off / Smart / Always)、開発者モードでは応答形式のチップ
 
 ## 2. アカウントと端末
 
@@ -171,15 +171,17 @@ Settings → **Tools, plugins & search**。
 
 ### 検索モード
 
-入力欄の **Web search** チップ(画面表示は Inherit / Off / Auto / Always)。
+入力欄の **Web search** チップ(画面表示は Inherit / Off / Smart / Always)。
 
 | モード | 動き |
 |---|---|
 | **Off** | 検索しない |
-| **Auto** | モデルが必要と判断したときに検索する(ツール呼び出しに対応したモデル) |
-| **Always** | 送信のたびに、最新の発言で 1 回検索する |
+| **Smart** | モデルが検索が必要かを判断し、必要なら検索クエリを自分で書いて検索する(ツール呼び出し。ツール呼び出しに対応したモデル) |
+| **Always** | 送信のたびに検索する。検索クエリはモデルが書く(書けないときは発言そのものを使う) |
 
-既定は **Off**。Inherit はプロジェクトまたは全体の設定に従います。
+既定は **Off**。Inherit はプロジェクトまたは全体の設定に従います。古い `auto` は `smart` として読まれます(API と CLI も `auto` を `smart` の別名として受け付けます)。
+
+検索の細かい設定(使うサイト、ページの読み取り、ガードなど)は全体の設定の `search` にあります。詳しくは [SEARCH.md](SEARCH.md) を参照してください。
 
 ### 承認
 
@@ -250,6 +252,7 @@ dsh の会話には、分岐、OmniChat のツールと Web 検索、自動タ�
 |---|---|---|
 | 新規登録 | 拒否(管理者は `omnichat-admin create` で作成) | 環境変数 `ALLOW_REGISTRATION` |
 | Web 検索モード | Off | 入力欄のチップ、プロジェクト、全体の設定 |
+| 検索の細かい設定 | 最大 5 サイト・3 回検索、ページを読む、ガード standard | 全体の設定の `search`(API の `PUT /settings`)。[SEARCH.md](SEARCH.md) |
 | 自動タイトル | オン | Settings → Tools, plugins & search → Chat titles |
 | 文脈の上限を超えたとき | Drop oldest | Settings → Defaults for all chats → When the context is full |
 | 推論エフォート | Default(モデルの既定) | 入力欄のチップ、チャット、プロジェクト、全体 |
@@ -259,7 +262,6 @@ dsh の会話には、分岐、OmniChat のツールと Web 検索、自動タ�
 | 自動バックアップ | 24 時間ごと、7 件残す | 環境変数 `BACKUP_INTERVAL_HOURS`、`BACKUP_KEEP` |
 | ツールの実行時間の上限 | 30 秒 | 環境変数 `TOOL_TIMEOUT_MS` |
 | 承認の待ち時間 | 120 秒(超えると拒否) | 環境変数 `TOOL_APPROVAL_TIMEOUT_MS` |
-| 検索の件数 | 5 件(最大 20) | 環境変数 `SEARCH_MAX_RESULTS` |
 | 検索のタイムアウト | 8 秒 | 環境変数 `SEARXNG_TIMEOUT_MS` |
 | サーバーのポート | 8787 | 環境変数 `PORT` |
 

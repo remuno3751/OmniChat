@@ -186,7 +186,7 @@ npm test                          # node --test test/*.test.mjs
 | `login --server URL [--username U] [--register]` | ログインして保存する(パスワードは入力、標準入力、または `OMNICHAT_PASSWORD`) |
 | `logout` / `whoami` | 端末の失効・保存済みの確認 |
 | `models [--provider NAME] [--all] [--json]` | `<プロバイダー名>/<モデル ID>` の一覧 |
-| `chat "<メッセージ>" [--model …] [--project …] [--conv ID \| --new] [--effort …] [--search off\|auto\|always] [--approve once\|always\|deny]` | 送信して応答を流す(標準入力からも読める) |
+| `chat "<メッセージ>" [--model …] [--project …] [--conv ID \| --new] [--effort …] [--search off\|smart\|always] [--approve once\|always\|deny]` | 送信して応答を流す(標準入力からも読める) |
 | `history`、`show <会話ID>`、`search "<語>"` | 一覧、枝の表示、全文検索 |
 | `export <会話ID> [--format md\|json] [-o FILE]` | 会話の書き出し |
 | `bench run <セット> --targets "A/B,C/D"` | ベンチマークの実行 |
@@ -228,5 +228,5 @@ CI(`.github/workflows/ci.yml`)は、サーバー、ブリッジ、dsh プラグ�
 - **プロバイダー**: `server/src/providers/index.ts` の `registerProvider(kind, factory)` で種類を追加できる
 - **モデルの適応**: LM Studio / Ollama / llama.cpp / vLLM の検出と読み込み・アンロードは `adapters/` と `model-admin.ts`
 - **ツール**: `server/src/tools/`(登録、承認、実行)。プラグインは [PLUGINS.md](PLUGINS.md)
-- **検索**: `server/src/search/`(バックエンドの型と SearXNG)。[SEARCH.md](SEARCH.md)
+- **検索**: `server/src/search/`(バックエンドの型と SearXNG、ページの読み取り、ガード)。モード `off`/`smart`/`always`(`auto` は `smart` の別名)。[SEARCH.md](SEARCH.md)
 - **マイグレーション**: `migrate-*.ts` がスキーマを上げる。既存の DB に対して起動時に実行される

@@ -61,8 +61,9 @@ export function registerDevices(app: FastifyInstance): void {
     }
     recent.push(now);
     tokenCreations.set(a.userId, recent);
-    const name = `DSH plugin (${sanitizeBridgeName((req.body as any)?.name)})`;
-    const { token, deviceId } = createDevice(a.userId, name);
+    const vscode = (req.body as any)?.kind === "vscode";
+    const name = `${vscode ? "VS Code" : "DSH plugin"} (${sanitizeBridgeName((req.body as any)?.name)})`;
+    const { token, deviceId } = vscode ? createDevice(a.userId, name, "vscode-ext") : createDevice(a.userId, name);
     return { token, deviceId, name };
   });
 }

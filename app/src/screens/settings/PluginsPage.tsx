@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BACK_PRIORITY } from '../../backHandler';
 import { useBack } from '../../ui/useBack';
 import { DshIntegration } from '../../components/DshIntegration';
+import { VscodeIntegration } from '../../components/VscodeIntegration';
 import { P3SubScreen } from '../../components/ToolsSettings';
 import { SearchIntegration } from '../../components/SearchIntegration';
 import PluginsAdmin from '../../components/PluginsAdmin';
@@ -35,6 +36,7 @@ export default function PluginsPage({ onBack, onGoto }: { onBack: () => void; on
       <Hint>{tr('integ.hint')}</Hint>
       {/* one compact row per plugin; tapping a row opens its details */}
       <DshIntegration />
+      <VscodeIntegration />
       <SearchIntegration onGoto={onGoto} />
       {hasTools ? (
         <>

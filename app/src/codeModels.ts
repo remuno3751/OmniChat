@@ -1,4 +1,5 @@
 import type { ModelGroup, ModelInfo } from './protocol';
+import { isAgentBridgeKind } from './codeGroups';
 
 /**
  * Pure helpers for the Code tab model picker (PROTOCOL-v7 section 1.3).
@@ -55,7 +56,7 @@ export function codeModelView(
   labels: CodeModelLabels,
 ): { groups: ModelGroup[]; fallback: boolean } {
   const all = groups ?? [];
-  const bridges = all.filter((g) => g.kind === 'dsh-bridge' && g.models.length > 0);
+  const bridges = all.filter((g) => isAgentBridgeKind(g.kind) && g.models.length > 0);
   if (bridges.length === 0) return { groups: all, fallback: true };
 
   const selected = selProviderId ? bridges.filter((g) => g.providerId === selProviderId) : [];

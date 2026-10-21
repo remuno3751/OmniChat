@@ -1,0 +1,178 @@
+/*
+ * OmniChat webview base styles (docs/design/VSCODE-BRIDGE.md §5, THEMES-IMPL.md).
+ * Frontier first. Colours, radii, fonts and timing come only from --oc-* tokens.
+ * Text uses --oc-accent-ink, never --oc-accent. Decorations need
+ * body[data-oc-decor="on"]. Motion plays once.
+ */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+/* Type roles, same as the app (app/src/ui/skin.tsx useFaces): body regular/bold, heading, label (medium/bold
+ * with caps + tracking in Frontier), line-height boost. Every weight is a real face (fonts are registered per
+ * weight), so weight synthesis is off; italics may still be synthesised (Space Grotesk has no italic).
+ * Tokens: --oc-font-body/-head/-label/-mono, --oc-label-w/-wb/-case/-tracking, --oc-lh-boost. */
+html { font-synthesis: style; }
+body {
+  margin: 0; background: var(--oc-bg); color: var(--oc-text);
+  font-family: var(--oc-font-body), system-ui, sans-serif; font-size: 13px; line-height: calc(1.44 + var(--oc-lh-boost, 0));
+}
+b, strong, th { font-weight: 700; }
+/* Page and header: OMNICHAT plate with a square mark. */
+.oc-page { display: flex; flex-direction: column; height: 100vh; min-width: 0; }
+.oc-header {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  background: var(--oc-panel); border-bottom: var(--oc-bw-strong) solid var(--oc-border-strong);
+}
+.oc-plate {
+  display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 8px;
+  border: var(--oc-bw-strong) solid var(--oc-border-strong); border-radius: var(--oc-r-sm);
+  font-family: var(--oc-font-head), system-ui, sans-serif; font-size: 11px;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--oc-text);
+}
+.oc-mark { display: inline-block; width: 10px; height: 10px; background: var(--oc-accent); border-radius: var(--oc-r-xs); }
+.oc-header__status { margin-left: auto; font-size: 11px; color: var(--oc-sub); font-variant-numeric: tabular-nums; }
+
+/* Message list: assistant panel with a left rule, user panel offset to the right. */
+.oc-msgs { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.oc-msg {
+  position: relative; padding: 10px 12px; background: var(--oc-panel);
+  border: var(--oc-bw-base) solid var(--oc-border); border-radius: var(--oc-r-md); overflow-wrap: anywhere;
+}
+.oc-msg--assistant { background: var(--oc-bot-bubble); border-left: 3px solid var(--oc-border-strong); }
+.oc-msg--user { margin-left: 24px; background: var(--oc-user-bubble); }
+.oc-msg__role {
+  margin-bottom: 4px; font-family: var(--oc-font-label); font-weight: var(--oc-label-w); font-size: 10px;
+  letter-spacing: var(--oc-label-tracking); text-transform: var(--oc-label-case); color: var(--oc-sub);
+}
+.oc-msg__body { white-space: pre-wrap; line-height: 1.5; }
+
+/* Tool activity rows: [ ■■■□ ] 02/03  name  status chip. */
+.oc-tool {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px;
+  padding: 6px 8px; border-bottom: var(--oc-bw-base) solid var(--oc-border); font-size: 12px;
+}
+.oc-track {
+  display: inline-flex; align-items: center; gap: 2px; font-size: 11px;
+  font-variant-numeric: tabular-nums; color: var(--oc-sub);
+}
+.oc-track::before { content: "[ "; }
+.oc-track::after { content: " ]"; }
+.oc-track__seg { display: inline-block; width: 7px; height: 9px; background: var(--oc-border); }
+.oc-track__seg--done { background: var(--oc-text); }
+.oc-track__seg--current { background: var(--oc-accent); }
+.oc-track__count { margin-left: 6px; }
+.oc-tool__name { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.oc-chip {
+  padding: 1px 7px; border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-pill);
+  font-family: var(--oc-font-label); font-weight: var(--oc-label-w); font-size: 10px;
+  letter-spacing: var(--oc-label-tracking); text-transform: var(--oc-label-case); color: var(--oc-sub); white-space: nowrap;
+}
+.oc-chip--run { color: var(--oc-accent-ink); border-color: var(--oc-accent); }
+.oc-chip--ok { color: var(--oc-good); }
+.oc-chip--wait { color: var(--oc-warn); }
+.oc-chip--err { color: var(--oc-danger); border-color: var(--oc-danger); }
+
+/* Approval card: title bar with // heading, reason, preview, actions. */
+.oc-approval {
+  position: relative; margin: 8px 0; background: var(--oc-panel);
+  border: var(--oc-bw-strong) solid var(--oc-border-strong); border-radius: var(--oc-r-sm);
+}
+.oc-approval--protected { border-color: var(--oc-danger); }
+.oc-approval__bar {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--oc-text); color: var(--oc-bg);
+  font-family: var(--oc-font-head), system-ui, sans-serif; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.oc-approval__heading::before { content: "// "; }
+.oc-badge--protected {
+  margin-left: auto; padding: 1px 6px; border-radius: var(--oc-r-xs);
+  background: var(--oc-danger); color: var(--oc-bg); font-size: 10px; letter-spacing: 0.08em;
+}
+.oc-approval__body { display: grid; gap: 8px; padding: 10px; }
+.oc-approval__reason { color: var(--oc-sub); font-size: 12px; }
+.oc-preview {
+  margin: 0; max-height: 160px; overflow: auto; padding: 8px; background: var(--oc-code); color: var(--oc-code-text);
+  font-family: var(--oc-font-mono); font-size: 12px; white-space: pre;
+  border-radius: var(--oc-r-xs);
+}
+.oc-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+/* Buttons. Primary is a filled accent with accent-text on it. */
+.oc-btn {
+  min-height: 28px; padding: 5px 12px; font: inherit; font-size: 12px; color: var(--oc-text);
+  background: var(--oc-panel2); border: var(--oc-bw-strong) solid var(--oc-border-strong);
+  border-radius: var(--oc-r-sm); cursor: pointer;
+}
+.oc-btn--primary { background: var(--oc-accent); border-color: var(--oc-accent); color: var(--oc-accent-text); font-weight: 600; }
+/* Focus ring uses accent-ink: accent2 is near-white yellow on light backgrounds (about 1.1:1). */
+.oc-btn:focus-visible, .oc-send:focus-visible, .oc-input:focus-visible { outline: 2px solid var(--oc-accent-ink); outline-offset: 2px; }
+.oc-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Diff lines: tinted row with a coloured bar; text stays --oc-text. */
+.oc-diff {
+  margin: 0; overflow-x: auto; font-family: var(--oc-font-mono);
+  font-size: 12px; white-space: pre;
+}
+.oc-diff__line { padding: 0 8px; border-left: 3px solid transparent; color: var(--oc-text); }
+.oc-diff__line--add { border-left-color: var(--oc-diff-add); background: color-mix(in srgb, var(--oc-diff-add) 16%, transparent); }
+.oc-diff__line--del { border-left-color: var(--oc-diff-del); background: color-mix(in srgb, var(--oc-diff-del) 16%, transparent); }
+
+/* Input row: bracketed field, round send button with an accent ring when ready. */
+.oc-input-row {
+  display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px;
+  background: var(--oc-panel); border-top: var(--oc-bw-strong) solid var(--oc-border-strong);
+}
+.oc-input-wrap { position: relative; flex: 1; min-width: 0; }
+.oc-input {
+  display: block; width: 100%; min-height: 36px; max-height: 160px; padding: 8px 10px; font: inherit;
+  color: var(--oc-text); background: var(--oc-input); border: var(--oc-bw-base) solid var(--oc-border-strong);
+  border-radius: var(--oc-r-sm); resize: none;
+}
+.oc-send {
+  flex: none; width: 36px; height: 36px; padding: 0; color: var(--oc-bg); background: var(--oc-text);
+  border: none; border-radius: var(--oc-r-pill); cursor: pointer;
+}
+.oc-send--ready { box-shadow: 0 0 0 2px var(--oc-accent); }
+.oc-send:disabled { opacity: 0.4; cursor: default; }
+
+/* One-shot enter: plays once. Off under reduced motion and when decorations are off. */
+@keyframes oc-enter { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+.oc-enter {
+  animation-name: oc-enter; animation-duration: var(--oc-dur-2); animation-timing-function: var(--oc-ease);
+  animation-iteration-count: 1; animation-fill-mode: both;
+}
+@media (prefers-reduced-motion: reduce) { .oc-enter { animation: none; } }
+body[data-oc-decor="off"] .oc-enter { animation: none; }
+
+/* Narrow webview (< 480px): fewer decorations, tighter layout. */
+body[data-oc-narrow] .oc-msg--user { margin-left: 8px; }
+body[data-oc-narrow] .oc-tool { grid-template-columns: minmax(0, 1fr) auto; }
+body[data-oc-narrow] .oc-track, body[data-oc-narrow] .oc-header__status { display: none; }
+
+/* High contrast: VS Code theme colours, 1px solid frames, no decor.
+ * !important lets these beat the mode-specific token blocks whatever their selector. */
+body.vscode-high-contrast, body.vscode-high-contrast-light {
+  --oc-bg: var(--vscode-editor-background) !important;
+  --oc-panel: var(--vscode-editor-background) !important;
+  --oc-panel2: var(--vscode-editor-background) !important;
+  --oc-bot-bubble: var(--vscode-editor-background) !important;
+  --oc-user-bubble: var(--vscode-editor-background) !important;
+  --oc-code: var(--vscode-editor-background) !important;
+  --oc-input: var(--vscode-input-background, var(--vscode-editor-background)) !important;
+  --oc-text: var(--vscode-foreground) !important;
+  --oc-code-text: var(--vscode-foreground) !important;
+  --oc-sub: var(--vscode-descriptionForeground, var(--vscode-foreground)) !important;
+  --oc-accent: var(--vscode-focusBorder) !important;
+  --oc-accent-ink: var(--vscode-focusBorder) !important;
+  --oc-accent2: var(--vscode-focusBorder) !important;
+  --oc-accent-text: var(--vscode-editor-background) !important;
+  --oc-border: var(--vscode-contrastBorder, var(--vscode-foreground)) !important;
+  --oc-border-strong: var(--vscode-contrastBorder, var(--vscode-foreground)) !important;
+  --oc-danger: var(--vscode-errorForeground) !important;
+  --oc-warn: var(--vscode-editorWarning-foreground, var(--vscode-foreground)) !important;
+  --oc-good: var(--vscode-testing-iconPassed, var(--vscode-foreground)) !important;
+  --oc-diff-add: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-foreground)) !important;
+  --oc-diff-del: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-foreground)) !important;
+  --oc-bw-base: 1px !important;
+  --oc-bw-strong: 1px !important;
+  --oc-bracket: 0px !important;
+  background-image: none;
+}

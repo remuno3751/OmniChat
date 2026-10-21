@@ -17,9 +17,12 @@ CREATE TABLE IF NOT EXISTS tool_grants (
 `);
   addColumn(db, "messages", "tool_calls", "TEXT");
   addColumn(db, "messages", "sources", "TEXT");
+  addColumn(db, "messages", "guard_blocked", "TEXT");
   addColumn(db, "conversations", "tools", "TEXT");
   addColumn(db, "conversations", "search_mode", "TEXT");
   addColumn(db, "conversations", "context_overflow", "TEXT");
+  // VS Code bridge approval mode (manual | auto | full); NULL = manual. Never reset automatically.
+  addColumn(db, "conversations", "approval_mode", "TEXT");
   addColumn(db, "projects", "tools", "TEXT");
   addColumn(db, "projects", "search_mode", "TEXT");
   // one-time default: web search pre-approved for existing accounts (a later revoke sticks because of the marker row)

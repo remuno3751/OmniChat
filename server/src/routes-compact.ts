@@ -1,3 +1,4 @@
+import { isAgentBridgeKind } from "./agent-kinds.js";
 import { getUsableProviderRow, modelDenied } from "./shared-providers.js";
 import type { FastifyInstance } from "fastify";
 import { db, getConversationRow, runEphemeral } from "./db.js";
@@ -49,7 +50,7 @@ export function registerCompactRoutes(app: FastifyInstance): void {
         : db.prepare("SELECT * FROM providers WHERE user_id = ? AND deleted = 0 ORDER BY created_at, seq LIMIT 1").get(userId);
       const prov = found && !found.deleted ? found : undefined;
       if (prov && modelDenied(userId, prov, conv.model || prov.model || "")) throw new AuthError("This model is not allowed for your account", 403);
-      if (conv.mode === "code" || prov?.kind === "dsh-bridge") throw bad("Not available for code chats");
+      if (conv.mode === "code" || isAgentBridgeKind(prov?.kind)) throw bad("Not available for code chats");
       if (isGenerating(id)) throw new AuthError("A reply is being generated", 409);
       const result = await compactConversation(userId, conv, { instructions, keepTurns });
       if (eph) touchEphemeral(id);

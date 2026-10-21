@@ -10,6 +10,7 @@ import { Btn, Field, MenuSheet, useDevMode } from '../ui/kit';
 import type { MenuEntry } from '../ui/kit';
 import { toast } from '../ui/toast';
 import MetricsLine from './MetricsLine';
+import GuardBlockedNotice from './GuardBlockedNotice';
 import { SourceSheet, SourcesList, useCitationSheet } from './Sources';
 import Markdown from './Markdown';
 import { useStreamText } from '../ui/streamText';
@@ -132,6 +133,7 @@ export default function MessageView({ m, sibIndex, sibTotal, onSwitch, canBranch
         ) : m.content ? <MessageContent text={m.content.replace(/^\s+/, '')} t={t} sources={user ? null : m.sources} onCite={cite.open} streaming={m.status === 'streaming'} /> : null}
         {m.attachments?.length ? <AttachmentList attachments={m.attachments} /> : null}
         {!user && <SourcesList sources={m.sources} highlight={cite.src?.index} />}
+        {!user && <GuardBlockedNotice items={m.guardBlocked} />}
         {m.status === 'streaming' && (!!m.content || !m.reasoning) && <ActivityIndicator size="small" color={t.accentInk} style={{ alignSelf: 'flex-start', marginTop: m.content ? 6 : 0 }} />}
         {m.status === 'stopped' && <Text style={{ color: t.sub, fontSize: 12, marginTop: 4 }}>{tr('msg.statusStopped')}</Text>}
         {m.status === 'error' && <Text style={{ color: t.danger, fontSize: 12, marginTop: 4 }}>{tr('msg.statusError')}</Text>}

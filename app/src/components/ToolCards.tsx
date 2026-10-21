@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { ToolCall, ToolCallStatus, ToolPermission } from '../protocol';
 import { PERM_LABEL, permDanger } from '../toolState';
+import { decidedByLabel } from '../approvalMode';
 import { Theme, useTheme, useThemeDef } from '../theme';
 import { useT } from '../i18n';
 import Icon from './Icon';
@@ -71,6 +72,7 @@ function ToolCard({ call }: { call: ToolCall }) {
   const bad = call.status === 'error' || call.status === 'denied';
   const err = call.error || (bad && !call.result ? (call.status === 'denied' ? tr('tool.deniedByUser') : tr('tool.failed')) : '');
   const args = shortArgs(call.arguments);
+  const decided = decidedByLabel(call.decidedBy);
   return (
     <View style={[styles.card, { borderColor: bad ? t.danger : t.border, backgroundColor: t.bg, borderRadius: th.r(10) }]}>
       <Pressable
@@ -97,6 +99,7 @@ function ToolCard({ call }: { call: ToolCall }) {
           <View style={[styles.pre, { backgroundColor: t.code, borderRadius: th.r(6) }]}>
             <Text selectable style={[styles.preText, { color: t.codeText }]}>{prettyJson(call.arguments)}</Text>
           </View>
+          {!!decided && <Text style={{ color: t.sub, fontSize: 11, marginTop: 6 }}>{tr(decided.key, decided.params)}</Text>}
           {!!err && (
             <>
               <Text style={[styles.cap, { color: t.danger }]}>{call.status === 'denied' ? tr('tool.denied') : tr('status.error')}</Text>

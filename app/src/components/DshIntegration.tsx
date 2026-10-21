@@ -135,7 +135,8 @@ export function DshIntegration() {
       try {
         const r = await api.bridges();
         if (!alive) return;
-        setBridges(Array.isArray(r?.bridges) ? r.bridges : []);
+        // VS Code extension bridges have their own card
+        setBridges(Array.isArray(r?.bridges) ? r.bridges.filter((b) => (b.kind ?? 'dsh') === 'dsh') : []);
         setErr(null);
       } catch (e: any) {
         if (!alive) return;

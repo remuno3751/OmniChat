@@ -1,0 +1,157 @@
+/* OmniChat Frontier skin, chat view part 1: header, status, messages, markdown, code and thinking.
+   Loaded after chat*.css and tokens.css. Every selector is scoped to :root[data-oc-theme="frontier"].
+   Colours come only from --oc-* tokens. Decorations (corner brackets, ticks, top line, hatch, "// "
+   ornaments, entry motion) render only under body[data-oc-decor="on"] and never in narrow panels.
+   Shape changes (square corners, 1px/2px borders, left bars, caps labels) apply regardless of decor.
+   Part 2 (composer, pickers, history, cards, approvals, banners, pairing) is in skin-frontier-chat2.css. */
+
+/* ---------- Header ---------- */
+:root[data-oc-theme="frontier"] .ch-header {
+  gap: 8px; padding: 9px 12px; background: var(--oc-bg); color: var(--oc-text);
+  border-bottom: var(--oc-bw-strong) solid var(--oc-border-strong);
+}
+:root[data-oc-theme="frontier"] .ch-header__title {
+  font-family: var(--oc-font-head); font-size: 11px; font-weight: 700; line-height: 1.4;
+  letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-text);
+}
+:root[data-oc-theme="frontier"] .ch-iconbtn {
+  width: 28px; height: 28px; border-radius: 0; background: var(--oc-bg); color: var(--oc-sub);
+  border: var(--oc-bw-base) solid var(--oc-border-strong);
+  transition: background-color var(--oc-dur-1) var(--oc-ease), color var(--oc-dur-1) var(--oc-ease), border-color var(--oc-dur-1) var(--oc-ease);
+}
+:root[data-oc-theme="frontier"] .ch-iconbtn:hover { background: var(--oc-panel2); color: var(--oc-text); border-color: var(--oc-text); }
+:root[data-oc-theme="frontier"] .ch-iconbtn[aria-expanded="true"] {
+  background: var(--oc-accent); color: var(--oc-accent-text); border-color: var(--oc-accent);
+}
+:root[data-oc-theme="frontier"] .ch-iconbtn:focus-visible { outline: var(--oc-bw-base) solid var(--oc-accent); outline-offset: 2px; }
+
+/* Status chip: square tag with a square dot. */
+:root[data-oc-theme="frontier"] .ch-status {
+  border-radius: 0; padding: 2px 7px; gap: 6px; border: var(--oc-bw-base) solid var(--oc-border-strong);
+  font-size: 9.5px; line-height: 14px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub);
+}
+:root[data-oc-theme="frontier"] .ch-status__dot { border-radius: 0; width: 6px; height: 6px; }
+
+/* ---------- Message list and bubbles ---------- */
+:root[data-oc-theme="frontier"] .cm-msg {
+  position: relative; border-radius: 0; color: var(--oc-text);
+}
+:root[data-oc-theme="frontier"] .cm-msg--user {
+  background: var(--oc-user-bubble); border: var(--oc-bw-base) solid var(--oc-border-strong);
+  border-left: 3px solid var(--oc-border-strong);
+}
+:root[data-oc-theme="frontier"] .cm-msg--assistant {
+  background: var(--oc-bot-bubble); border: var(--oc-bw-base) solid var(--oc-border);
+  border-left: 3px solid var(--oc-accent-ink);
+}
+:root[data-oc-theme="frontier"] .cm-status {
+  font-size: 10px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub);
+}
+:root[data-oc-theme="frontier"] .cm-status--error { color: var(--oc-danger); }
+:root[data-oc-theme="frontier"] .cm-status--stopped { color: var(--oc-warn); }
+:root[data-oc-theme="frontier"] .cm-status-line {
+  font-size: 10px; line-height: 1.5; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub);
+}
+:root[data-oc-theme="frontier"] .cm-typing span { border-radius: 0; background: var(--oc-accent-ink); }
+
+/* Entry motion: one short slide from the left, only on newly created rows (rows are keyed). */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cm-row {
+  animation: ocf-wipe var(--oc-dur-2) var(--oc-ease) 1 both;
+}
+@keyframes ocf-wipe {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Decor: assistant bubbles get a filled accent tick top-right and a bracket bottom-right. */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cm-msg--assistant::before {
+  content: ""; position: absolute; top: -1px; right: -1px; width: 6px; height: 6px;
+  background: var(--oc-accent-ink); pointer-events: none;
+}
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cm-msg--assistant::after {
+  content: ""; position: absolute; bottom: -4px; right: -4px; width: var(--oc-bracket); height: var(--oc-bracket);
+  border-right: var(--oc-bw-base) solid var(--oc-border-strong); border-bottom: var(--oc-bw-base) solid var(--oc-border-strong);
+  pointer-events: none;
+}
+
+/* Decor: header gets a short accent line on the top edge and a hatch strip along the bottom edge. */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .ch-header { position: relative; }
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .ch-header::before {
+  content: ""; position: absolute; top: 0; left: 0; width: 40px; height: 2px;
+  background: var(--oc-accent); pointer-events: none;
+}
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .ch-header::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 3px; pointer-events: none;
+  background-image: repeating-linear-gradient(135deg, var(--oc-border-strong) 0 1px, transparent 1px 5px);
+  opacity: 0.5;
+}
+
+/* ---------- Markdown (mirrors app/src/components/Markdown.tsx in Frontier) ---------- */
+:root[data-oc-theme="frontier"] .cm-md { line-height: calc(1.44 + var(--oc-lh-boost)); }
+:root[data-oc-theme="frontier"] .cm-md > :first-child { margin-top: 0; }
+:root[data-oc-theme="frontier"] .cm-md > :last-child { margin-bottom: 0; }
+/* Headings 1-3: bold body face with a 4px accent block before them (accent in dark, accent2 in light). */
+:root[data-oc-theme="frontier"] .oc-md-h { color: var(--oc-text); }
+:root[data-oc-theme="frontier"] .oc-md-h1, :root[data-oc-theme="frontier"] .oc-md-h2, :root[data-oc-theme="frontier"] .oc-md-h3 { position: relative; padding-left: 12px; }
+:root[data-oc-theme="frontier"] .oc-md-h1::before, :root[data-oc-theme="frontier"] .oc-md-h2::before, :root[data-oc-theme="frontier"] .oc-md-h3::before {
+  content: ""; position: absolute; left: 0; top: 0.3em; width: 4px; height: 0.9em; background: var(--oc-accent);
+}
+:root[data-oc-theme="frontier"][data-oc-mode="light"] .oc-md-h1::before, :root[data-oc-theme="frontier"][data-oc-mode="light"] .oc-md-h2::before,
+:root[data-oc-theme="frontier"][data-oc-mode="light"] .oc-md-h3::before { background: var(--oc-accent2); }
+/* Lists: 01 02 03 in the label face (sub), square bullets. */
+:root[data-oc-theme="frontier"] .cm-md ol { list-style: decimal-leading-zero; padding-left: 28px; }
+:root[data-oc-theme="frontier"] .cm-md ol > li::marker { font-family: var(--oc-font-label); font-variant-numeric: tabular-nums; color: var(--oc-sub); }
+:root[data-oc-theme="frontier"] .cm-md ul { list-style: none; }
+:root[data-oc-theme="frontier"] .cm-md ul > li { position: relative; }
+:root[data-oc-theme="frontier"] .cm-md ul > li::before {
+  content: ""; position: absolute; left: -15px; top: 0.62em; width: 5px; height: 5px; background: var(--oc-sub);
+}
+:root[data-oc-theme="frontier"] .cm-md .oc-md-task::before { content: none; }
+:root[data-oc-theme="frontier"] .oc-md-code { border-radius: 0; padding: 0 4px; background: var(--oc-panel); color: var(--oc-text); border: 0; }
+:root[data-oc-theme="frontier"] .oc-md-link {
+  color: var(--oc-accent-ink); text-decoration: underline; text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--oc-accent-ink) 50%, transparent);
+}
+:root[data-oc-theme="frontier"] .oc-md-table { border-radius: 0; }
+:root[data-oc-theme="frontier"] .oc-md-table th, :root[data-oc-theme="frontier"] .oc-md-table td { border: var(--oc-bw-base) solid var(--oc-border); border-radius: 0; }
+:root[data-oc-theme="frontier"] .oc-md-table th { background: var(--oc-panel2); color: var(--oc-text); border-bottom: var(--oc-bw-strong) solid var(--oc-border-strong); }
+:root[data-oc-theme="frontier"] .oc-md-task { list-style: none; }
+:root[data-oc-theme="frontier"] .oc-md-check {
+  display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px;
+  margin-right: 6px; vertical-align: -1px; border-radius: 0; font-size: 10px; line-height: 1;
+  border: var(--oc-bw-base) solid var(--oc-border-strong); background: transparent; color: var(--oc-accent-text);
+}
+:root[data-oc-theme="frontier"] .oc-md-check--on { background: var(--oc-accent); border-color: var(--oc-accent); }
+
+/* ---------- Code blocks: square, no frame; caps label, outlined Copy ---------- */
+:root[data-oc-theme="frontier"] .oc-code { border-radius: 0; border: 0; background: var(--oc-code); }
+:root[data-oc-theme="frontier"] .oc-code__bar { background: transparent; }
+:root[data-oc-theme="frontier"] .oc-code__lang { font-size: 10px; }
+:root[data-oc-theme="frontier"] .oc-code__copy:focus-visible { outline: var(--oc-bw-base) solid var(--oc-accent); outline-offset: 1px; }
+:root[data-oc-theme="frontier"] .oc-code__pre { color: var(--oc-code-text); border-radius: 0; }
+
+/* ---------- Thinking block: hairline dashed rule and a caps summary ---------- */
+:root[data-oc-theme="frontier"] .cc-think {
+  border-radius: 0; border-left: var(--oc-bw-base) dashed var(--oc-border-strong); padding-left: 10px;
+}
+:root[data-oc-theme="frontier"] .cc-think__summary {
+  font-size: 9.5px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub);
+}
+:root[data-oc-theme="frontier"] .cc-think__summary:hover { color: var(--oc-text); }
+
+/* ---------- Forced colours and reduced motion ---------- */
+@media (forced-colors: active) {
+  :root[data-oc-theme="frontier"] *::before,
+  :root[data-oc-theme="frontier"] *::after {
+    content: none !important; display: none !important; background-image: none !important;
+  }
+  :root[data-oc-theme="frontier"] .cm-row { animation: none !important; }
+  :root[data-oc-theme="frontier"] .oc-code__lang { background: transparent; border: var(--oc-bw-base) solid; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-oc-theme="frontier"] .cm-row,
+  :root[data-oc-theme="frontier"] .ch-iconbtn,
+  :root[data-oc-theme="frontier"] .oc-code__copy {
+    animation: none !important; transition: none !important;
+  }
+}

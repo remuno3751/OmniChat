@@ -38,6 +38,7 @@
       'settings.searxng': 'SearXNG の URL',
       'settings.searxngHint': '空欄で無効になります。例: http://localhost:8888',
       'settings.searchAdvanced': '内蔵エンジン、Brave / Tavily の API キー、フォールバックは検索設定で管理されます（ここでは参照のみ）',
+      'settings.searchPerUser': '検索モデル、サイト数の上限、ドメインの許可・拒否リスト、ページ読み取り、画像、インジェクション防止は、各ユーザーのアプリの「設定 > Web検索」で設定します。検索モードは「オフ」「スマート」（モデルが検索の要否とクエリを判断）「常に」（毎回検索）から選びます。',
       'settings.searchCurrent': '現在の検索設定',
       'settings.searchNone': '検索設定を取得できませんでした',
       'settings.testTitle': 'テスト検索',
@@ -100,6 +101,7 @@
       'settings.searxng': 'SearXNG URL',
       'settings.searxngHint': 'Leave empty to disable. Example: http://localhost:8888',
       'settings.searchAdvanced': 'The built-in engine, Brave / Tavily API keys and fallback are managed in the search configuration (read-only here).',
+      'settings.searchPerUser': 'Per-user options (search model, site limits, domain allow/deny lists, page reading, images, injection guard) are set in each user\'s app under Settings > Web search. Search modes: Off, Smart (the model decides when to search and writes the query), Always (every message is searched).',
       'settings.searchCurrent': 'Current search configuration',
       'settings.searchNone': 'The search configuration is unavailable.',
       'settings.testTitle': 'Test search',
@@ -299,6 +301,7 @@
 
       c.body.appendChild(OC.field(t('settings.searxng'), urlIn, t('settings.searxngHint'), 'set-searxng'));
       c.body.appendChild(h('p', { cls: 'hint', text: t('settings.searchAdvanced') }));
+      c.body.appendChild(h('p', { cls: 'hint', text: t('settings.searchPerUser') }));
       c.body.appendChild(h('h3', { text: t('settings.searchCurrent') }));
       c.body.appendChild(search && typeof search === 'object' ? kvList(search) : h('p', { cls: 'hint', text: t('settings.searchNone') }));
 

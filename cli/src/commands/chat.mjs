@@ -34,7 +34,7 @@ export async function chatCommand(ctx, pos) {
   const f = ctx.flags;
   if (f.conv && f.new) throw new UsageError("--conv and --new are mutually exclusive");
   oneOf(f.effort, ["low", "medium", "high", "max"], "effort");
-  oneOf(f.search, ["off", "auto", "always"], "search");
+  oneOf(f.search, ["off", "smart", "auto", "always"], "search");
   oneOf(f.approve, ["once", "always", "deny"], "approve");
   const message = await readMessage(ctx, pos);
   requireAuth(ctx);
@@ -85,7 +85,8 @@ export async function chatCommand(ctx, pos) {
   }
   if (project) body.projectId = project.id;
   if (f.system != null) body.systemPrompt = f.system;
-  if (f.search) body.searchMode = f.search;
+  // "auto" is a deprecated alias of "smart" (the server accepts it too).
+  if (f.search) body.searchMode = f.search === "auto" ? "smart" : f.search;
   if (!existing || Object.keys(body).length > 0) {
     await api(ctx, "PUT", `/conversations/${convId}`, { body });
   }

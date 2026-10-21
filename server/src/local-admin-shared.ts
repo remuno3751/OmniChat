@@ -1,6 +1,7 @@
 // Shared providers and per-user model grants for the server app (loopback + local-admin token, see local-admin.ts).
 // Same contract and validation as the admin API in routes-admin.ts (docs/PROTOCOL-v7-shared-providers.md),
 // with the same audit rows. Local calls have no user account behind them, so the audit rows name this actor.
+import { isAgentBridgeKind } from "./agent-kinds.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { AuthError } from "./auth.js";
 import { recordAudit, updateGeneral, getGeneral } from "./admin-core.js";
@@ -46,7 +47,7 @@ export function registerLocalAdminShared(app: FastifyInstance): void {
     if (typeof b.shared !== "boolean") throw new AuthError("shared must be a boolean", 400);
     const row = getProviderRow(id);
     if (!row || row.deleted || !isAdminUser(row.user_id)) throw new AuthError("Provider not found", 404);
-    if (row.kind === "dsh-bridge") throw new AuthError("A dsh-bridge provider cannot be shared", 400);
+    if (isAgentBridgeKind(row.kind)) throw new AuthError(`A ${row.kind} provider cannot be shared`, 400);
     const before = !!row.shared;
     if (before !== b.shared) {
       db.prepare("UPDATE providers SET shared = ?, seq = ? WHERE id = ?").run(b.shared ? 1 : 0, nextSeq(), id);

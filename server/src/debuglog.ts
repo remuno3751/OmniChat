@@ -16,7 +16,7 @@ export interface DebugRecord {
     /** tool calling: tools offered, rounds used and a compact trace of the calls */
     tools?: { mode: string; offered: string[]; rounds: number; calls: { name: string; status: string; durationMs?: number; error?: string }[]; fellBackToAlways?: boolean };
     /** server-side search: mode, query actually used, whether results were injected, sources count, error */
-    search?: { mode: string; query?: string; injected: boolean; sources: number; error?: string };
+    search?: { mode?: string; query?: string; injected?: boolean; sources?: number; error?: string; [k: string]: unknown };
   };
   response: { status: number | string | null; finishReason?: string | null; usage?: unknown; timings?: unknown; raw?: unknown; logprobs?: unknown };
   createdAt: number;

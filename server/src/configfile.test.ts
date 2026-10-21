@@ -79,7 +79,7 @@ test("import merges by name, reports counts and skipped entries", async () => {
   assert.equal(research.systemPrompt, "Updated prompt");
   assert.equal(research.effort, "max");
   assert.equal(research.defaultModel, "Local LM::gemma", "kept");
-  assert.equal(list.projects.find((p: any) => p.name === "Fresh").searchMode, "auto");
+  assert.equal(list.projects.find((p: any) => p.name === "Fresh").searchMode, "smart", "an imported auto is stored as smart");
   assert.equal(list.settings.systemPrompt, "imported");
   assert.equal(list.presets.length, 2);
   assert.equal(list.benchSets.length, 1);
@@ -128,4 +128,22 @@ test("replace mode removes what the file does not mention", async () => {
   assert.ok(r.json.removed.projects >= 2);
   const names = (await api(s.base, "GET", "/config/export?format=json", undefined, tokA)).json.projects.map((p: any) => p.name);
   assert.deepEqual(names, ["Only me"]);
+});
+
+test("search settings round-trip: searchModel is exported by provider name and imported back by id", async () => {
+  await api(s.base, "PUT", "/settings", { search: { searchModel: `${provA}::gemma`, maxSites: 9, allowDomains: ["Example.com"] } }, tokA);
+  const cfg = (await api(s.base, "GET", "/config/export?format=json", undefined, tokA)).json;
+  assert.equal(cfg.settings.search.searchModel, "Local LM::gemma");
+  assert.equal(cfg.settings.search.maxSites, 9);
+  assert.deepEqual(cfg.settings.search.allowDomains, ["example.com"]);
+  assert.ok(!JSON.stringify(cfg).includes(provA), "no provider ids");
+  await api(s.base, "PUT", "/settings", { search: { searchModel: null, maxSites: 5, allowDomains: [] } }, tokA);
+  const r = await api(s.base, "POST", "/config/import", { format: "json", content: JSON.stringify({ version: 1, settings: { search: cfg.settings.search } }) }, tokA);
+  assert.equal(r.status, 200, r.text);
+  const back = (await api(s.base, "GET", "/settings", undefined, tokA)).json.search;
+  assert.equal(back.searchModel, `${provA}::gemma`);
+  assert.equal(back.maxSites, 9);
+  assert.deepEqual(back.allowDomains, ["example.com"]);
+  const bad = await api(s.base, "POST", "/config/import", { format: "json", content: JSON.stringify({ version: 1, settings: { search: { searchModel: "Nobody::x" } } }) }, tokA);
+  assert.ok(bad.json.skipped.some((x: string) => /settings\.search\.searchModel/.test(x)));
 });

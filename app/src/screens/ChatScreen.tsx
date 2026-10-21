@@ -24,6 +24,10 @@ import { onComposerInsert, takePendingInsert } from '../tips/composerBus';
 import ContextBar, { OverflowBanner } from '../components/ContextBar';
 import { ModelLoadStatus, useModelLoadBusy } from '../components/ModelLoadStatus';
 import CheckpointsBar from '../components/CheckpointsBar';
+import { ApprovalModeSwitch, FullAccessDialog, useApprovalMode } from '../components/ApprovalModeSwitch';
+import { approvalModeOfAction } from '../approvalMode';
+import { isAgentBridgeKind } from '../codeGroups';
+import { takePendingCodeStart } from '../vscodeBridge';
 import LatencyBadge from '../components/LatencyBadge';
 import DebugSheet from '../components/DebugSheet';
 import type { DebugTab } from '../components/DebugSheet';
@@ -59,6 +63,7 @@ import { useBridges } from '../useBridges';
 import { changeDevice, codeDevices, cwdToSend, pickerAvailable, workspaceOptions } from '../codeWorkspace';
 import type { WorkspaceChoice } from '../codeWorkspace';
 import { toast } from '../ui/toast';
+import { useLayoutEpoch } from '../ui/layoutEpoch';
 import { BACK_PRIORITY } from '../backHandler';
 import { useBack } from '../ui/useBack';
 import { createFreshTracker } from '../ui/msgFresh';
@@ -127,6 +132,8 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
   const artifactCtx = useMemo(() => ({ open: setArtifact }), []);
   const { width } = useWindowDimensions();
   const wide = width >= 900;
+  // foldables: after a fold/unfold the native layout of some rows can stay computed for the old size; remount the list once the size settles
+  const layoutEpoch = useLayoutEpoch(width);
   const panelWidth = Math.min(640, Math.max(380, Math.round(width * 0.44)));
   const { groups } = useModelGroups();
   const scroller = useRef<ScrollView>(null);
@@ -165,6 +172,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
   useEffect(() => { setCardState({ cid: convId, list: [] }); }, [convId]);
   const cards = cardState.cid === convId ? cardState.list : [];
   const [pickerToken, setPickerToken] = useState(0);
+  const approvalCtl = useApprovalMode(conv);
 
   const sel: ModelSel | null = useMemo(() => {
     if (conv) return conv.providerId ? { providerId: conv.providerId, model: conv.model } : null;
@@ -173,15 +181,15 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
       return { providerId: project.defaultProviderId, model: project.defaultModel };
     }
     if (!conv && draftMode === 'code') {
-      const bridge = providers.find((p) => p.kind === 'dsh-bridge');
+      const bridge = providers.find((p) => isAgentBridgeKind(p.kind));
       if (bridge) {
         const g = groups?.find((x) => x.providerId === bridge.id);
         return { providerId: bridge.id, model: g?.defaultModel ?? g?.models[0]?.id ?? (bridge.model || null) };
       }
     }
     const lastP = lastSel ? providers.find((p) => p.id === lastSel.providerId) : undefined;
-    if (lastSel && lastP && (draftMode === 'code') === (lastP.kind === 'dsh-bridge')) return lastSel;
-    const p = (draftMode === 'code' ? providers[0] : providers.find((x) => x.kind !== 'dsh-bridge')) ?? providers[0];
+    if (lastSel && lastP && (draftMode === 'code') === isAgentBridgeKind(lastP.kind)) return lastSel;
+    const p = (draftMode === 'code' ? providers[0] : providers.find((x) => !isAgentBridgeKind(x.kind))) ?? providers[0];
     if (!p) return null;
     const g = groups?.find((x) => x.providerId === p.id);
     return { providerId: p.id, model: g?.defaultModel ?? g?.models[0]?.id ?? (p.model || null) };
@@ -194,15 +202,25 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
   const devices = useMemo(() => codeDevices(providers, bridges), [providers, bridges]);
   const device = devices.find((d) => d.providerId === sel?.providerId);
   const wsOptions = useMemo(
-    () => (isCode && device ? workspaceOptions(device.name, bridges, Object.values(convsMap), providersMap) : []),
+    () => (isCode && device ? workspaceOptions(device.name, bridges, Object.values(convsMap), providersMap, device.kind) : []),
     [isCode, device, bridges, convsMap, providersMap],
   );
   const [draftCwd, setDraftCwd] = useState<string | null>(null);
   useEffect(() => { setDraftCwd(null); }, [convId]);
+  // Code tab "VS Code" section: a tapped workspace starts this draft on that PC (vscode-bridge provider) in that folder
+  useEffect(() => {
+    if (conv || draftMode !== 'code') return;
+    const start = takePendingCodeStart();
+    if (!start) return;
+    const p = providers.find((x) => x.id === start.providerId);
+    if (!p) return;
+    setPending({ providerId: p.id, model: p.model || null });
+    setDraftCwd(start.cwd);
+  }, [convId]); // eslint-disable-line react-hooks/exhaustive-deps
   /** an ephemeral chat sent to a provider outside the local network: the provider may keep the text */
   // a shared provider has no URL here: it runs on the server for someone else, so it counts as remote
   const ephRemote = eph && !!provider && (provider.baseUrl ? isRemoteProviderUrl(provider.baseUrl) : provider.readOnly === true);
-  const linear = provider?.kind === 'dsh-bridge';
+  const linear = isAgentBridgeKind(provider?.kind);
   const canBranch = v3 && !linear;
   const unsupported = selectedModelInfo(groups, sel, provider?.model)?.effort === 'unsupported';
   const chatEffort = conv ? conv.effort ?? null : draftEffort;
@@ -212,7 +230,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
     const p = providers.find((x) => x.id === providerId);
     const g = groups?.find((x) => x.providerId === providerId);
     const d = devices.find((x) => x.providerId === providerId);
-    const opts = d ? workspaceOptions(d.name, bridges, Object.values(convsMap), providersMap) : [];
+    const opts = d ? workspaceOptions(d.name, bridges, Object.values(convsMap), providersMap, d.kind) : [];
     const next: WorkspaceChoice = changeDevice({ providerId: sel?.providerId ?? null, cwd: draftCwd }, providerId, opts);
     setDraftCwd(next.cwd);
     void choose({ providerId, model: g?.defaultModel ?? g?.models[0]?.id ?? (p?.model || null) });
@@ -343,8 +361,9 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
     if (id === 'new_session') { onNewChat(); return; }
     const mode = searchModeOf(id);
     if (mode) { void pinSearch(mode); toast(tr('chat.searchSet', { mode }), 'ok'); return; }
-    // approval mode has no server hook yet, so it only tells the user
-    if (id.startsWith('approval_mode:')) toast(tr('chat.approvalModeNote'), 'info');
+    // ask|rules are older names of manual|auto
+    const am = approvalModeOfAction(id);
+    if (am) approvalCtl.requestMode(am);
   };
 
   const pickSlash = (e: SlashEntry) => {
@@ -368,9 +387,19 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
     setVarForm(null);
   };
 
+  // IME: the Enter that confirms a conversion must not send. Safari/WebKit (Mac) fires compositionend before the key event, so isComposing is already false there.
+  const imeEnd = useRef(0);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const end = () => { imeEnd.current = Date.now(); };
+    document.addEventListener('compositionend', end, true);
+    return () => document.removeEventListener('compositionend', end, true);
+  }, []);
+
   const onKeyPress = (e: any) => {
     if (Platform.OS !== 'web') return;
     const k = e.nativeEvent.key;
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229 || (k === 'Enter' && Date.now() - imeEnd.current < 150)) return;
     const shift = e.nativeEvent.shiftKey;
     // the menu takes these keys before the Enter-to-send logic below
     if (slashOpen) {
@@ -454,6 +483,8 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
           openToken={pickerToken}
         />
       </View>
+      {conv?.mode === 'code' && !eph && <ApprovalModeSwitch conv={conv} busy={approvalCtl.busy} onSelect={approvalCtl.requestMode} />}
+      <FullAccessDialog state={approvalCtl.dialog} onToggle={approvalCtl.toggleCheck} onCancel={approvalCtl.cancel} onConfirm={approvalCtl.confirm} />
       {maintView.show && <MaintenanceBanner view={maintView} />}
       {eph && (
         <View style={[styles.ephBar, { borderColor: t.border }]}>
@@ -465,6 +496,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
       {eph && !ephBannerSeen && <EphemeralBanner minutes={idleMinutes} onDismiss={() => setDevice({ ephemeralBannerSeen: true })} />}
       {jump.banner}
       <ScrollView
+        key={`list-${layoutEpoch}`}
         ref={scroller}
         style={{ flex: 1 }}
         contentContainerStyle={[styles.list, { maxWidth: messageWidth }]}

@@ -1,6 +1,7 @@
 /* Attachments on the chat path (docs/PROTOCOL-v7-attachments.md "LLM に渡す内容").
    Turns the attachments of user messages into the text notes / image parts the model receives.
    A message without attachments is never touched: its body stays the plain string. */
+import { isAgentBridgeKind } from "./agent-kinds.js";
 import type { ContentPart } from "./providers/index.js";
 import { attachmentsForMessage, loadAttachmentForModel, type AttachmentRecord } from "./attachments.js";
 import { readAttachmentSettings } from "./attachments-settings.js";
@@ -56,7 +57,7 @@ export async function buildWire(
     for (const r of rs) if (r.kind === "image" && r.status === "ready") hasImage = true;
   }
   if (!recs.size) return out;
-  const bridge = providerKind === "dsh-bridge";
+  const bridge = isAgentBridgeKind(providerKind);
   // Code: the whole message's document text is held to the same limit as one document (extractMaxChars).
   const codeBudget = bridge ? readAttachmentSettings().extractMaxChars : 0;
   const sendImages = hasImage && !bridge && canSendImages(await getVision(), providerKind);

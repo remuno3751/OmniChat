@@ -1,38 +1,33 @@
 import type { Palette, ThemeDef } from './types';
 
-const extra = { panel2: '', borderStrong: '', accentInk: '', accent2: '', notify: '', scrim: 'rgba(0,0,0,0.45)', diffAdd: '', diffDel: '' };
-const fill = (p: Omit<Palette, keyof typeof extra>, e: Partial<typeof extra> = {}): Palette => ({
-  ...p,
-  panel2: e.panel2 ?? p.panel,
-  borderStrong: e.borderStrong ?? p.border,
-  accentInk: e.accentInk ?? p.accent,
-  accent2: e.accent2 ?? p.accent,
-  notify: e.notify ?? p.danger,
-  scrim: extra.scrim,
-  diffAdd: p.good,
-  diffDel: p.danger,
-});
-
-const light = fill({
+const light: Palette = {
   bg: '#ffffff', panel: '#f4f4f5', border: '#e4e4e7', text: '#18181b', sub: '#71717a',
   accent: '#10a37f', accentText: '#ffffff', userBubble: '#e3f3ee', botBubble: '#f4f4f5',
   code: '#1e1e2e', codeText: '#e6e6f0', danger: '#dc2626', input: '#ffffff', warn: '#b45309', good: '#15803d',
-});
-const dark = fill({
+  panel2: '#f4f4f5', borderStrong: '#e4e4e7', accentInk: '#10a37f', accent2: '#10a37f',
+  notify: '#dc2626', scrim: 'rgba(0,0,0,0.45)', diffAdd: '#15803d', diffDel: '#dc2626',
+};
+const dark: Palette = {
   bg: '#101012', panel: '#18181b', border: '#2e2e33', text: '#ececf1', sub: '#9a9aa5',
   accent: '#19c37d', accentText: '#04150e', userBubble: '#1d3a31', botBubble: '#1f1f23',
   code: '#0a0a0f', codeText: '#e6e6f0', danger: '#f87171', input: '#1f1f23', warn: '#fbbf24', good: '#4ade80',
-});
-const sepia = fill({
+  panel2: '#18181b', borderStrong: '#2e2e33', accentInk: '#19c37d', accent2: '#19c37d',
+  notify: '#f87171', scrim: 'rgba(0,0,0,0.45)', diffAdd: '#4ade80', diffDel: '#f87171',
+};
+const sepia: Palette = {
   bg: '#f4ecd8', panel: '#ebe2c8', border: '#d6c7a6', text: '#433422', sub: '#7a6a50',
   accent: '#8a5a2b', accentText: '#fffaf0', userBubble: '#e6d6b0', botBubble: '#efe6cf',
   code: '#2b2116', codeText: '#f0e6d2', danger: '#b03a2e', input: '#fbf6e9', warn: '#9a6200', good: '#4f7a2a',
-});
-const contrast = fill({
+  panel2: '#ebe2c8', borderStrong: '#d6c7a6', accentInk: '#8a5a2b', accent2: '#8a5a2b',
+  notify: '#b03a2e', scrim: 'rgba(0,0,0,0.45)', diffAdd: '#4f7a2a', diffDel: '#b03a2e',
+};
+const contrast: Palette = {
   bg: '#000000', panel: '#0a0a0a', border: '#ffffff', text: '#ffffff', sub: '#d4d4d4',
   accent: '#ffd400', accentText: '#000000', userBubble: '#1f1f00', botBubble: '#111111',
   code: '#000000', codeText: '#ffffff', danger: '#ff5c5c', input: '#000000', warn: '#ffd400', good: '#5cff8a',
-});
+  panel2: '#0a0a0a', borderStrong: '#ffffff', accentInk: '#ffd400', accent2: '#ffd400',
+  notify: '#ff5c5c', scrim: 'rgba(0,0,0,0.45)', diffAdd: '#5cff8a', diffDel: '#ff5c5c',
+};
 
 /** The original look. Every token reproduces the previously hard-coded values. */
 export const simple: ThemeDef = {

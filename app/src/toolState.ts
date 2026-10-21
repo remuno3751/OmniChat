@@ -4,6 +4,7 @@ import type { SearchMode, SearchStatus, ToolInfo, ToolPermission } from './proto
 import { wsSend } from './socket';
 import { toast } from './ui/toast';
 import { t } from './i18n';
+import { normalizeSearchMode } from './searchOptions';
 
 /** Read-only map over translated labels: `MAP[k]` is t(prefix + k), or undefined for an unknown k. */
 function labelMap<K extends string>(prefix: string, known: readonly K[]): Record<K, string> {
@@ -17,6 +18,8 @@ export const APPROVAL_TIMEOUT_MS = 120000;
 export interface Approval {
   approvalId: string; messageId: string; conversationId: string; tool: string; arguments: any;
   permissions: ToolPermission[]; receivedAt: number;
+  /** protected item (VS Code bridge): asks every time, no "always allow" */
+  protected?: boolean; reasons?: string[];
 }
 let approvals: Approval[] = [];
 const subs = new Set<() => void>();
@@ -42,7 +45,9 @@ export function clearApprovals() { if (approvals.length) { approvals = []; emit(
 export const useApprovals = () => useSyncExternalStore(subscribe, () => approvals);
 
 export function answerApproval(a: Approval, decision: 'once' | 'always' | 'deny'): boolean {
-  if (!wsSend({ type: 'tool_approval_reply', approvalId: a.approvalId, decision })) {
+  // a protected item is never "always": a stale caller gets a one-time allow
+  const d = a.protected === true && decision === 'always' ? 'once' : decision;
+  if (!wsSend({ type: 'tool_approval_reply', approvalId: a.approvalId, decision: d })) {
     toast(t('approval.notConnected'), 'error');
     return false;
   }
@@ -90,19 +95,19 @@ export const useSearchStatus = searchCache.use;
 export function resetToolCaches() { toolsCache.reset(); searchCache.reset(); }
 
 /* ---------- search mode helpers ---------- */
-const SEARCH_MODES = ['off', 'smart', 'auto', 'always'] as const;
+const SEARCH_MODES = ['off', 'smart', 'always'] as const;
 /** Translated at access time. */
 export const SEARCH_LABEL: Record<SearchMode, string> = labelMap('composer.search.', SEARCH_MODES);
 const SEARCH_HELP_KEYS: Record<SearchMode, string> = {
-  off: 'tool.search.helpOff', smart: 'tool.search.helpSmart', auto: 'composer.search.helpAuto', always: 'composer.search.helpAlways',
+  off: 'tool.search.helpOff', smart: 'tool.search.helpSmart', always: 'composer.search.helpAlways',
 };
 export const SEARCH_HELP: Record<SearchMode, string> = new Proxy({} as Record<SearchMode, string>, {
   get: (_, k) => (typeof k === 'string' && k in SEARCH_HELP_KEYS ? t(SEARCH_HELP_KEYS[k as SearchMode]) : undefined),
 });
 export function resolveSearch(chat: SearchMode | null | undefined, project: SearchMode | null | undefined, global: SearchMode | undefined): { mode: SearchMode; from: 'chat' | 'project' | 'global' | 'default' } {
-  if (chat) return { mode: chat, from: 'chat' };
-  if (project) return { mode: project, from: 'project' };
-  if (global) return { mode: global, from: 'global' };
+  if (chat) return { mode: normalizeSearchMode(chat), from: 'chat' };
+  if (project) return { mode: normalizeSearchMode(project), from: 'project' };
+  if (global) return { mode: normalizeSearchMode(global), from: 'global' };
   return { mode: 'smart', from: 'default' };
 }
 export function resolveTools(chat: string[] | null | undefined, project: string[] | null | undefined, global: string[] | null | undefined): { tools: string[]; from: 'chat' | 'project' | 'global' | 'default' } {

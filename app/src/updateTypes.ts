@@ -98,5 +98,7 @@ export interface UpdateStatus {
   lastApply: ApplyResult | null;
   /** newest omnichat-dsh-bridge tgz found in `latest` */
   plugin: PluginInfo | null;
+  /** newest omnichat-vscode .vsix found in `latest` (absent on an older server) */
+  vsix?: PluginInfo | null;
   isAdmin: boolean;
 }

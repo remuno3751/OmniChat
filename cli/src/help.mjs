@@ -44,7 +44,7 @@ const CMD_HELP = {
   --project NAME [--create-project]  file the conversation under a project
   --conv ID | --new                  continue a conversation (id or unique prefix) or start one
   --effort low|medium|high|max       reasoning effort for this message
-  --search off|auto|always           web search mode for this conversation
+  --search off|smart|always          web search mode (smart = model decides; auto = alias of smart)
   --system "<text>"                  system prompt for this conversation
   --thinking                         print thinking to stderr
   --approve once|always|deny         answer tool approvals without asking (default: deny)

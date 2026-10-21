@@ -335,9 +335,142 @@ fn handle_desktop_url(app: &AppHandle, u: &Url) -> bool {
         go_launcher(app, "change=1");
     } else if let Some(id) = u.path().strip_prefix("/icon/") {
         set_app_icon(app, id, true);
+    } else if let Some(call) = parse_update_call(u) {
+        run_update_call(app, call);
+    } else if let Some((id, target)) = parse_open_external(u) {
+        run_open_external(app, id, target);
     }
     true
 }
+
+/// A request from the web UI's update bridge: https://omnichat-desktop.invalid/update/<op>?id=<n>[&v=<channel>].
+/// The page cannot receive a return value from a cancelled navigation, so the shell answers by calling
+/// `window.__OMNICHAT_DESKTOP__.__resolve(id, result)` on the main window (see UPDATE_BRIDGE_JS).
+#[derive(Debug, PartialEq)]
+enum UpdateCall {
+    Check { id: String },
+    Open { id: String },
+    GetChannel { id: String },
+    SetChannel { id: String, channel: String },
+}
+
+fn parse_update_call(u: &Url) -> Option<UpdateCall> {
+    let op = u.path().strip_prefix("/update/")?;
+    let mut id = None;
+    let mut v = None;
+    for (k, val) in u.query_pairs() {
+        match k.as_ref() {
+            "id" => id = Some(val.to_string()),
+            "v" => v = Some(val.to_string()),
+            _ => {}
+        }
+    }
+    // The id is echoed into a JS call: digits only, short.
+    let id = id.filter(|s| !s.is_empty() && s.len() <= 9 && s.bytes().all(|b| b.is_ascii_digit()))?;
+    match op {
+        "check" => Some(UpdateCall::Check { id }),
+        "open" => Some(UpdateCall::Open { id }),
+        "channel-get" => Some(UpdateCall::GetChannel { id }),
+        "channel-set" => Some(UpdateCall::SetChannel { id, channel: v? }),
+        _ => None,
+    }
+}
+
+/// Answer an update-bridge call on the main window. Results never contain the token.
+fn reply_update(app: &AppHandle, id: &str, result: serde_json::Value) {
+    if let Some(w) = main_window(app) {
+        let _ = w.eval(format!(
+            "(function(){{var d=window.__OMNICHAT_DESKTOP__;if(d&&d.__resolve)d.__resolve(\"{id}\",{result});}})();"
+        ));
+    }
+}
+
+fn run_update_call(app: &AppHandle, call: UpdateCall) {
+    let app = app.clone();
+    // Network access and file writes stay off the UI thread (this runs inside on_navigation).
+    std::thread::spawn(move || match call {
+        UpdateCall::Check { id } => {
+            let r = updater::check_now(&app);
+            reply_update(&app, &id, serde_json::to_value(r).unwrap_or(serde_json::Value::Null));
+        }
+        UpdateCall::Open { id } => {
+            let ok = updater::open_update(&app);
+            reply_update(&app, &id, serde_json::Value::Bool(ok));
+        }
+        UpdateCall::GetChannel { id } => {
+            reply_update(&app, &id, serde_json::Value::String(updater::get_channel(&app)));
+        }
+        UpdateCall::SetChannel { id, channel } => {
+            let v = match updater::set_channel(&app, &channel) {
+                Ok(c) => serde_json::Value::String(c),
+                Err(_) => serde_json::Value::Null,
+            };
+            reply_update(&app, &id, v);
+        }
+    });
+}
+
+/// Longest external URL the shell will open.
+const MAX_EXTERNAL_URL: usize = 8192;
+
+/// Strict allowlist for `window.__OMNICHAT_DESKTOP__.openExternal(url)`: the OmniChat VS Code pairing link
+/// (`vscode://omnichat.omnichat-vscode/pair?...`) or an https URL. No credentials, no control characters.
+fn allowed_external_url(raw: &str) -> Option<Url> {
+    if raw.is_empty() || raw.len() > MAX_EXTERNAL_URL || raw.chars().any(|c| c.is_control()) {
+        return None;
+    }
+    let u = Url::parse(raw).ok()?;
+    if !u.username().is_empty() || u.password().is_some() {
+        return None;
+    }
+    match u.scheme() {
+        "vscode" if u.host_str() == Some("omnichat.omnichat-vscode") && u.path() == "/pair" && u.port().is_none() => Some(u),
+        "https" if u.host_str().is_some_and(|h| !h.is_empty()) => Some(u),
+        _ => None,
+    }
+}
+
+/// `https://omnichat-desktop.invalid/open-external?id=<n>&u=<url-encoded target>`: the id is digits only; the target must pass
+/// the allowlist.
+fn parse_open_external(u: &Url) -> Option<(String, Url)> {
+    if u.path() != "/open-external" {
+        return None;
+    }
+    let mut id = None;
+    let mut target = None;
+    for (k, val) in u.query_pairs() {
+        match k.as_ref() {
+            "id" => id = Some(val.to_string()),
+            "u" => target = Some(val.to_string()),
+            _ => {}
+        }
+    }
+    let id = id.filter(|s| !s.is_empty() && s.len() <= 9 && s.bytes().all(|b| b.is_ascii_digit()))?;
+    Some((id, allowed_external_url(&target?)?))
+}
+
+fn run_open_external(app: &AppHandle, id: String, target: Url) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let ok = app.opener().open_url(target.as_str(), None::<&str>).is_ok();
+        reply_update(&app, &id, serde_json::json!({ "ok": ok }));
+    });
+}
+
+/// Update bridge injected into every page of the main window (after window.__OMNICHAT_DESKTOP__ exists). Every call is a
+/// navigation to the intercepted signal host (the same mechanism as the app icon / change server); answers arrive via __resolve.
+/// No Tauri IPC is exposed to the remote page.
+const UPDATE_BRIDGE_JS: &str = r#"(function(){var d=window.__OMNICHAT_DESKTOP__;if(!d)return;var P={},n=0;
+d.__resolve=function(id,v){var p=P[id];if(p){delete P[id];clearTimeout(p.t);p.r(v);}};
+function call(op,q,ms,fb){return new Promise(function(res){var id=String(++n);
+P[id]={r:res,t:setTimeout(function(){if(P[id]){delete P[id];res(fb);}},ms)};
+location.href='https://omnichat-desktop.invalid/'+(op==='open-external'?'':'update/')+op+'?id='+id+(q||'');});}
+d.checkUpdate=function(){return call('check','',60000,{status:'error',current:d.version,channel:'stable',canInstall:false,error:'timeout'});};
+d.openUpdate=function(){return call('open','',60000,false);};
+d.getUpdateChannel=function(){return call('channel-get','',10000,null);};
+d.openExternal=function(u){return call('open-external','&u='+encodeURIComponent(String(u)),10000,{ok:false}).then(function(r){return r&&typeof r==='object'?r:{ok:false};});};
+d.setUpdateChannel=function(ch){return call('channel-set','&v='+encodeURIComponent(String(ch)),10000,null);};
+})();"#;
 
 /// Loopback names that reach the same machine count as one host.
 fn canon_host(h: &str) -> &str {
@@ -515,7 +648,7 @@ pub fn run() {
                 .inner_size(1100.0, 760.0)
                 .min_inner_size(420.0, 480.0)
                 .initialization_script(format!(
-                    "window.__OMNICHAT_DESKTOP__ = {{ appIcon: 1, version: \"{ver}\", dshFrame: \"{frame}\" }};{RELOAD_KEYS_JS}",
+                    "window.__OMNICHAT_DESKTOP__ = {{ appIcon: 1, version: \"{ver}\", dshFrame: \"{frame}\" }};{UPDATE_BRIDGE_JS}{RELOAD_KEYS_JS}",
                     ver = env!("CARGO_PKG_VERSION"),
                     frame = DSH_FRAME_URL
                 ))
@@ -559,6 +692,61 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_call_parsing() {
+        let p = |s: &str| parse_update_call(&Url::parse(s).unwrap());
+        let h = "https://omnichat-desktop.invalid";
+        assert_eq!(p(&format!("{h}/update/check?id=7")), Some(UpdateCall::Check { id: "7".into() }));
+        assert_eq!(p(&format!("{h}/update/open?id=12")), Some(UpdateCall::Open { id: "12".into() }));
+        assert_eq!(p(&format!("{h}/update/channel-get?id=1")), Some(UpdateCall::GetChannel { id: "1".into() }));
+        assert_eq!(
+            p(&format!("{h}/update/channel-set?id=3&v=prerelease")),
+            Some(UpdateCall::SetChannel { id: "3".into(), channel: "prerelease".into() })
+        );
+        assert_eq!(p(&format!("{h}/update/channel-set?id=3")), None);
+        assert_eq!(p(&format!("{h}/update/check")), None);
+        assert_eq!(p(&format!("{h}/update/check?id=1\"%29")), None);
+        assert_eq!(p(&format!("{h}/update/check?id=1234567890")), None);
+        assert_eq!(p(&format!("{h}/update/nope?id=1")), None);
+    }
+
+    #[test]
+    fn external_url_allowlist() {
+        let ok = |s: &str| allowed_external_url(s).is_some();
+        assert!(ok("vscode://omnichat.omnichat-vscode/pair?code=abc_DEF-123"));
+        assert!(ok("https://example.com/path?q=1"));
+        assert!(!ok("vscode://omnichat.omnichat-vscode/open?code=abc"));
+        assert!(!ok("vscode://omnichat.omnichat-vscode/pair/extra"));
+        assert!(!ok("vscode://other.extension/pair?code=abc"));
+        assert!(!ok("vscode://omnichat.omnichat-vscode:99/pair?code=abc"));
+        assert!(!ok("vscode://user@omnichat.omnichat-vscode/pair?code=abc"));
+        assert!(!ok("http://example.com/"));
+        assert!(!ok("file:///C:/Windows/System32/calc.exe"));
+        assert!(!ok("javascript:alert(1)"));
+        assert!(!ok("ms-msdt:/id PCWDiagnostic"));
+        assert!(!ok("https://user:pw@example.com/"));
+        assert!(!ok("https://example.com/a\nb"));
+        assert!(!ok(""));
+        assert!(!ok("not a url"));
+        assert!(!ok(&format!("https://example.com/{}", "a".repeat(8200))));
+        assert!(ok(&format!("https://example.com/{}", "a".repeat(8000))));
+    }
+
+    #[test]
+    fn open_external_parsing() {
+        let p = |s: &str| parse_open_external(&Url::parse(s).unwrap());
+        let h = "https://omnichat-desktop.invalid/open-external";
+        let target = "vscode%3A%2F%2Fomnichat.omnichat-vscode%2Fpair%3Fcode%3Dabc";
+        let got = p(&format!("{h}?id=4&u={target}")).unwrap();
+        assert_eq!(got.0, "4");
+        assert_eq!(got.1.as_str(), "vscode://omnichat.omnichat-vscode/pair?code=abc");
+        assert!(p(&format!("{h}?u={target}")).is_none());
+        assert!(p(&format!("{h}?id=x&u={target}")).is_none());
+        assert!(p(&format!("{h}?id=4")).is_none());
+        assert!(p(&format!("{h}?id=4&u=file%3A%2F%2F%2Fetc%2Fpasswd")).is_none());
+        assert!(p("https://omnichat-desktop.invalid/other?id=4").is_none());
+    }
 
     #[test]
     fn server_host_matching() {

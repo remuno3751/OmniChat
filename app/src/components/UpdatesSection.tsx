@@ -7,6 +7,8 @@ import { SOURCE_LINKS } from '../sourceLinks';
 import { useT } from '../i18n';
 import { setAvailableUpdateVersion, skipDeviceUpdate, unskipDeviceUpdate } from '../updateStore';
 import { canApkUpdate, updateErrorText } from '../updateState';
+import { asChannel, checkResultText, desktopUpdateBridge, isPrereleaseVersion, parseCheckResult, updateActionHintKey } from '../desktopUpdate';
+import type { DesktopCheckResult, DesktopUpdateBridge } from '../desktopUpdate';
 import type { Channel, UpdateStatus } from '../updateTypes';
 import { useTheme } from '../theme';
 import { Btn, Field, Hint, Label, Segmented, fmtAgo } from '../ui/kit';
@@ -65,6 +67,79 @@ export function failureOf(view: ApplyView, status: UpdateStatus | null, tr: (k: 
   const a = status?.lastApply;
   if (a && a.status === 'failed' && !a.acknowledged) return a.message;
   return null;
+}
+
+/** Desktop app only: check / install a client update through the shell's bridge (window.__OMNICHAT_DESKTOP__). */
+function DesktopClientUpdate({ bridge }: { bridge: DesktopUpdateBridge }) {
+  const tr = useT();
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<DesktopCheckResult | null>(null);
+  const [channel, setChannelState] = useState<Channel | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    bridge.getUpdateChannel?.().then((c) => { if (alive) setChannelState(asChannel(c)); }, () => {});
+    return () => { alive = false; };
+  }, [bridge]);
+
+  const check = async () => {
+    setChecking(true);
+    try {
+      const r = parseCheckResult(await bridge.checkUpdate());
+      setResult(r);
+      setChannelState(r.channel);
+    } catch {
+      toast(tr('update.desktop.checkFailed'), 'error');
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const pickChannel = async (c: Channel) => {
+    if (!bridge.setUpdateChannel || c === channel) return;
+    setBusy(true);
+    try {
+      const saved = asChannel(await bridge.setUpdateChannel(c));
+      if (saved) { setChannelState(saved); setResult(null); } else toast(tr('update.saveFailed'), 'error');
+    } catch {
+      toast(tr('update.saveFailed'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const text = result ? checkResultText(result) : null;
+  const actionHint = result ? updateActionHintKey(result) : null;
+  return (
+    <View style={{ gap: 6, minWidth: 0 }}>
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+        <Btn small label={checking ? tr('update.checking') : tr('update.check')} disabled={checking} onPress={check} />
+        {result?.status === 'available' && <Btn small primary label={tr('update.desktop.update')} onPress={() => { void bridge.openUpdate().catch(() => toast(tr('update.openFailed'), 'error')); }} />}
+      </View>
+      {text && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Hint danger={text.danger}>{tr(text.key, text.params)}</Hint>
+          {result?.status === 'available' && isPrereleaseVersion(result.latest) && <Hint>{tr('update.prerelease')}</Hint>}
+        </View>
+      )}
+      {actionHint && <Hint>{tr(actionHint)}</Hint>}
+      {channel && bridge.setUpdateChannel && (
+        <View style={{ gap: 6, marginTop: 4, minWidth: 0 }}>
+          <Label>{tr('update.channel')}</Label>
+          <Segmented<Channel>
+            value={channel}
+            onChange={(c) => { void pickChannel(c); }}
+            options={[
+              { value: 'stable', label: tr('update.channel.stable'), disabled: busy },
+              { value: 'prerelease', label: tr('update.channel.prerelease'), disabled: busy },
+            ]}
+          />
+          <Hint>{tr('update.desktop.channelHint')}</Hint>
+        </View>
+      )}
+    </View>
+  );
 }
 
 /** Settings > Updates. Non-admins see the versions and notes only. */
@@ -184,6 +259,7 @@ export default function UpdatesSection({ scope = 'all' }: { scope?: 'all' | 'ser
     Linking.openURL(latest.htmlUrl).catch(() => toast(tr('update.openFailed'), 'error'));
   };
 
+  const desktopBridge = Platform.OS === 'web' ? desktopUpdateBridge(globalThis as any) : null;
   const androidApk = Platform.OS === 'android' && !!latest && canApkUpdate(latest.version, APP_VERSION);
 
   return (
@@ -192,7 +268,8 @@ export default function UpdatesSection({ scope = 'all' }: { scope?: 'all' | 'ser
       <Section title={tr('update.appSection')} first />
       <View style={{ gap: 6, minWidth: 0 }}>
         <Text selectable style={{ color: t.text, fontSize: 14 }}>{(() => { const c = clientVersionLine(Platform.OS, APP_VERSION, desktopVersionFromWindow(globalThis as any)); return tr(c.key, { version: c.version }); })()}</Text>
-        <Hint>{tr(Platform.OS === 'android' ? 'update.appHint.android' : Platform.OS === 'web' ? 'update.appHint.web' : 'update.appHint.desktop')}</Hint>
+<Hint>{tr(Platform.OS === 'android' ? 'update.appHint.android' : Platform.OS === 'web' ? (desktopBridge ? 'update.appHint.desktop' : 'update.appHint.web') : 'update.appHint.desktop')}</Hint>
+        {desktopBridge && <DesktopClientUpdate bridge={desktopBridge} />}
         {androidApk && latest && (
           <View style={{ gap: 6 }}>
             <Hint>{tr('update.apk.available', { version: latest.version })}</Hint>

@@ -1,0 +1,155 @@
+/*
+ * Settings view (docs/design/VSCODE-BRIDGE.md §5). Loaded after base.css and tokens.css.
+ * Mirrors the app's Settings pages: small muted section titles, rounded grouped cards, hairline
+ * rows with label and hint on the left and the control on the right (stacked when narrow),
+ * switches, and segmented controls. Only --oc-* tokens. No remote resources, no motion beyond
+ * short colour fades (off under prefers-reduced-motion).
+ */
+[hidden] { display: none !important; }
+.oc-contents { display: contents; }
+.oc-page { height: 100vh; overflow: hidden; }
+.oc-header { flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
+.oc-header__spacer { flex: 1; }
+
+/* Generic controls. */
+.oc-iconbtn {
+  min-width: 28px; min-height: 28px; padding: 2px 8px; font: inherit; font-size: 12px; color: var(--oc-text);
+  background: transparent; border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-md); cursor: pointer;
+}
+.oc-iconbtn:hover { background: var(--oc-panel2); }
+.oc-iconbtn:focus-visible, .oc-select:focus-visible, .oc-input:focus-visible, .oc-btn:focus-visible,
+.oc-seg__btn:focus-visible, .oc-switch:focus-visible {
+  outline: 2px solid var(--oc-accent-ink); outline-offset: 2px;
+}
+
+.oc-btn {
+  flex: none; min-height: 32px; padding: 6px 14px; font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap;
+  color: var(--oc-text); background: var(--oc-panel2); border: var(--oc-bw-base) solid var(--oc-border-strong);
+  border-radius: var(--oc-r-md); cursor: pointer;
+  transition: background-color var(--oc-dur-1) var(--oc-ease), border-color var(--oc-dur-1) var(--oc-ease);
+}
+.oc-btn:hover { border-color: var(--oc-sub); }
+.oc-btn--primary { background: var(--oc-accent); border-color: var(--oc-accent); color: var(--oc-accent-text); }
+.oc-btn--primary:hover { background: color-mix(in srgb, var(--oc-accent) 88%, var(--oc-text)); border-color: transparent; }
+.oc-btn:disabled { opacity: 0.5; cursor: default; }
+
+.oc-input, .oc-select {
+  display: block; width: 100%; min-width: 0; min-height: 32px; padding: 6px 10px; font: inherit; font-size: 13px;
+  color: var(--oc-text); background: var(--oc-input); border: var(--oc-bw-base) solid var(--oc-border-strong);
+  border-radius: var(--oc-r-md);
+}
+.oc-input::placeholder { color: var(--oc-sub); opacity: 0.8; }
+
+/* Page: a single column of sections. Gutter 12px, 14px inside cards. */
+.oc-scroll {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 14px 12px 24px;
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 22px;
+}
+.oc-scroll > * { min-width: 0; }
+.oc-section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
+.oc-section__title { margin: 0 4px; font-size: 12px; font-weight: 600; color: var(--oc-sub); overflow-wrap: anywhere; }
+.oc-section__foot { margin: 0 4px; font-size: 12px; line-height: 1.5; color: var(--oc-sub); overflow-wrap: anywhere; }
+.oc-section__foot:empty { display: none; }
+
+/* Grouped card: rounded, hairline separators between rows. */
+.oc-group, .oc-card {
+  display: grid; min-width: 0; background: var(--oc-panel); border: var(--oc-bw-base) solid var(--oc-border);
+  border-radius: var(--oc-r-md);
+}
+.oc-card { gap: 8px; padding: 12px 14px; }
+
+.oc-item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 16px;
+  min-width: 0; padding: 11px 14px;
+}
+.oc-item + .oc-item { border-top: var(--oc-bw-base) solid var(--oc-border); }
+.oc-item--stack { grid-template-columns: minmax(0, 1fr); }
+.oc-item__text { display: grid; gap: 2px; min-width: 0; }
+.oc-item__label {
+  font-size: 13px; font-weight: 600; color: var(--oc-text); overflow-wrap: anywhere; cursor: default;
+}
+.oc-item__hint { margin: 0; font-size: 12px; line-height: 1.45; color: var(--oc-sub); overflow-wrap: anywhere; }
+.oc-item__value { font-size: 12px; color: var(--oc-sub); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.oc-item__control {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0;
+}
+.oc-item--stack .oc-item__control { display: block; justify-content: stretch; }
+.oc-item .oc-note { grid-column: 1 / -1; }
+
+/* Input with its save or pair button. */
+.oc-inputrow { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.oc-inputrow > .oc-input { flex: 1 1 auto; width: auto; }
+
+/* Switch: native checkbox with appearance removed. Space toggles it. */
+.oc-switch {
+  appearance: none; -webkit-appearance: none; position: relative; flex: none; margin: 0;
+  width: 38px; height: 22px; border-radius: var(--oc-r-pill); cursor: pointer;
+  background: var(--oc-panel2); border: var(--oc-bw-strong) solid var(--oc-border-strong);
+  transition: background-color var(--oc-dur-1) var(--oc-ease), border-color var(--oc-dur-1) var(--oc-ease);
+}
+.oc-switch::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--oc-sub);
+  transition: transform var(--oc-dur-2) var(--oc-ease), background-color var(--oc-dur-1) var(--oc-ease);
+}
+.oc-switch:checked { background: var(--oc-accent); border-color: var(--oc-accent); }
+.oc-switch:checked::before { transform: translateX(16px); background: var(--oc-accent-text); }
+.oc-switch:hover { border-color: var(--oc-sub); }
+.oc-switch:checked:hover { border-color: var(--oc-accent); }
+
+/* Segmented control: a track with one filled segment for the chosen value. */
+.oc-seg {
+  display: inline-flex; flex-wrap: nowrap; gap: 2px; max-width: 100%; padding: 2px;
+  background: var(--oc-panel2); border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-md);
+}
+.oc-seg__btn {
+  appearance: none; flex: none; min-height: 28px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 500;
+  color: var(--oc-sub); background: transparent; border: 1px solid transparent; border-radius: var(--oc-r-sm);
+  cursor: pointer; white-space: nowrap;
+  transition: background-color var(--oc-dur-1) var(--oc-ease), color var(--oc-dur-1) var(--oc-ease);
+}
+.oc-seg__btn:hover { color: var(--oc-text); }
+.oc-seg__btn[aria-checked="true"] { background: var(--oc-accent); color: var(--oc-accent-text); font-weight: 600; }
+
+/* Checkbox row and key/value row (generic). */
+.oc-check { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--oc-text); }
+.oc-check input { flex: none; margin: 0; accent-color: var(--oc-accent); }
+.oc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.oc-row > .oc-input { flex: 1 1 140px; }
+.oc-kv { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; min-width: 0; }
+.oc-kv > span:first-child { color: var(--oc-sub); }
+.oc-field { display: grid; gap: 4px; min-width: 0; font-size: 12px; color: var(--oc-sub); }
+.oc-select { min-height: 32px; }
+
+/* Notes under a row: empty notes take no space. */
+.oc-note { min-height: 0; margin: 0; font-size: 12px; line-height: 1.45; color: var(--oc-sub); overflow-wrap: anywhere; }
+.oc-note:empty { display: none; }
+.oc-note--bad { color: var(--oc-danger); }
+.oc-note--ok { color: var(--oc-good); }
+
+/* Narrow webview: rows stack, the label sits above its control, segments fill the width. */
+body[data-oc-narrow] .oc-scroll { padding: 10px 10px 20px; gap: 18px; }
+body[data-oc-narrow] .oc-item { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
+body[data-oc-narrow] .oc-item__control { justify-content: flex-start; }
+body[data-oc-narrow] .oc-item--stack .oc-item__control { justify-content: stretch; }
+body[data-oc-narrow] .oc-seg { display: flex; width: 100%; }
+body[data-oc-narrow] .oc-seg__btn { flex: 1 1 0; min-width: 0; padding-left: 6px; padding-right: 6px; overflow: hidden; text-overflow: ellipsis; }
+body[data-oc-narrow] .oc-header { gap: 6px; padding: 6px 10px; }
+
+/* Forced colours (Windows high contrast): backgrounds drop out, so frames and the checked state carry the meaning. */
+@media (forced-colors: active) {
+  .oc-group, .oc-card, .oc-input, .oc-select, .oc-btn, .oc-seg { border-color: CanvasText; outline: 1px solid transparent; }
+  .oc-switch { border-color: CanvasText; background: Canvas; }
+  .oc-switch::before { background: CanvasText; }
+  .oc-switch:checked { background: Highlight; border-color: Highlight; }
+  .oc-switch:checked::before { background: HighlightText; }
+  .oc-seg__btn { border-color: transparent; color: CanvasText; }
+  .oc-seg__btn[aria-checked="true"] { border-color: Highlight; outline: 2px solid Highlight; outline-offset: -3px; background: Canvas; color: CanvasText; }
+  .oc-btn--primary { border-color: Highlight; color: ButtonText; background: ButtonFace; }
+  .oc-note--bad, .oc-note--ok { color: CanvasText; }
+}
+
+/* Motion: colour fades only, and none at all when the user asks for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .oc-btn, .oc-switch, .oc-switch::before, .oc-seg__btn { transition: none; }
+}

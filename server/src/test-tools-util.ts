@@ -102,7 +102,9 @@ export async function startSearx(): Promise<Searx> {
     if (sx.mode === "down") { req.socket.destroy(); return; }
     if (sx.mode === "html") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end("<!doctype html><html><body>results</body></html>"); return; }
     if (sx.mode === "403") { res.writeHead(403, { "content-type": "text/html" }).end("Forbidden"); return; }
-    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ query: u.searchParams.get("q"), results: sx.results }));
+    // the snippet echoes the query so the relevance filter (results must share a term with the query) keeps the fake results
+    const q = u.searchParams.get("q") ?? "";
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ query: q, results: sx.results.map((r) => ({ ...r, content: `${r.content ?? ""} for ${q}` })) }));
   }).listen(port, "127.0.0.1");
   return sx;
 }

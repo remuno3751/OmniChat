@@ -3,11 +3,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ApiKeyCreated, ApiKeyInfo, AuthResponse, ContextOverflow, ContextUsage, Conversation, DebugInfo, Device, Effort, LocalServer, ModelsResponse, Project, PromptPreset, Provider, ProviderModelsResponse, SamplingParams, Settings, StatsResponse, SyncResponse, SystemMode } from './protocol';
 
 import type { CompactResult, UsageChats, UsageDaily, UsageModels, UsageSummary } from './protocol';
-import type { SearchBackendId, SearchConfig, SearchConfigPatch, SearchMode, SearchResult, SearchStatus, ToolInfo } from './protocol';
+import type { SearchBackendId, SearchConfig, SearchConfigPatch, SearchMode, SearchOptions, SearchResult, SearchStatus, ToolInfo } from './protocol';
 import { t } from './i18n';
 import { webDeviceName } from './deviceName';
 import type { DefaultSharedAccess, GrantRow, SharedProviderInfo } from './sharedProviders';
-import type { SamplingParams as SP3 } from './protocol';
+import type { SamplingParams as SP3, ApprovalMode } from './protocol';
 
 const K_URL = 'omnichat.serverUrl';
 const K_AUTH = 'omnichat.auth';
@@ -166,6 +166,13 @@ function usageQuery(o: Record<string, string | number | undefined | null>): stri
 export interface BridgeInfo {
   name: string; cwd?: string; online: boolean; pluginVersion?: string;
   workspacesSupported?: boolean; workspaces?: string[]; allowAnyCwd?: boolean;
+  /** absent on an older server = a DeepSeek Harness bridge */
+  kind?: 'dsh' | 'vscode';
+  /** vscode extension version / wire protocol / tool names it offers */
+  version?: string; protocol?: number; tools?: string[];
+  trusted?: boolean; busy?: boolean;
+  /** server's compatibility verdict for a vscode extension */
+  compat?: { ok: boolean; minVersion?: string };
 }
 
 export const api = {
@@ -213,7 +220,7 @@ export const api = {
   deleteProject: (id: string) => req<Project>('DELETE', `/projects/${id}`),
   putPreset: (id: string, b: { name?: string; text?: string }) => req<PromptPreset>('PUT', `/presets/${id}`, b),
   deletePreset: (id: string) => req<PromptPreset>('DELETE', `/presets/${id}`),
-  putSettings: (b: Partial<{ systemPrompt: string | null; effort: Effort | null; params: SamplingParams | null; devMode: boolean; contextOverflow: ContextOverflow; contextLimits: Record<string, number> | null; tools: string[] | null; searchMode: SearchMode; autoTitle: boolean; titleEvery: number; titleModel: string | null; modelParams: Record<string, SP3> | null; defaultContextLength: number | null; contextCompressAt: number | null; contextCompressTarget: number; ephemeralIdleMinutes: number }>) =>
+  putSettings: (b: Partial<{ systemPrompt: string | null; effort: Effort | null; params: SamplingParams | null; devMode: boolean; contextOverflow: ContextOverflow; contextLimits: Record<string, number> | null; tools: string[] | null; searchMode: SearchMode; autoTitle: boolean; titleEvery: number; titleModel: string | null; modelParams: Record<string, SP3> | null; defaultContextLength: number | null; contextCompressAt: number | null; contextCompressTarget: number; ephemeralIdleMinutes: number; search: Partial<SearchOptions> }>) =>
     req<Settings>('PUT', '/settings', b),
   messageDebug: (id: string) => req<DebugInfo>('GET', `/messages/${encodeURIComponent(id)}/debug`),
   loadModel: (providerId: string, model: string, contextLength?: number) =>
@@ -228,6 +235,8 @@ export const api = {
     contextOverflow?: ContextOverflow | null;
     pinned?: boolean;
     mode?: 'chat' | 'code';
+    /** Code approval mode; `full` needs confirmFull:true (else 400 confirm_required) */
+    approvalMode?: ApprovalMode; confirmFull?: boolean;
     /** v7: true creates an ephemeral chat (id must start with eph_) */
     ephemeral?: boolean;
   }) =>
@@ -247,7 +256,8 @@ export const api = {
   /** PC bridges (DeepSeek Harness) known to the server, with online state. */
   bridges: () => req<{ bridges: BridgeInfo[] }>('GET', '/bridges'),
   /** Creates a device token for a dsh plugin (shown once). Always sends a JSON object body. */
-  createBridgeToken: (name?: string) => req<{ token: string; deviceId: string; name: string }>('POST', '/bridges/token', { name: name ?? '' }),
+  createBridgeToken: (name?: string, kind?: 'dsh' | 'vscode') =>
+    req<{ token: string; deviceId: string; name: string }>('POST', '/bridges/token', kind ? { name: name ?? '', kind } : { name: name ?? '' }),
   /** Token totals for a period (from: epoch ms, omitted = all time; tz = minutes east of UTC). */
   usageSummary: (p: { from?: number; to?: number; tz: number; conversationId?: string }) =>
     req<UsageSummary>('GET', `/usage/summary?${usageQuery({ from: p.from, to: p.to, tz: p.tz, conversationId: p.conversationId })}`),

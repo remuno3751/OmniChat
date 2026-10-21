@@ -1,3 +1,4 @@
+import { isAgentBridgeKind } from "./agent-kinds.js";
 import type { FastifyInstance } from "fastify";
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -110,7 +111,7 @@ async function providerRows(userId: string): Promise<string[]> {
   ];
   const results = await Promise.all(rows.map(async (row) => {
     let host: string;
-    if (row.kind === "dsh-bridge") {
+    if (isAgentBridgeKind(row.kind)) {
       host = `bridge: ${String(row.base_url ?? "").trim()}`;
     } else {
       try {

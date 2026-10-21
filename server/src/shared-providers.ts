@@ -128,7 +128,7 @@ export function providerUsableBy(userId: string, providerRow: ProviderRowLike): 
 export function listSharedProvidersFor(userId: string): SharedProviderView[] {
   if (isAdminUser(userId)) return [];
   const rows = db.prepare(
-    "SELECT id, user_id, name, kind, model, shared, deleted FROM providers WHERE shared = 1 AND deleted = 0 AND kind <> 'dsh-bridge' AND user_id <> ? ORDER BY seq",
+    "SELECT id, user_id, name, kind, model, shared, deleted FROM providers WHERE shared = 1 AND deleted = 0 AND kind NOT IN ('dsh-bridge','vscode-bridge') AND user_id <> ? ORDER BY seq",
   ).all(userId) as { id: string; user_id: string; name: string; kind: string; model: string; shared: number; deleted: number }[];
   const out: SharedProviderView[] = [];
   for (const r of rows) {
@@ -174,7 +174,7 @@ export const PROVIDERS_CHANGED_FRAME = { type: "providers-changed" } as const;
 export function sharedRowsFor(userId: string): any[] {
   if (isAdminUser(userId)) return [];
   const rows = db.prepare(
-    "SELECT * FROM providers WHERE shared = 1 AND deleted = 0 AND kind <> 'dsh-bridge' AND user_id <> ? ORDER BY seq",
+    "SELECT * FROM providers WHERE shared = 1 AND deleted = 0 AND kind NOT IN ('dsh-bridge','vscode-bridge') AND user_id <> ? ORDER BY seq",
   ).all(userId) as any[];
   return rows.filter((r) => providerUsableBy(userId, r));
 }

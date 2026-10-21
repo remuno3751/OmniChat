@@ -64,6 +64,9 @@ export function Enter({ children, style, delay = 0, from, skip, dist = 8 }: { ch
     if (!ms) { v.setValue(1); return; }
     const [a, b, c, d] = th.ease;
     Animated.timing(v, { toValue: 1, duration: ms, delay: Math.min(delay, 240), easing: Easing.bezier(a, b, c, d), useNativeDriver: native }).start(() => setDone(true));
+    // a native-driver animation can be cancelled without its callback (activity paused / resized mid-flight): never leave a stale transform
+    const guard = setTimeout(() => setDone(true), Math.min(delay, 240) + ms + 150);
+    return () => clearTimeout(guard);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const k = th.mo.distK;

@@ -1,6 +1,6 @@
 //! Desktop client update check.
 //!
-//! At startup (after a short delay) the client asks GitHub Releases for a newer desktop
+//! At startup (after a short delay, then every 6 hours, or on demand from Settings) the client asks GitHub Releases for a newer desktop
 //! installer. When one is due, a small `update` window is opened. "Update now" downloads the
 //! installer over HTTPS, verifies its SHA-256 against the release checksums (refuses when no
 //! checksum exists or it does not match) and, on Windows only, runs the NSIS installer silently
@@ -34,6 +34,7 @@ const DEFAULT_REPO: &str = "remuno3751/omnichat";
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
 const REMIND_LATER_MS: u64 = 24 * 3600 * 1000;
 const FIRST_CHECK_DELAY_MS: u64 = 20_000;
+const PERIODIC_CHECK_MS: u64 = 6 * 3600 * 1000;
 const MAX_INSTALLER_BYTES: u64 = 300 * 1024 * 1024;
 const MAX_JSON_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TEXT_BYTES: u64 = 1024 * 1024;
@@ -639,6 +640,8 @@ pub struct Offer {
 pub struct UpdateCtx {
     offer: Mutex<Option<Offer>>,
     busy: AtomicBool,
+    /// A manual check is running (prevents overlapping manual checks).
+    checking: AtomicBool,
 }
 
 fn current_offer(app: &AppHandle) -> Result<Offer, String> {
@@ -661,7 +664,8 @@ fn current_os() -> &'static str {
 // Background check and window
 // ---------------------------------------------------------------------------
 
-/// Start the one-shot background check (first check after 20 s, env OMNICHAT_UPDATE_DELAY_MS overrides).
+/// Start the background checks: the first one after 20 s (env OMNICHAT_UPDATE_DELAY_MS overrides),
+/// then every 6 hours while the app runs.
 pub fn spawn_check(app: AppHandle) {
     std::thread::spawn(move || {
         let delay = std::env::var("OMNICHAT_UPDATE_DELAY_MS")
@@ -669,40 +673,160 @@ pub fn spawn_check(app: AppHandle) {
             .and_then(|s| s.trim().parse::<u64>().ok())
             .unwrap_or(FIRST_CHECK_DELAY_MS);
         std::thread::sleep(Duration::from_millis(delay));
-        if let Err(code) = check_once(&app) {
-            // Background check: stay quiet for the user; code never contains secrets.
-            eprintln!("omnichat update check skipped: {code}");
+        loop {
+            if let Err(code) = check_once(&app) {
+                // Background check: stay quiet for the user; code never contains secrets.
+                eprintln!("omnichat update check skipped: {code}");
+            }
+            std::thread::sleep(Duration::from_millis(PERIODIC_CHECK_MS));
         }
     });
 }
 
-fn check_once(app: &AppHandle) -> Result<(), String> {
+/// Fetch the releases and build the offer for the configured channel (None = nothing newer).
+fn find_offer(app: &AppHandle, prefs: &Prefs) -> Result<Option<Offer>, String> {
     let base = api_base();
     let repo = repo_name()?;
     let token = load_token(app);
-    let prefs = prefs_from(&read_obj(&data_file(app)?));
     let releases = fetch_releases(&base, &repo, token.as_deref())?;
     let Some(p) = pick_release(&releases, &prefs.channel, CURRENT, current_os()) else {
-        return Ok(());
+        return Ok(None);
     };
-    if !should_prompt(&prefs.skipped, &prefs.remind_after, &p.version, now_ms()) {
-        return Ok(());
-    }
     let (sums, per_asset) = checksum_assets(&p.release.assets, &p.asset.name);
-    let offer = Offer {
+    Ok(Some(Offer {
         version: p.version.clone(),
         notes: truncate_chars(p.release.body.as_deref().unwrap_or("").replace('\r', "").trim(), NOTES_MAX_CHARS),
         page_url: p.release.html_url.clone(),
         asset: p.asset.clone(),
         sums,
         per_asset,
+    }))
+}
+
+fn store_offer(app: &AppHandle, offer: Option<Offer>) {
+    let ctx = app.state::<UpdateCtx>();
+    *ctx.offer.lock().unwrap_or_else(|e| e.into_inner()) = offer;
+}
+
+/// Background check: respects "skip" and "remind later".
+fn check_once(app: &AppHandle) -> Result<(), String> {
+    let prefs = prefs_from(&read_obj(&data_file(app)?));
+    let Some(offer) = find_offer(app, &prefs)? else {
+        return Ok(());
     };
-    {
-        let ctx = app.state::<UpdateCtx>();
-        *ctx.offer.lock().unwrap_or_else(|e| e.into_inner()) = Some(offer);
+    if !should_prompt(&prefs.skipped, &prefs.remind_after, &offer.version, now_ms()) {
+        return Ok(());
     }
+    store_offer(app, Some(offer));
     open_window(app);
     Ok(())
+}
+
+/// Result of a manual check, handed to the settings page (camelCase JSON).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckResult {
+    /// "available" | "latest" | "error"
+    pub status: &'static str,
+    pub current: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest: Option<String>,
+    pub channel: String,
+    pub can_install: bool,
+    /// Short error code (never contains the token).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl CheckResult {
+    fn base(status: &'static str, channel: &str) -> Self {
+        CheckResult {
+            status,
+            current: CURRENT.to_string(),
+            latest: None,
+            channel: channel.to_string(),
+            can_install: false,
+            error: None,
+        }
+    }
+    pub fn available(channel: &str, version: &str, can_install: bool) -> Self {
+        CheckResult { latest: Some(version.to_string()), can_install, ..Self::base("available", channel) }
+    }
+    pub fn latest(channel: &str) -> Self {
+        Self::base("latest", channel)
+    }
+    pub fn error(channel: &str, code: &str) -> Self {
+        CheckResult { error: Some(code.to_string()), ..Self::base("error", channel) }
+    }
+}
+
+/// True when the desktop shell can install this asset itself (Windows NSIS installer only).
+fn can_install_asset(asset_name: &str) -> bool {
+    cfg!(windows) && is_windows_installer(asset_name)
+}
+
+/// Manual check (settings page): no delay, ignores "skip" and "remind later". An available update opens the update window.
+/// Always returns a result; failures are reported as status "error" with a short code.
+pub fn check_now(app: &AppHandle) -> CheckResult {
+    let ctx = app.state::<UpdateCtx>();
+    let channel = get_channel(app);
+    if ctx.checking.swap(true, AtomicOrdering::SeqCst) {
+        return CheckResult::error(&channel, "busy");
+    }
+    let r = (|| -> Result<CheckResult, String> {
+        let prefs = prefs_from(&read_obj(&data_file(app)?));
+        Ok(match find_offer(app, &prefs)? {
+            None => {
+                store_offer(app, None);
+                CheckResult::latest(&prefs.channel)
+            }
+            Some(o) => {
+                let res = CheckResult::available(&prefs.channel, &o.version, can_install_asset(&o.asset.name));
+                store_offer(app, Some(o));
+                open_window(app);
+                res
+            }
+        })
+    })();
+    ctx.checking.store(false, AtomicOrdering::SeqCst);
+    r.unwrap_or_else(|code| CheckResult::error(&channel, &code))
+}
+
+/// Open (or focus) the update window for the current offer; without one, run a manual check.
+pub fn open_update(app: &AppHandle) -> bool {
+    let has = app.state::<UpdateCtx>().offer.lock().unwrap_or_else(|e| e.into_inner()).is_some();
+    if has {
+        open_window(app);
+        true
+    } else {
+        check_now(app).status == "available"
+    }
+}
+
+/// Configured channel ("stable" | "prerelease"). Never exposes the token.
+pub fn get_channel(app: &AppHandle) -> String {
+    data_file(app).map(|p| prefs_from(&read_obj(&p)).channel).unwrap_or_else(|_| "stable".to_string())
+}
+
+/// Persist the channel; only the two known values are accepted. Drops the cached offer (it belonged to the old channel).
+pub fn set_channel(app: &AppHandle, channel: &str) -> Result<String, String> {
+    if !is_channel(channel) {
+        return Err("bad-channel".into());
+    }
+    mutate_prefs(app, |obj| {
+        obj.insert("channel".to_string(), Value::String(channel.to_string()));
+    })?;
+    store_offer(app, None);
+    Ok(channel.to_string())
+}
+
+fn is_channel(s: &str) -> bool {
+    matches!(s, "stable" | "prerelease")
+}
+
+/// A version with a pre-release part (contains a hyphen) is a prerelease.
+pub fn is_prerelease_version(v: &str) -> bool {
+    parse_version(v).is_some_and(|s| !s.pre.is_empty())
 }
 
 /// Create (or focus) the small update window. Window creation runs on the main thread.
@@ -745,13 +869,17 @@ pub struct UpdateInfo {
     pub notes: String,
     pub can_install: bool,
     pub page_url: String,
+    pub channel: String,
+    pub prerelease: bool,
 }
 
 #[tauri::command]
 pub fn update_info(app: AppHandle) -> Result<UpdateInfo, String> {
     let o = current_offer(&app)?;
     Ok(UpdateInfo {
-        can_install: cfg!(windows) && is_windows_installer(&o.asset.name),
+        can_install: can_install_asset(&o.asset.name),
+        channel: get_channel(&app),
+        prerelease: is_prerelease_version(&o.version),
         version: o.version,
         current: CURRENT.to_string(),
         notes: o.notes,
@@ -1121,6 +1249,36 @@ mod tests {
         assert_eq!(p.remind_after.len(), 1);
         let bad: Value = serde_json::from_str(r#"{"channel":"nightly"}"#).unwrap();
         assert_eq!(prefs_from(bad.as_object().unwrap()).channel, "stable");
+    }
+
+    #[test]
+    fn check_result_json_shape() {
+        let a = serde_json::to_value(CheckResult::available("prerelease", "1.2.0-rc.1", true)).unwrap();
+        assert_eq!(a["status"], "available");
+        assert_eq!(a["latest"], "1.2.0-rc.1");
+        assert_eq!(a["channel"], "prerelease");
+        assert_eq!(a["canInstall"], true);
+        assert_eq!(a["current"], CURRENT);
+        assert!(a.get("error").is_none());
+        let l = serde_json::to_value(CheckResult::latest("stable")).unwrap();
+        assert_eq!(l["status"], "latest");
+        assert!(l.get("latest").is_none() && l.get("error").is_none());
+        assert_eq!(l["canInstall"], false);
+        let e = serde_json::to_value(CheckResult::error("stable", "network")).unwrap();
+        assert_eq!(e["status"], "error");
+        assert_eq!(e["error"], "network");
+    }
+
+    #[test]
+    fn channel_and_prerelease_helpers() {
+        assert!(is_channel("stable") && is_channel("prerelease"));
+        assert!(!is_channel("nightly") && !is_channel(""));
+        assert!(is_prerelease_version("0.4.0-beta.2"));
+        assert!(is_prerelease_version("v1.0.0-rc.1"));
+        assert!(!is_prerelease_version("1.0.0"));
+        assert!(!is_prerelease_version("garbage-x"));
+        assert!(can_install_asset("OmniChat_1.0.0_x64-setup.exe") == cfg!(windows));
+        assert!(!can_install_asset("OmniChat_1.0.0_amd64.deb"));
     }
 
     #[test]

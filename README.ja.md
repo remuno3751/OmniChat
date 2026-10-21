@@ -85,6 +85,7 @@
 | API キー・OpenAI 互換エンドポイント | `/v1/chat/completions` と `/v1/models`。OpenAI SDK の `base_url` を向けて使える(履歴には保存しない) |
 | 開発者モード | 最終プロンプトと生 JSON の確認、サンプリングパラメーター、API キー。モデル比較・ベンチマーク・構造化出力・トークン表示・設定ファイル入出力・CLI は[フェーズ 4](#状態と検証範囲)の範囲([docs/DEVELOPER.md](docs/DEVELOPER.md)) |
 | dsh の遠隔操作 | PC 上の DeepSeek Harness を OmniChat から操作(外向き接続のみ)。dsh の GUI の会話も同期 |
+| VS Code 連携 | VS Code で開いているフォルダを AI に操作させる(拡張 `vscode-ext/`・`.vsix`)。エージェントのループはサーバー側(ツール対応の任意のモデル)、拡張がツール(ファイルの読み書き・コマンド・Git)を実行。承認は手動 / 自動 / フルアクセスの 3 段、保護項目は常に確認、チェックポイントと巻き戻し付き。安全網でありサンドボックスではない。[docs/VSCODE.md](docs/VSCODE.md) |
 | 端末管理 | 端末ごとのトークン、端末一覧と失効、ログアウト |
 
 ## クイックスタート

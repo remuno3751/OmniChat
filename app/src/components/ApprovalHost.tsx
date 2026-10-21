@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { APPROVAL_TIMEOUT_MS, PERM_LABEL, PERM_WARN, answerApproval, permDanger, removeApproval, useApprovals } from '../toolState';
 import type { Approval } from '../toolState';
+import { approvalCardView } from '../approvalMode';
 import { useStore } from '../store';
 import { useT } from '../i18n';
 import { useTheme, useThemeDef } from '../theme';
@@ -72,6 +73,7 @@ function Dialog({ a, now, more }: { a: Approval; now: number; more: number }) {
   let args = '';
   try { args = JSON.stringify(a.arguments ?? {}, null, 2); } catch { args = String(a.arguments); }
   const risky = a.permissions.some(permDanger);
+  const view = approvalCardView(a);
   return (
     <>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -83,6 +85,17 @@ function Dialog({ a, now, more }: { a: Approval; now: number; more: number }) {
         <View style={{ height: 3, width: `${frac * 100}%`, backgroundColor: left <= 15 ? t.danger : t.accent }} />
       </View>
       <ScrollView style={{ flexShrink: 1, marginTop: 10 }} contentContainerStyle={{ paddingBottom: 4 }}>
+        {view.protectedItem && (
+          <View style={{ marginBottom: 8, gap: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Chip label={tr('approval.protected')} color={t.danger} />
+              <Text style={{ flex: 1, color: t.danger, fontSize: 12, lineHeight: 16 }}>{tr('approval.protectedNote')}</Text>
+            </View>
+            {view.reasons.map((r, i) => (
+              <Text key={i} selectable style={{ color: t.text, fontSize: 12, lineHeight: 16 }}>{'• ' + r}</Text>
+            ))}
+          </View>
+        )}
         <Text style={{ color: t.sub, fontSize: 12 }}>{tr('approval.wantsUse')}</Text>
         <Text selectable style={{ color: t.text, fontSize: 16, fontWeight: '700', fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) }}>{a.tool}</Text>
         <Text style={[styles.cap, { color: t.sub }]}>{tr('tool.arguments')}</Text>
@@ -104,7 +117,7 @@ function Dialog({ a, now, more }: { a: Approval; now: number; more: number }) {
       </ScrollView>
       <View style={styles.footer}>
         <Btn primary label={tr('approval.allowOnce')} onPress={() => answerApproval(a, 'once')} />
-        <Btn label={tr('approval.alwaysAllow')} onPress={() => answerApproval(a, 'always')} />
+        {view.showAlways && <Btn label={tr('approval.alwaysAllow')} onPress={() => answerApproval(a, 'always')} />}
         <Btn danger label={tr('code.action.deny')} onPress={() => answerApproval(a, 'deny')} />
       </View>
     </>

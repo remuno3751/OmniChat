@@ -77,7 +77,7 @@ omnichat chat --json "1+1は？" | jq .message.content  # JSON で受け取る
 - `--model <プロバイダー名>/<モデルID>`: モデルを指定します。プロバイダー名にはスペースを含められます（例: `"LM Studio/google/gemma-4-e4b"`）。短い指定（モデル ID だけ、プロバイダーの slug など）も受け付けますが、複数に一致した場合は候補を表示してエラーになります。
 - `--project 名前` と `--create-project`: プロジェクトに入れます。存在しない名前は `--create-project` を付けない限りエラーです。
 - `--conv <ID>` / `--new`: 既存の会話を続けるか、新しい会話を始めます（同時指定はできません）。
-- `--effort low|medium|high|max`、`--search off|auto|always`、`--system "<文章>"`
+- `--effort low|medium|high|max`、`--search off|smart|always`(`auto` は `smart` の別名)、`--system "<文章>"`
 - `--thinking`: 思考過程を標準エラー出力に表示します（既定では表示しません）。
 - `--approve once|always|deny`: ツール承認への回答を指定します。詳しくは下記。
 - `--json`: `{conversationId, status, message, metrics}` を 1 つの JSON として標準出力に出します。

@@ -4,6 +4,7 @@ import { broadcast } from "../hub.js";
 import { setCodeStatus } from "../code.js";
 import { notify } from "../notify.js";
 import { evaluateRules, addBridgeAllowRule } from "../approval-rules.js";
+import { decide as decidePolicy, type ApprovalMode, type Decision as PolicyDecision, type PolicyRules } from "../vscode-policy.js";
 
 /* Tool approvals (PROTOCOL-v3-phase3.md section 1): grants table + pending WS approvals. */
 
@@ -102,6 +103,11 @@ export function requestApproval(r: ApprovalRequest): Promise<Decision> {
 export interface BridgeApprovalRequest {
   userId: string; conversationId: string; messageId: string; projectId: string | null; approvalId: string;
   tool: string; command?: string; path?: string; reason?: string; signal?: AbortSignal;
+  /** the caller already evaluated the approval rules (VS Code policy): do not answer from rules here */
+  skipRules?: boolean;
+  /** protected item (VS Code policy 4.3): the dialog shows the reasons and never offers / creates an "always" rule */
+  protected?: boolean;
+  reasons?: string[];
 }
 export interface BridgeApprovalResult { decision: "allowed-once" | "rejected"; decidedBy: string }
 
@@ -110,7 +116,7 @@ export interface BridgeApprovalResult { decision: "allowed-once" | "rejected"; d
  * "always" also creates a tool allow rule. Timeout / abort => rejected.
  */
 export function requestBridgeApproval(r: BridgeApprovalRequest): Promise<BridgeApprovalResult> {
-  const rule = evaluateRules(r.userId, r.projectId, { tool: r.tool, command: r.command, path: r.path });
+  const rule = r.skipRules ? { action: "ask" as "allow" | "deny" | "ask", ruleId: null as string | null } : evaluateRules(r.userId, r.projectId, { tool: r.tool, command: r.command, path: r.path });
   if (rule.action === "allow") return Promise.resolve({ decision: "allowed-once", decidedBy: `rule:${rule.ruleId}` });
   if (rule.action === "deny") return Promise.resolve({ decision: "rejected", decidedBy: `rule:${rule.ruleId}` });
   return new Promise<BridgeApprovalResult>((resolve) => {
@@ -123,10 +129,11 @@ export function requestBridgeApproval(r: BridgeApprovalRequest): Promise<BridgeA
       message: {
         type: "tool_approval", approvalId: r.approvalId, messageId: r.messageId, conversationId: r.conversationId,
         tool: r.tool, arguments: args, permissions: [],
+        ...(r.protected ? { protected: true, reasons: (r.reasons ?? []).slice(0, 10) } : {}),
       },
     }, (d) => {
       if (d === "once" || d === "always") {
-        if (d === "always") addBridgeAllowRule(r.userId, r.projectId, { tool: r.tool, command: r.command, path: r.path });
+        if (d === "always" && !r.protected) addBridgeAllowRule(r.userId, r.projectId, { tool: r.tool, command: r.command, path: r.path });
         return resolve({ decision: "allowed-once", decidedBy: "user" });
       }
       const decidedBy = d === "timeout" ? "timeout" : d === "abort" ? "abort" : "user";
@@ -155,4 +162,19 @@ export function pendingApprovalCount(userId: string, conversationId: string): nu
   let n = 0;
   for (const p of pending.values()) if (p.userId === userId && p.conversationId === conversationId) n++;
   return n;
+}
+
+/**
+ * VS Code bridge policy decision (VSCODE-BRIDGE.md 4.2): loads the user's deny/allow rules for the call
+ * (global + project) and evaluates vscode-policy `decide`. Does not prompt; callers ask via requestBridgeApproval on "ask".
+ */
+export function decideToolCall(r: {
+  userId: string; projectId: string | null; tool: string; args: Record<string, unknown>; roots: string[]; mode: ApprovalMode;
+}): PolicyDecision {
+  const rows = db.prepare(
+    "SELECT id, project_id, kind, pattern, action FROM approval_rules WHERE user_id = ? AND (project_id IS NULL OR project_id = ?) AND action IN ('allow','deny') ORDER BY created_at, id",
+  ).all(r.userId, r.projectId) as unknown as { id: string; project_id: string | null; kind: string; pattern: string; action: "allow" | "deny" }[];
+  const rules: PolicyRules = { deny: [], allow: [] };
+  for (const x of rows) rules[x.action].push({ id: x.id, kind: x.kind, pattern: x.pattern, project: x.project_id !== null });
+  return decidePolicy({ tool: r.tool, args: r.args, roots: r.roots, mode: r.mode, rules });
 }

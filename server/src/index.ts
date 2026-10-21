@@ -1,3 +1,4 @@
+import { isAgentBridgeKind, vscodeProviderRefusal } from "./agent-kinds.js";
 import { installLogRing } from "./logring.js";
 installLogRing();
 import { initLocalAdminToken, registerLocalAdminRoutes } from "./local-admin.js";
@@ -25,6 +26,7 @@ import { handleChatFrame, sendSnapshot } from "./chat.js";
 import { registerChatRoutes } from "./routes-chat.js";
 import { registerSync } from "./sync.js";
 import { handleBridgeUpgrade, listBridges } from "./bridges.js";
+import "./vscode-chat.js";
 import { providerKinds } from "./providers/index.js";
 import { parseEffortProfile } from "./effort.js";
 import { readGeneral } from "./server-general.js";
@@ -98,7 +100,9 @@ app.setErrorHandler((err: any, _req, reply) => {
     return;
   }
   const status = err instanceof AuthError || err instanceof HttpError ? err.status : err.statusCode ?? 500;
-  reply.status(status).send({ error: err.message ?? "Internal error" });
+  const errCode = (err as { code?: unknown }).code;
+  const code = err instanceof AuthError && typeof errCode === "string" ? { code: errCode } : {};
+  reply.status(status).send({ error: err.message ?? "Internal error", ...code });
 });
 
 app.post("/auth/register", async (req) => {
@@ -180,14 +184,16 @@ app.put("/providers/:id", async (req) => {
     throw new HttpError(400, "name, kind, baseUrl and model are required");
   }
   // dsh-bridge providers carry a bridge name, not a URL
-  const bad = b.kind === "dsh-bridge" ? null : forbiddenOutboundUrl(b.baseUrl);
+  const bad = isAgentBridgeKind(b.kind) ? null : forbiddenOutboundUrl(b.baseUrl);
   if (bad) throw new HttpError(400, `baseUrl: ${bad}`);
+  const vsBad = vscodeProviderRefusal(b.kind, b.baseUrl, b.apiKey);
+  if (vsBad) throw new HttpError(400, vsBad);
   // effortProfile: absent = keep the stored value (new rows: standard); present = validated, "standard" stored as null
   const ep = b.effortProfile === undefined ? undefined : parseEffortProfile(b.effortProfile);
   if (ep && !ep.ok) throw new HttpError(400, "effortProfile must be one of standard, xhigh, think-toggle, none, or null");
   const row = getProviderRow(id);
   if (row && row.user_id !== userId) throw new HttpError(403, "Forbidden");
-  if (row && Number(row.shared) === 1 && b.kind === "dsh-bridge") throw new HttpError(400, "A shared provider cannot be a dsh-bridge");
+  if (row && Number(row.shared) === 1 && isAgentBridgeKind(b.kind)) throw new HttpError(400, `A shared provider cannot be a ${b.kind}`);
   // allowOwnProviders=false: ordinary users keep editing and deleting their providers, but cannot add one (or revive a deleted one)
   if ((!row || row.deleted) && !readGeneral().allowOwnProviders && !isAdminUser(userId)) {
     throw new HttpError(403, "Adding your own providers is disabled on this server");

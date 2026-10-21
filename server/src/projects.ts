@@ -2,6 +2,8 @@ import { db, nextSeq, parseJson, parseToolList, parseSearchMode } from "./db.js"
 import type { Effort, SamplingParams } from "./db.js";
 import { sanitizeParams, sanitizeEffort } from "./sampling.js";
 import type { SearchMode } from "./tools/types.js";
+import { sanitizeSearchOptions } from "./search/options.js";
+import type { SearchOptions } from "./search/options.js";
 
 export interface Project {
   id: string; name: string; systemPrompt: string | null; systemMode: "append" | "replace";
@@ -17,6 +19,8 @@ export interface Settings {
   systemPrompt: string | null; effort: Effort | null; params: SamplingParams | null; devMode: boolean;
   contextOverflow: ContextOverflow; contextLimits: Record<string, number> | null;
   tools: string[] | null; searchMode: SearchMode; autoTitle: boolean; titleModel: string | null;
+  /** web search options (search model, limits, domains, page reading, images, injection guard) */
+  search: SearchOptions;
   /** refresh the auto title every N completed replies; 0 = only the first title (integer 0..50) */
   titleEvery: number;
   modelParams: Record<string, SamplingParams> | null; seq: number;
@@ -132,6 +136,7 @@ export function getSettings(userId: string): Settings {
     searchMode: parseSearchMode(j.searchMode) ?? "smart",
     autoTitle: typeof j.autoTitle === "boolean" ? j.autoTitle : process.env.AUTO_TITLE_DEFAULT !== "0",
     titleModel: typeof j.titleModel === "string" && j.titleModel ? j.titleModel : null,
+    search: sanitizeSearchOptions(j.search),
     titleEvery: intIn(j.titleEvery, TITLE_EVERY_RANGE) ? j.titleEvery : TITLE_EVERY_DEFAULT,
     modelParams: sanitizeModelParams(j.modelParams),
     modelVision: sanitizeModelVision(j.modelVision),
@@ -160,6 +165,7 @@ export function saveSettings(userId: string, patch: SettingsPatch): Settings {
     searchMode: "searchMode" in patch && patch.searchMode ? patch.searchMode : cur.searchMode,
     autoTitle: "autoTitle" in patch ? patch.autoTitle !== false : cur.autoTitle,
     titleModel: "titleModel" in patch ? patch.titleModel ?? null : cur.titleModel,
+    search: "search" in patch ? sanitizeSearchOptions({ ...cur.search, ...(patch.search as object) }) : cur.search,
     titleEvery: "titleEvery" in patch ? (intIn(patch.titleEvery, TITLE_EVERY_RANGE) ? patch.titleEvery : TITLE_EVERY_DEFAULT) : cur.titleEvery,
     modelParams: "modelParams" in patch ? patch.modelParams ?? null : cur.modelParams,
     modelVision: "modelVision" in patch ? patch.modelVision ?? null : cur.modelVision,

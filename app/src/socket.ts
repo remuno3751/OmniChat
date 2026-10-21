@@ -11,6 +11,7 @@ import { setProgress } from './modelLoadState';
 import { addApproval, dropApprovalsFor } from './toolState';
 import { applyDelta, applyEphemeralState, applyPhase, applySnapshot, applyToolCall, applySync, applyUpsert, destroyEphemeralLocal, failPending, getState, noteMaintenanceBlocked, patchSettingsLocal, setConnected, setEphemeralSupported, setMaintenance, setV3, setAllowOwnProviders, setSharedProviders } from './store';
 import { isMaintenanceCode, parseMaintenance } from './maintenance';
+import { codeBridgeErrorKey } from './vscodeBridge';
 import { emitCheckpoint, emitNotify } from './v4Events';
 import { toast } from './ui/toast';
 import { applyBenchDone, applyBenchProgress, applyCompareComplete, applyCompareDelta, applyCompareDone, failCompare } from './devState';
@@ -114,7 +115,7 @@ function open() {
       // the call left the pending state (answered here, on another device, timed out or stopped): its prompt is obsolete
       if (m.call && m.call.status !== 'pending') dropApprovalsFor(m.messageId, m.call.name);
     } else if (m.type === 'tool_approval') {
-      addApproval({ approvalId: m.approvalId, messageId: m.messageId, conversationId: m.conversationId, tool: m.tool, arguments: m.arguments, permissions: m.permissions || [] });
+      addApproval({ approvalId: m.approvalId, messageId: m.messageId, conversationId: m.conversationId, tool: m.tool, arguments: m.arguments, permissions: m.permissions || [], protected: m.protected === true, reasons: Array.isArray(m.reasons) ? m.reasons : [] });
     }
     else if (m.type === 'ephemeral_state') {
       applyEphemeralState(m);
@@ -171,6 +172,8 @@ function open() {
         if (m.conversationId) destroyEphemeralLocal(m.conversationId);
         toast(t('eph.gone'), 'error');
         if (m.conversationId) onEphemeralDestroyed?.(m.conversationId);
+      } else if (codeBridgeErrorKey(m.code)) {
+        toast(t(codeBridgeErrorKey(m.code)!), 'error');
       } else toast(m.message || t('socket.serverError'), 'error');
       restoreFailedSend(m.code);
       failPending(m.messageId);

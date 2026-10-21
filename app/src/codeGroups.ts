@@ -19,10 +19,17 @@ export function cwdLabel(p: string): string {
   return s.length ? s[s.length - 1] : p;
 }
 
-/** The device (bridge name) a conversation runs on: its dsh-bridge provider's baseUrl; null when it has none. */
+/** Provider kinds that run Code on a PC: the DeepSeek Harness plugin and the VS Code extension (baseUrl = the bridge / PC name). */
+export const DSH_KIND = 'dsh-bridge';
+export const VSCODE_KIND = 'vscode-bridge';
+export const isAgentBridgeKind = (k: string | null | undefined): boolean => k === DSH_KIND || k === VSCODE_KIND;
+/** The GET /bridges `kind` a provider kind talks to (null for a non-bridge provider). */
+export const bridgeKindOfProvider = (k: string | null | undefined): 'dsh' | 'vscode' | null => (k === DSH_KIND ? 'dsh' : k === VSCODE_KIND ? 'vscode' : null);
+
+/** The device (bridge name) a conversation runs on: its dsh-bridge / vscode-bridge provider's baseUrl; null when it has none. */
 export function deviceOf(c: Conversation, providers: Record<string, Provider>): string | null {
   const p = c.providerId ? providers[c.providerId] : undefined;
-  if (!p || p.kind !== 'dsh-bridge') return null;
+  if (!p || !isAgentBridgeKind(p.kind)) return null;
   return (p.baseUrl ?? '').trim() || null;
 }
 

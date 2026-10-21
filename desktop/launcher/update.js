@@ -7,6 +7,10 @@
     ja: {
       title: '新しいバージョンがあります',
       versions: '現在 {cur} → 最新 {ver}',
+      channel: 'チャンネル: {ch}',
+      chStable: '安定版',
+      chPre: 'プレリリース',
+      prerelease: 'これはプレリリース(試験版)です',
       notes: '変更点',
       install: '今すぐ更新',
       openPage: 'リリースページを開く',
@@ -34,6 +38,10 @@
     en: {
       title: 'A new version is available',
       versions: 'Current {cur} → Latest {ver}',
+      channel: 'Channel: {ch}',
+      chStable: 'Stable',
+      chPre: 'Pre-release',
+      prerelease: 'This is a pre-release (test version)',
       notes: 'Release notes',
       install: 'Update now',
       openPage: 'Open release page',
@@ -99,6 +107,12 @@
     info = i;
     $('title').textContent = S.title;
     $('versions').textContent = S.versions.replace('{cur}', i.current).replace('{ver}', i.version);
+    var parts = [];
+    if (i.channel) parts.push(S.channel.replace('{ch}', i.channel === 'prerelease' ? S.chPre : S.chStable));
+    // a hyphen in the version marks a prerelease (semver)
+    if (i.prerelease || String(i.version).indexOf('-') !== -1) parts.push(S.prerelease);
+    $('meta').textContent = parts.join(' / ');
+    $('meta').hidden = parts.length === 0;
     if (i.notes) {
       $('notes-label').textContent = S.notes;
       $('notes').textContent = i.notes;

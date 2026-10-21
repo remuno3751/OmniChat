@@ -66,6 +66,7 @@ export function buildExport(userId: string) {
       modelParams: mapKeys(s.modelParams, (k) => refToName(k, m)),
       tools: s.tools, searchMode: s.searchMode, autoTitle: s.autoTitle, titleEvery: s.titleEvery,
       titleModel: s.titleModel ? refToName(s.titleModel, m) : null,
+      search: { ...s.search, searchModel: s.search.searchModel ? refToName(s.search.searchModel, m) : null },
       contextOverflow: s.contextOverflow,
       contextLimits: mapKeys(s.contextLimits, (k) => refToName(k, m)),
       contextCompressAt: s.contextCompressAt, contextCompressTarget: s.contextCompressTarget,
@@ -114,11 +115,11 @@ export function parseConfig(format: unknown, content: unknown): any {
 }
 
 const SETTING_KEYS = [
-  "systemPrompt", "effort", "params", "modelParams", "tools", "searchMode", "autoTitle", "titleModel", "titleEvery", "contextOverflow", "contextLimits",
+  "systemPrompt", "effort", "params", "modelParams", "tools", "searchMode", "autoTitle", "titleModel", "search", "titleEvery", "contextOverflow", "contextLimits",
   "contextCompressAt", "contextCompressTarget", "defaultContextLength",
 ] as const;
 /** Keys where null is not a valid value (merge and replace both skip it). */
-const NOT_NULLABLE = ["searchMode", "autoTitle", "titleEvery", "contextOverflow", "contextCompressTarget"];
+const NOT_NULLABLE = ["searchMode", "search", "autoTitle", "titleEvery", "contextOverflow", "contextCompressTarget"];
 
 /**
  * Applies a parsed config for the calling user. The projects / presets / settings go through the real PUT / DELETE endpoints
@@ -154,6 +155,16 @@ export async function importConfig(app: FastifyInstance, authorization: string, 
       const id = typeof value === "string" ? refToId(value, maps) : null;
       if (!id) { res.skipped.push(`settings.titleModel: unknown provider in "${String(value).slice(0, 80)}"`); continue; }
       value = id;
+    }
+    if (key === "search" && value !== null) {
+      if (!isObj(value)) { res.skipped.push("settings.search: must be an object"); continue; }
+      const v: Record<string, unknown> = { ...value };
+      if (typeof v.searchModel === "string") {
+        const id = refToId(v.searchModel, maps);
+        if (id) v.searchModel = id;
+        else { res.skipped.push(`settings.search.searchModel: unknown provider in "${v.searchModel.slice(0, 80)}"`); v.searchModel = null; }
+      }
+      value = v;
     }
     if ((key === "modelParams" || key === "contextLimits") && value !== null) {
       if (!isObj(value)) { res.skipped.push(`settings.${key}: must be an object`); continue; }

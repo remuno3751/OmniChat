@@ -65,6 +65,7 @@ Docker image: coming soon. macOS / Linux: install from source (see [docs/INSTALL
 | API keys and OpenAI-compatible endpoint | `/v1/chat/completions` and `/v1/models`; point an OpenAI SDK's `base_url` at it |
 | Developer mode | Final prompt and raw JSON, sampling parameters, model comparison, benchmarks, structured output, token view, config file import/export, CLI |
 | Remote control of dsh | Operate DeepSeek Harness on your PC from OmniChat (outbound connection only); conversations from the dsh GUI are synced too, grouped by working folder in the Code tab |
+| VS Code integration | Let the AI work in a folder open in VS Code through a small extension (`vscode-ext/`, `.vsix`): the agent loop runs on your server with any tool-capable model, and the extension runs the tools (read/edit files, commands, Git) with manual / auto / full approval modes, protected items that always ask, and checkpoints with rewind. A safety net, not a sandbox. See [docs/VSCODE.md](docs/VSCODE.md) (Japanese) |
 | Device management | Per-device tokens, device list and revocation, logout |
 | Lock | Optionally lock the Code screens or the whole app (PIN or OS authentication) |
 

@@ -44,6 +44,7 @@
 | `OmniChat-Server-Setup-<版>.exe` | `release.yml`(windows) | `SHA256SUMS` |
 | `omnichat-server-<版>-{linux,macos}-{x64,arm64}.tar.gz` | `release.yml`(unix) | `SHA256SUMS` |
 | `omnichat-bridge-<版>.tgz` / `omnichat-dsh-bridge-<版>.tgz` | `release.yml`(tools。`npm pack`) | `SHA256SUMS` |
+| `omnichat-vscode-<版>.vsix` | 手動(下記)または `packaging/build-release.mjs --vsix` | リリースに手で添付 |
 | `OmniChat-Desktop-<タグ>-<プラットフォーム>.<拡張子>` | `desktop.yml` | `SHA256SUMS-desktop.txt` と各ファイルの `.sha256` |
 | `OmniChat-Server-App-<タグ>-<プラットフォーム>.<拡張子>` | `server-app.yml` | `SHA256SUMS-server-app.txt` と各ファイルの `.sha256` |
 | `OmniChat-<版>.apk` | `android.yml` | `OmniChat-<版>.apk.sha256` |
@@ -53,6 +54,8 @@
 - zip の中身: `dist/boot.js` と `bundle.json` が必須です(無いと `make-bundle-zip.mjs` が作るのを拒否します)。`runtime/`、`start.cmd`、`start.sh` は入りません。
 - **DSH プラグインの版は、サーバーの版とは別に番号を付けます。** `dsh-plugin/package.json` の `version` を上げてから tag を打ってください。`@omnichat/dsh-bridge` は `npm pack` で `omnichat-dsh-bridge-<版>.tgz` になります(更新の判定はこのファイル名の形に合わせています)。版を上げなければ、DSH 側に新しい版として出ません。
 - 同じタグで再ビルドしたら、ファイルは上書き(`--clobber`)されます。公開後にファイル名や中身を変えないでください。チェックサムが合わなくなります。
+
+- **VS Code 拡張(`omnichat-vscode-<版>.vsix`)** は `vscode-ext/package.json` の `version` で別に番号を付けます。作り方: `cd vscode-ext && npm ci && npm run package`(`vscode-ext/` の直下に `.vsix` ができます)。それをリリースに添付してください(ファイル名は変えない)。`node packaging/build-release.mjs --vsix` なら、`vscode-ext/node_modules` があるときだけ作って出力フォルダに置きます(無ければ警告のみで、通常のビルドは失敗しません)。サーバーの版との対応は [VSCODE.md](VSCODE.md) の互換表を更新してください。
 
 ### プレリリース
 

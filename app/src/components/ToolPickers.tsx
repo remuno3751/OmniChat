@@ -8,7 +8,7 @@ import { Hint, Label, Segmented } from '../ui/kit';
 import { Chip, PermChips } from './ToolCards';
 import Icon from './Icon';
 
-/** Inherit / Off / Auto / Always. `inheritFrom` names the level that is inherited, e.g. "the project / global setting". */
+/** Inherit / Off / Smart / Always. `inheritFrom` names the level that is inherited, e.g. "the project / global setting". */
 export function SearchModeSelect({ value, onChange, inheritFrom, label }: {
   value: SearchMode | null; onChange: (v: SearchMode | null) => void; inheritFrom: string; label?: string;
 }) {
@@ -20,7 +20,7 @@ export function SearchModeSelect({ value, onChange, inheritFrom, label }: {
     <View>
       <Label>{label ?? tr('sheet.search.title')}</Label>
       <Segmented<'inherit' | SearchMode>
-        options={[{ value: 'inherit', label: tr('tool.inherit') }, ...(['smart', 'off', 'auto', 'always'] as SearchMode[]).map((m) => ({ value: m, label: SEARCH_LABEL[m] }))]}
+        options={[{ value: 'inherit', label: tr('tool.inherit') }, ...(['off', 'smart', 'always'] as SearchMode[]).map((m) => ({ value: m, label: SEARCH_LABEL[m] }))]}
         value={value ?? 'inherit'}
         onChange={set}
       />

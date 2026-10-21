@@ -1,0 +1,1 @@
+25f7b02b5e87b5d6cb28234a0df432abd12a64f04716680b0493ce4ebb09c019 *omnichat-vscode-0.2.1.vsix

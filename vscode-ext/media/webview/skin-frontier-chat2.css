@@ -1,0 +1,252 @@
+/* OmniChat Frontier skin, chat view part 2: composer, pickers, history drawer, tool and approval cards,
+   buttons, banners, pairing card and empty state. Loaded after chat*.css and tokens.css.
+   Every selector is scoped to :root[data-oc-theme="frontier"]. Colours come only from --oc-* tokens.
+   Corner brackets and "// " ornaments render only under body[data-oc-decor="on"] and never in narrow
+   panels; square shapes, borders and caps labels apply regardless of decor. */
+
+/* ---------- Composer: square field, round send button ---------- */
+:root[data-oc-theme="frontier"] .cm-composer {
+  border-radius: 0; background: var(--oc-input); border: var(--oc-bw-base) solid var(--oc-border-strong);
+  transition: border-color var(--oc-dur-1) var(--oc-ease);
+}
+:root[data-oc-theme="frontier"] .cm-composer:focus-within { border-color: var(--oc-accent); }
+:root[data-oc-theme="frontier"] .cm-input { border-radius: 0; color: var(--oc-text); font-family: var(--oc-font-body); }
+:root[data-oc-theme="frontier"] .cm-input::placeholder { color: var(--oc-sub); }
+:root[data-oc-theme="frontier"] .cm-send {
+  border-radius: 999px; background: var(--oc-accent); color: var(--oc-accent-text); border: 0;
+  transition: background-color var(--oc-dur-1) var(--oc-ease), opacity var(--oc-dur-1) var(--oc-ease);
+}
+:root[data-oc-theme="frontier"] .cm-send:focus-visible { outline: var(--oc-bw-strong) solid var(--oc-accent); outline-offset: 2px; }
+:root[data-oc-theme="frontier"] .cm-send--off { background: var(--oc-panel2); color: var(--oc-sub); }
+:root[data-oc-theme="frontier"] .cm-send--stop { background: var(--oc-danger); color: var(--oc-bg); }
+
+/* ---------- Pickers: square selects, segmented mode control ---------- */
+:root[data-oc-theme="frontier"] .ch-select {
+  border-radius: 0; background: var(--oc-input); color: var(--oc-text);
+  border: var(--oc-bw-base) solid var(--oc-border-strong); font-size: 11px; letter-spacing: var(--oc-label-tracking);
+}
+:root[data-oc-theme="frontier"] .ch-select:hover { border-color: var(--oc-text); }
+:root[data-oc-theme="frontier"] .ch-select:focus-visible,
+:root[data-oc-theme="frontier"] .ch-select:focus { outline: var(--oc-bw-strong) solid var(--oc-accent); outline-offset: 1px; }
+:root[data-oc-theme="frontier"] .ch-seg {
+  border-radius: 0; background: var(--oc-input); border: var(--oc-bw-base) solid var(--oc-border-strong);
+}
+:root[data-oc-theme="frontier"] .ch-seg__opt {
+  border-radius: 0; background: transparent; color: var(--oc-sub); font-size: 10px; line-height: 16px;
+  letter-spacing: var(--oc-label-tracking); text-transform: uppercase;
+  transition: background-color var(--oc-dur-1) var(--oc-ease), color var(--oc-dur-1) var(--oc-ease);
+}
+:root[data-oc-theme="frontier"] .ch-seg__opt + .ch-seg__opt { border-left: var(--oc-bw-base) solid var(--oc-border); }
+:root[data-oc-theme="frontier"] .ch-seg__opt:hover { color: var(--oc-text); }
+:root[data-oc-theme="frontier"] .ch-seg__opt[aria-checked="true"] { background: var(--oc-accent); color: var(--oc-accent-text); }
+:root[data-oc-theme="frontier"] .ch-seg__opt:focus-visible { outline: var(--oc-bw-base) solid var(--oc-accent); outline-offset: -2px; }
+:root[data-oc-theme="frontier"] .ch-seg--disabled { opacity: 0.55; }
+
+/* ---------- Chips: square tags ---------- */
+:root[data-oc-theme="frontier"] .ch-chip,
+:root[data-oc-theme="frontier"] .cc-chip,
+:root[data-oc-theme="frontier"] .oc-chip {
+  border-radius: 0; padding: 1px 6px; font-size: 9px; line-height: 14px; letter-spacing: var(--oc-label-tracking);
+  text-transform: uppercase; border: var(--oc-bw-base) solid var(--oc-border-strong);
+}
+:root[data-oc-theme="frontier"] .ch-chip--full { color: var(--oc-danger); border-color: var(--oc-danger); }
+
+/* ---------- History drawer: square plate, active item marked by a left bar ---------- */
+:root[data-oc-theme="frontier"] .ch-history {
+  border-radius: 0; background: var(--oc-panel); border: var(--oc-bw-strong) solid var(--oc-border-strong);
+}
+:root[data-oc-theme="frontier"] .ch-history__head { border-bottom: var(--oc-bw-base) solid var(--oc-border); }
+:root[data-oc-theme="frontier"] .ch-history__title {
+  font-family: var(--oc-font-head); font-size: 10px; font-weight: 400; line-height: 1.4;
+  letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-text);
+}
+:root[data-oc-theme="frontier"] .ch-history__note {
+  font-size: 10px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub);
+}
+:root[data-oc-theme="frontier"] .ch-history__row { border-bottom: var(--oc-bw-base) solid var(--oc-border); }
+:root[data-oc-theme="frontier"] .ch-history__item {
+  border-radius: 0; background: transparent; color: var(--oc-text); border: 0;
+  border-left: 2px solid transparent;
+  transition: background-color var(--oc-dur-1) var(--oc-ease), border-color var(--oc-dur-1) var(--oc-ease);
+}
+:root[data-oc-theme="frontier"] .ch-history__item:hover { background: var(--oc-panel2); }
+:root[data-oc-theme="frontier"] .ch-history__item[aria-current="true"] {
+  background: var(--oc-panel2); border-left-color: var(--oc-accent-ink);
+}
+:root[data-oc-theme="frontier"] .ch-history__item:focus-visible { outline: var(--oc-bw-base) solid var(--oc-accent); outline-offset: -2px; }
+:root[data-oc-theme="frontier"] .ch-history__time {
+  font-size: 9px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub);
+}
+
+/* ---------- Tool cards: bracketed square cards with a caps name and a status chip ---------- */
+:root[data-oc-theme="frontier"] .cc-tool {
+  border-radius: 0; background: var(--oc-panel); border: var(--oc-bw-base) solid var(--oc-border);
+}
+:root[data-oc-theme="frontier"] .cc-tool--running { border-color: var(--oc-accent-ink); }
+:root[data-oc-theme="frontier"] .cc-tool--error { border-color: var(--oc-danger); }
+:root[data-oc-theme="frontier"] .cc-tool--denied { border-style: dashed; }
+:root[data-oc-theme="frontier"] .cc-tool__mark { border-radius: 0; }
+:root[data-oc-theme="frontier"] .cc-tool__name { letter-spacing: 0; text-transform: none; color: var(--oc-text); }
+:root[data-oc-theme="frontier"] .cc-tool__duration { font-size: 9.5px; letter-spacing: var(--oc-label-tracking); color: var(--oc-sub); }
+:root[data-oc-theme="frontier"] .cc-tool__decided { font-size: 9.5px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub); }
+
+/* ---------- Approvals: plate with an inverted top bar ---------- */
+:root[data-oc-theme="frontier"] .cc-approvals__title {
+  font-family: var(--oc-font-head); font-size: 10px; font-weight: 400; letter-spacing: var(--oc-label-tracking);
+  text-transform: uppercase; color: var(--oc-text);
+}
+:root[data-oc-theme="frontier"] .cc-approval {
+  border-radius: 0; background: var(--oc-panel); border: var(--oc-bw-strong) solid var(--oc-border-strong);
+}
+:root[data-oc-theme="frontier"] .cc-approval--protected { border-color: var(--oc-warn); }
+:root[data-oc-theme="frontier"] .cc-approval__bar {
+  border-radius: 0; background: var(--oc-text); color: var(--oc-bg); padding: 5px 10px;
+}
+:root[data-oc-theme="frontier"] .cc-approval--protected .cc-approval__bar { background: var(--oc-warn); color: var(--oc-bg); }
+:root[data-oc-theme="frontier"] .cc-approval__heading {
+  font-family: var(--oc-font-head); font-size: 10px; font-weight: 400; letter-spacing: var(--oc-label-tracking);
+  text-transform: uppercase; color: inherit;
+}
+:root[data-oc-theme="frontier"] .cc-badge {
+  border-radius: 0; background: var(--oc-accent); color: var(--oc-accent-text); padding: 1px 5px;
+  font-size: 9px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase;
+}
+:root[data-oc-theme="frontier"] .cc-approval__path,
+:root[data-oc-theme="frontier"] .cc-preview {
+  border-radius: 0; background: var(--oc-panel2); color: var(--oc-text); border: var(--oc-bw-base) solid var(--oc-border);
+}
+:root[data-oc-theme="frontier"] .cc-diff__add { color: var(--oc-diff-add); }
+:root[data-oc-theme="frontier"] .cc-diff__del { color: var(--oc-diff-del); }
+:root[data-oc-theme="frontier"] .cc-approval__hint,
+:root[data-oc-theme="frontier"] .cc-preview__note {
+  font-size: 10px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub);
+}
+
+/* ---------- Buttons: square outlined, primary is a solid accent fill ---------- */
+:root[data-oc-theme="frontier"] .cc-btn,
+:root[data-oc-theme="frontier"] .cm-btn,
+:root[data-oc-theme="frontier"] .cm-action {
+  border-radius: 0; background: transparent; color: var(--oc-text); border: var(--oc-bw-base) solid var(--oc-border-strong);
+  font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: none;
+  transition: background-color var(--oc-dur-1) var(--oc-ease), color var(--oc-dur-1) var(--oc-ease), border-color var(--oc-dur-1) var(--oc-ease);
+}
+:root[data-oc-theme="frontier"] .cc-btn:hover,
+:root[data-oc-theme="frontier"] .cm-btn:hover,
+:root[data-oc-theme="frontier"] .cm-action:hover { background: var(--oc-panel2); border-color: var(--oc-text); }
+:root[data-oc-theme="frontier"] .cc-btn--ghost { border-color: transparent; }
+:root[data-oc-theme="frontier"] .cc-btn--primary,
+:root[data-oc-theme="frontier"] .cm-btn--primary {
+  background: var(--oc-accent); border-color: var(--oc-accent); color: var(--oc-accent-text);
+}
+:root[data-oc-theme="frontier"] .cc-btn--primary:hover,
+:root[data-oc-theme="frontier"] .cm-btn--primary:hover { background: var(--oc-accent); border-color: var(--oc-accent); filter: brightness(1.08); }
+:root[data-oc-theme="frontier"] .cc-btn:focus-visible,
+:root[data-oc-theme="frontier"] .cm-btn:focus-visible,
+:root[data-oc-theme="frontier"] .cm-action:focus-visible { outline: var(--oc-bw-base) solid var(--oc-accent); outline-offset: 2px; }
+
+/* ---------- Banners, errors, empty state, pairing card ---------- */
+:root[data-oc-theme="frontier"] .cm-banner {
+  border-radius: 0; background: var(--oc-panel); border: var(--oc-bw-base) solid var(--oc-border-strong);
+  border-left: 3px solid var(--oc-accent-ink);
+}
+:root[data-oc-theme="frontier"] .cm-banner--warn { border-left-color: var(--oc-warn); }
+:root[data-oc-theme="frontier"] .cm-error {
+  border-radius: 0; background: color-mix(in srgb, var(--oc-danger) 12%, transparent);
+  border: var(--oc-bw-base) solid var(--oc-danger);
+}
+:root[data-oc-theme="frontier"] .cm-error__close {
+  border-radius: 0; background: transparent; color: var(--oc-text); border: var(--oc-bw-base) solid var(--oc-border-strong);
+}
+:root[data-oc-theme="frontier"] .cm-empty__text {
+  font-family: var(--oc-font-head); font-size: 10px; font-weight: 400; line-height: 1.6;
+  letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub);
+}
+:root[data-oc-theme="frontier"] .cm-pair__card {
+  border-radius: 0; background: var(--oc-panel); border: var(--oc-bw-strong) solid var(--oc-border-strong);
+}
+:root[data-oc-theme="frontier"] .cm-pair__title {
+  font-family: var(--oc-font-head); font-size: 12px; font-weight: 400; letter-spacing: var(--oc-label-tracking);
+  text-transform: uppercase; color: var(--oc-text);
+}
+:root[data-oc-theme="frontier"] .cm-pair__note {
+  font-size: 10px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub);
+}
+:root[data-oc-theme="frontier"] .cm-pair__input {
+  border-radius: 0; background: var(--oc-input); color: var(--oc-text); border: var(--oc-bw-base) solid var(--oc-border-strong);
+}
+:root[data-oc-theme="frontier"] .cm-pair__input:focus-visible { outline: var(--oc-bw-strong) solid var(--oc-accent); outline-offset: 1px; }
+
+/* ---------- Decor: corner brackets on the composer, tool and approval cards, pairing card ---------- */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cm-composer,
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cc-tool,
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cc-approval,
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cm-pair__card {
+  position: relative;
+}
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cm-composer::before,
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cc-tool::before,
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cc-approval::before,
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cm-pair__card::before {
+  content: ""; position: absolute; top: -4px; left: -4px; width: var(--oc-bracket); height: var(--oc-bracket);
+  border-top: var(--oc-bw-base) solid var(--oc-border-strong); border-left: var(--oc-bw-base) solid var(--oc-border-strong);
+  pointer-events: none;
+}
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cm-composer::after,
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cc-tool::after,
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cc-approval::after,
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cm-pair__card::after {
+  content: ""; position: absolute; bottom: -4px; right: -4px; width: var(--oc-bracket); height: var(--oc-bracket);
+  border-bottom: var(--oc-bw-base) solid var(--oc-border-strong); border-right: var(--oc-bw-base) solid var(--oc-border-strong);
+  pointer-events: none;
+}
+
+/* Decor: "// " before approval and history headings, and "[ ]" around tool status chips. */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cc-approval__heading::before,
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .ch-history__title::before {
+  content: "// "; color: inherit; opacity: 0.6;
+}
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .ch-history__title::before { color: var(--oc-accent-ink); opacity: 1; }
+
+
+/* Decor: the approval top bar carries a faint hatch. */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cc-approval__bar {
+  background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--oc-bg) 14%, transparent) 0 1px, transparent 1px 6px);
+}
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .cc-approval--protected .cc-approval__bar {
+  background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--oc-bg) 18%, transparent) 0 1px, transparent 1px 6px);
+}
+
+/* ---------- Type roles (same as the app): captions, tags and tabs use the label face; titles the heading face ---------- */
+:root[data-oc-theme="frontier"] .ch-status, :root[data-oc-theme="frontier"] .cm-status, :root[data-oc-theme="frontier"] .cm-status-line, :root[data-oc-theme="frontier"] .cc-think__summary, :root[data-oc-theme="frontier"] .ch-seg__opt,
+:root[data-oc-theme="frontier"] .ch-history__note, :root[data-oc-theme="frontier"] .ch-history__time, :root[data-oc-theme="frontier"] .cc-tool__duration, :root[data-oc-theme="frontier"] .cc-tool__decided,
+:root[data-oc-theme="frontier"] .cc-approval__hint, :root[data-oc-theme="frontier"] .cc-preview__note, :root[data-oc-theme="frontier"] .cm-pair__note, :root[data-oc-theme="frontier"] .ch-chip, :root[data-oc-theme="frontier"] .cc-chip,
+:root[data-oc-theme="frontier"] .oc-chip, :root[data-oc-theme="frontier"] .oc-header__status { font-family: var(--oc-font-label); font-weight: var(--oc-label-w); }
+:root[data-oc-theme="frontier"] .cc-badge, :root[data-oc-theme="frontier"] .oc-badge--protected, :root[data-oc-theme="frontier"] .ch-seg__opt[aria-checked="true"] {
+  font-family: var(--oc-font-label); font-weight: var(--oc-label-wb);
+}
+:root[data-oc-theme="frontier"] .ch-header__title, :root[data-oc-theme="frontier"] .cm-pair__title, :root[data-oc-theme="frontier"] .cc-approvals__title { font-weight: 700; }
+
+:root[data-oc-theme="frontier"] .cc-tool .cc-chip { text-transform: none; font-size: 10px; }
+:root[data-oc-theme="frontier"] .cc-tool--done .cc-chip { border-color: var(--oc-good); }
+
+/* ---------- Forced colours and reduced motion ---------- */
+@media (forced-colors: active) {
+  :root[data-oc-theme="frontier"] *::before,
+  :root[data-oc-theme="frontier"] *::after {
+    content: none !important; display: none !important; background-image: none !important;
+  }
+  :root[data-oc-theme="frontier"] .cc-approval__bar { background: transparent; border-bottom: var(--oc-bw-base) solid; }
+  :root[data-oc-theme="frontier"] .cc-approval__heading { color: inherit; }
+  :root[data-oc-theme="frontier"] .cm-send { border: var(--oc-bw-base) solid; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-oc-theme="frontier"] .cm-composer,
+  :root[data-oc-theme="frontier"] .cm-send,
+  :root[data-oc-theme="frontier"] .ch-seg__opt,
+  :root[data-oc-theme="frontier"] .ch-history__item,
+  :root[data-oc-theme="frontier"] .cc-btn,
+  :root[data-oc-theme="frontier"] .cm-btn,
+  :root[data-oc-theme="frontier"] .cm-action {
+    animation: none !important; transition: none !important;
+  }
+}

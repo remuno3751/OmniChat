@@ -8,7 +8,7 @@ import { migrate as migrateAuth } from "./migrate-auth.js";
 import { migrate as migrateChat } from "./migrate-chat.js";
 import { migrate as migrateMetrics } from "./migrate-metrics.js";
 import { migrate as migrateTools } from "./migrate-tools.js";
-import type { ToolCall, SearchSource, SearchMode } from "./tools/types.js";
+import type { ToolCall, SearchSource, SearchMode, GuardNotice } from "./tools/types.js";
 import { migrate as migrateFts } from "./migrate-fts.js";
 import { migrate as migrateDev } from "./migrate-dev.js";
 import { migrate as migrateP5 } from "./migrate-p5.js";
@@ -235,6 +235,8 @@ export interface Conversation {
   responseFormat: ResponseFormat | null;
   pinned: boolean; pinnedAt: number | null;
   mode: "chat" | "code"; codeStatus: CodeStatus;
+  /** Code (vscode-bridge): how tool calls are approved. Changed only by the user (PUT), never reset by the server. */
+  approvalMode: "manual" | "auto" | "full";
   /** Code: working folder of the session on the PC (null = unknown) */
   cwd: string | null;
   /** true iff the id starts with "eph_" (ephemeral chat, memory only) */
@@ -253,6 +255,8 @@ export interface Message {
   metrics: Metrics | null;
   toolCalls: ToolCall[] | null;
   sources: SearchSource[] | null;
+  /** passages the injection guard removed from web content during this answer (omitted when none) */
+  guardBlocked?: GuardNotice[] | null;
   phases: PhaseRecord[] | null;
   changes: FileChange[] | null;
   agents: AgentRecord[] | null;
@@ -285,7 +289,8 @@ export const parseToolList = (v: any): string[] | null => {
   if (typeof v !== "string" || !v) return null;
   try { const a = JSON.parse(v); return Array.isArray(a) ? a.filter((x) => typeof x === "string") : null; } catch { return null; }
 };
-export const parseSearchMode = (v: any): SearchMode | null => (v === "off" || v === "auto" || v === "always" || v === "smart" ? v : null);
+/** Stored "auto" (removed mode) reads as "smart", which now has its behavior. */
+export const parseSearchMode = (v: any): SearchMode | null => (v === "off" || v === "always" || v === "smart" ? v : v === "auto" ? "smart" : null);
 const parseJsonArray = (v: any): any[] | null => {
   if (typeof v !== "string" || !v) return null;
   try { const a = JSON.parse(v); return Array.isArray(a) && a.length ? a : null; } catch { return null; }
@@ -301,6 +306,7 @@ export const toConversation = (r: any): Conversation => ({
   responseFormat: parseResponseFormat(r.response_format),
   pinned: !!r.pinned, pinnedAt: typeof r.pinned_at === "number" ? r.pinned_at : null,
   mode: r.mode === "code" ? "code" : "chat",
+  approvalMode: r.approval_mode === "auto" || r.approval_mode === "full" ? r.approval_mode : "manual",
   codeStatus: CODE_STATUSES.includes(r.code_status) ? r.code_status : "idle",
   cwd: typeof r.cwd === "string" && r.cwd ? r.cwd : null,
   ephemeral: typeof r.id === "string" && r.id.startsWith("eph_"),
@@ -330,7 +336,7 @@ export const toMessage = (r: any): Message => {
     status: r.status, createdAt: r.created_at, seq: r.seq, parentId: r.parent_id ?? null,
     reasoning: typeof r.reasoning === "string" && r.reasoning ? r.reasoning : null,
     metrics: mr ? toMetrics(mr) : null,
-    toolCalls: parseJsonArray(r.tool_calls), sources: parseJsonArray(r.sources),
+    toolCalls: parseJsonArray(r.tool_calls), sources: parseJsonArray(r.sources), guardBlocked: parseJsonArray(r.guard_blocked),
     phases: parseJsonArray(r.phases), agents: parseJsonArray(r.agents),
     changes: (parseJsonArray(r.changes) as FileChange[] | null)?.map((c) => (typeof c.patch === "string" && c.patch.length > 20_000 ? { path: c.path, status: c.status, additions: c.additions, deletions: c.deletions } : c)) ?? null,
     ...(atts.length ? { attachments: atts } : {}),
@@ -372,6 +378,12 @@ export function setMessageTools(id: string, toolCalls: ToolCall[] | null, source
     toolCalls && toolCalls.length ? JSON.stringify(toolCalls) : null,
     sources && sources.length ? JSON.stringify(sources) : null, nextSeq(), id,
   );
+  return toMessage(getMessageRow(id));
+}
+
+/** Persists the injection-guard notices of a message (bumps seq so sync and upsert carry them). */
+export function setMessageGuard(id: string, notices: GuardNotice[]): Message {
+  db.prepare("UPDATE messages SET guard_blocked = ?, seq = ? WHERE id = ?").run(notices.length ? JSON.stringify(notices) : null, nextSeq(), id);
   return toMessage(getMessageRow(id));
 }
 

@@ -53,14 +53,41 @@ export interface Conversation {
   codeStatus?: CodeStatus;
   /** v7: ephemeral chat (id starts with eph_); absent on an older server */
   ephemeral?: boolean;
+  /** Code approval mode (VS Code bridge); absent on an older server = manual. `ask`/`rules` are older aliases of manual/auto. */
+  approvalMode?: ApprovalMode;
 }
+export type ApprovalMode = 'manual' | 'auto' | 'full';
 export type ChatMode = 'chat' | 'code';
 export type CodeStatus = 'idle' | 'running' | 'awaiting_approval' | 'done' | 'error';
 export type PhaseName = 'thinking' | 'searching' | 'tool' | 'subagent' | 'answering';
 export interface PhaseRecord { id: string; phase: PhaseName; label?: string; start: number; end: number | null }
 export interface FileChange { path: string; status: 'added' | 'modified' | 'deleted' | 'renamed'; additions: number; deletions: number; patch?: string }
 export interface AgentRecord { id: string; role: string; status: 'running' | 'done' | 'error'; startedAt: number; endedAt: number | null; summary?: string; log?: string }
-export type SearchMode = 'off' | 'auto' | 'always' | 'smart';
+/** off = never search; smart = the model decides whether to search and writes the query; always = every message is searched first. */
+export type SearchMode = 'off' | 'smart' | 'always';
+export type SearchVisionModel = 'answer' | 'search';
+export type SearchGuard = 'off' | 'standard' | 'strict';
+/** Web search options (server /settings `search`). PUT takes a partial object that the server merges. */
+export interface SearchOptions {
+  /** '<providerId>::<model>', same format as titleModel; null = use the answer model */
+  searchModel: string | null;
+  /** 1..30, default 5 */
+  maxSites: number;
+  /** 1..10, default 3 */
+  maxSearches: number;
+  /** empty = all sites */
+  allowDomains: string[];
+  denyDomains: string[];
+  readPages: boolean;
+  readImages: boolean;
+  /** 1..10, default 3 */
+  maxImages: number;
+  visionModel: SearchVisionModel;
+  guard: SearchGuard;
+  allowPrivateUrls: boolean;
+}
+/** A web-content passage the prompt-injection guard removed while answering. */
+export interface GuardBlockedItem { index: number; url: string; title?: string; excerpt: string; rule: string }
 export type ToolPermission = 'network' | 'filesystem-read' | 'filesystem-write' | 'shell';
 export interface ToolInfo {
   name: string; description: string; parameters?: any; permissions: ToolPermission[];
@@ -70,6 +97,8 @@ export type ToolCallStatus = 'pending' | 'running' | 'done' | 'error' | 'denied'
 export interface ToolCall {
   id: string; name: string; arguments: any; status: ToolCallStatus;
   result?: string; error?: string; durationMs?: number; startedAt: number;
+  /** who decided the approval: `rule:<id>` | `mode:<mode>` | `user` | `timeout` | `abort` (absent = no approval was needed or older server) */
+  decidedBy?: string;
 }
 export interface SearchSource { index: number; title: string; url: string; snippet?: string }
 /** Web search methods (PROTOCOL-v6 1.1b). */
@@ -124,6 +153,8 @@ export interface Message {
   /** phase 3: tool-call trace and web-search sources (null/absent = none). */
   toolCalls?: ToolCall[] | null;
   sources?: SearchSource[] | null;
+  /** passages of web content the prompt-injection guard removed during this answer (absent/null = none) */
+  guardBlocked?: GuardBlockedItem[] | null;
   /** v4: staged status history (folded in the UI), Code run file changes (patch omitted when > 20 KB: GET /messages/:id/changes) and sub-agents */
   phases?: PhaseRecord[] | null;
   changes?: FileChange[] | null;
@@ -255,6 +286,8 @@ export interface Settings {
   ephemeralIdleMinutes?: number;
   /** v7 attachments: per-model image support override, key '<providerId>::<model>' */
   modelVision?: Record<string, boolean> | null;
+  /** web search options (absent on an older server) */
+  search?: SearchOptions;
 }
 export interface Device { id: string; name: string; platform: string; createdAt: number; lastSeenAt: number; current: boolean }
 export interface ApiKeyInfo { id: string; name: string; prefix: string; createdAt: number; lastUsedAt: number | null }
@@ -333,7 +366,7 @@ export type ServerMsg =
   | { type: 'bench_progress'; runId: string; done: number; total: number; current?: string | null }
   | { type: 'bench_done'; runId: string; status: string }
   | { type: 'tool'; messageId: string; conversationId: string; call: ToolCall }
-  | { type: 'tool_approval'; approvalId: string; messageId: string; conversationId: string; tool: string; arguments: any; permissions: ToolPermission[]; codeStatus?: CodeStatus }
+  | { type: 'tool_approval'; approvalId: string; messageId: string; conversationId: string; tool: string; arguments: any; permissions: ToolPermission[]; codeStatus?: CodeStatus; /** protected item (VS Code bridge): always asks, no "always allow" */ protected?: boolean; reasons?: string[] }
   | { type: 'phase'; conversationId: string; messageId: string; phase: PhaseName; state: 'start' | 'end'; label?: string; at: number; id?: string }
   | { type: 'notify'; kind: 'done' | 'approval' | 'error'; conversationId: string; title: string; body: string; at: number }
   | { type: 'checkpoint'; conversationId: string; messageId: string | null; checkpointId: string; createdAt: number; dirty: boolean }

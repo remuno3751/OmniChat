@@ -1,0 +1,11 @@
+{
+  "omnichat.view.chat": "チャット",
+  "omnichat.view.settings": "設定",
+  "omnichat.cmd.pair": "OmniChat: サーバーとペアリング",
+  "omnichat.cmd.unpair": "OmniChat: このデバイスのペアリングを解除",
+  "omnichat.cmd.showLog": "OmniChat: ログを表示",
+  "omnichat.cmd.showActivity": "OmniChat: アクティビティを表示",
+  "omnichat.cmd.openChat": "OmniChat: チャットを開く",
+  "omnichat.cmd.openSettings": "OmniChat: 設定を開く",
+  "omnichat.cmd.newConversation": "OmniChat: 新しい会話"
+}

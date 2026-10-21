@@ -30,7 +30,6 @@ export const BUILTIN_ACTIONS: BuiltinAction[] = [
   { id: 'new_session', name: 'new', descKey: 'slash.desc.new_session' },
   { id: 'search:off', name: 'search off', descKey: 'slash.desc.search_off' },
   { id: 'search:smart', name: 'search smart', descKey: 'slash.desc.search_smart' },
-  { id: 'search:auto', name: 'search auto', descKey: 'slash.desc.search_auto' },
   { id: 'search:always', name: 'search always', descKey: 'slash.desc.search_always' },
   { id: 'approval_mode:ask', name: 'approval ask', descKey: 'slash.desc.approval_ask' },
   { id: 'approval_mode:rules', name: 'approval rules', descKey: 'slash.desc.approval_rules' },
@@ -48,7 +47,7 @@ export const BUILTIN_PROMPTS: { id: string }[] = [
   { id: 'email.schedule' },
 ];
 
-const SEARCH_MODE_IDS: readonly SearchMode[] = ['off', 'smart', 'auto', 'always'];
+const SEARCH_MODE_IDS: readonly SearchMode[] = ['off', 'smart', 'always'];
 
 /** The SearchMode for a `search:<mode>` action id, or null. */
 export function searchModeOf(actionId: string): SearchMode | null {

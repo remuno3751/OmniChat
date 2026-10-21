@@ -1,5 +1,7 @@
+import { isAgentBridgeKind, isVscodeBridgeKind } from "./agent-kinds.js";
+import { requestVscodeRewind } from "./vscode-bridge.js";
 import type { FastifyInstance } from "fastify";
-import { db, nextSeq, toConversation, getConversationRow, type CodeStatus } from "./db.js";
+import { db, nextSeq, toConversation, getConversationRow, getProviderRow, type CodeStatus } from "./db.js";
 import { broadcast } from "./hub.js";
 import { AuthError, authFromRequest } from "./auth.js";
 import { listBridges, requestRewind } from "./bridges.js";
@@ -34,7 +36,7 @@ export function registerCodeRoutes(app: FastifyInstance): void {
     );
     let bridgeCwd: Map<string, string> | null = null;
     const sessions = rows.map((r) => {
-      const bridge = r.provider_kind === "dsh-bridge" && typeof r.provider_base_url === "string" ? r.provider_base_url : "";
+      const bridge = isAgentBridgeKind(r.provider_kind) && typeof r.provider_base_url === "string" ? r.provider_base_url : "";
       let cwd = "";
       const cp = lastCwd.get(userId, r.id) as { cwd: string } | undefined;
       if (cp && typeof cp.cwd === "string" && cp.cwd) cwd = cp.cwd;
@@ -99,7 +101,16 @@ export function registerCodeRoutes(app: FastifyInstance): void {
     if (!cp || cp.user_id !== userId) throw new AuthError("Checkpoint not found", 404);
     if (!cp.ref) return reply.code(400).send({ error: cp.unavailable ? `Checkpoint unavailable: ${cp.unavailable}` : "Checkpoint has no snapshot" });
     const conv = getConversationRow(cp.conversation_id);
-    if (conv && conv.code_status === "running") return reply.code(409).send({ error: "Conversation is running" });
+    if (conv && (conv.code_status === "running" || (conv.code_status === "awaiting_approval" && isVscodeBridgeKind(getProviderRow(conv.provider_id)?.kind)))) {
+      return reply.code(409).send({ error: "Conversation is running" });
+    }
+    if (conv?.provider_id && isVscodeBridgeKind(getProviderRow(conv.provider_id)?.kind)) {
+      // VS Code bridge: the instance that has the folder open restores the checkpoint (refused while a run is active; open dirty editors are reported)
+      const vr = await requestVscodeRewind(userId, cp.bridge, cp.ref, cp.cwd ?? "", removeNew);
+      if (vr.ok) return { ok: true };
+      if (vr.error === "dirty_editors") return reply.code(409).send({ error: "dirty_editors", code: "dirty_editors" });
+      return reply.code(502).send({ error: vr.error ?? "rewind failed" });
+    }
     const result = await requestRewind(userId, cp.bridge, cp.ref, cp.cwd ?? "", removeNew);
     if (!result.ok) return reply.code(502).send({ error: result.error ?? "rewind failed" });
     return { ok: true };

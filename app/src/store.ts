@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Conversation, Maintenance, Message, PhaseName, Project, ToolCall, PromptPreset, Provider, Settings, SyncResponse, Template, UpsertPayload } from './protocol';
+import { normalizeSearchMode } from './searchOptions';
 import { dropEphemeralFrom, ephemeralConvIds, isEphemeralId, isEphemeralRow, stripEphemeral } from './ephemeral';
 
 export interface State {
@@ -93,7 +94,7 @@ export async function loadCache(user: { userId: string; username: string }) {
     projects: cached?.projects || {},
     presets: cached?.presets || {},
     templates: cached?.templates || {},
-    settings: cached?.settings || null,
+    settings: cached?.settings ? fixSearchMode(cached.settings) : null,
     v3: !!cached?.v3,
     collapsed,
     lastSeq: cached?.lastSeq || 0,
@@ -174,6 +175,11 @@ export function noteMaintenanceBlocked(message: string) {
   setMaintenance({ enabled: true, message: message || '', eta: null, updatedAt: Date.now() });
 }
 
+/** The old "auto" search mode is now "smart" (applied to every stored or received row). */
+function fixSearchMode<T extends { searchMode?: unknown }>(r: T): T {
+  return r.searchMode === 'auto' ? { ...r, searchMode: normalizeSearchMode('auto') } : r;
+}
+
 export function applyUpsert(u: UpsertPayload, seq?: number) {
   let { conversations, messages, providers, projects, presets, templates, settings, v3 } = state;
   let maxSeq = Math.max(state.lastSeq, seq || 0);
@@ -181,7 +187,7 @@ export function applyUpsert(u: UpsertPayload, seq?: number) {
     conversations = { ...conversations };
     for (const c of u.conversations) {
       const old = conversations[c.id];
-      if (!old || c.seq >= old.seq) conversations[c.id] = c;
+      if (!old || c.seq >= old.seq) conversations[c.id] = fixSearchMode(c);
       // ephemeral rows are not in /sync: their seq must not move the sync cursor
       if (!isEphemeralRow(c)) maxSeq = Math.max(maxSeq, c.seq);
     }
@@ -201,7 +207,7 @@ export function applyUpsert(u: UpsertPayload, seq?: number) {
       projects = { ...projects };
       for (const p of u.projects) {
         const old = projects[p.id];
-        if (!old || p.seq >= old.seq) projects[p.id] = p;
+        if (!old || p.seq >= old.seq) projects[p.id] = fixSearchMode(p);
         maxSeq = Math.max(maxSeq, p.seq);
       }
     }
@@ -230,7 +236,7 @@ export function applyUpsert(u: UpsertPayload, seq?: number) {
   }
   if (u.settings) {
     v3 = true;
-    if (!settings || u.settings.seq >= settings.seq) settings = { ...u.settings, devMode: !!u.settings.devMode };
+    if (!settings || u.settings.seq >= settings.seq) settings = { ...fixSearchMode(u.settings), devMode: !!u.settings.devMode };
     maxSeq = Math.max(maxSeq, u.settings.seq || 0);
   }
   if (u.messages?.length) {
@@ -286,7 +292,7 @@ export function applyEphemeralState(m: { conversations: Conversation[]; messages
 /** Local-only patch of the synced settings doc (optimistic; the server upsert replaces it). */
 export function patchSettingsLocal(p: Partial<Settings>) {
   const base: Settings = state.settings || { systemPrompt: null, effort: null, params: null, devMode: false, seq: 0 };
-  set({ settings: { ...base, ...p } });
+  set({ settings: fixSearchMode({ ...base, ...p }) });
 }
 /** Local-only patch of a conversation (e.g. headId while a send is in flight). Keeps its seq. */
 export function patchConversationLocal(id: string, p: Partial<Conversation>) {

@@ -62,6 +62,9 @@ struct Ctx {
     last_exit_code: Mutex<Option<i32>>,
     /// the disabled status line at the top of the tray menu (updated by spawn_tray_status)
     tray_status: Mutex<Option<MenuItem<Wry>>>,
+    /// held for the whole of start(): the monitor, the tray, the setup hook and the UI can all ask for a start at once,
+    /// and two of them past the running() check would start two servers (the second one lands on the fallback port)
+    start_lock: Mutex<()>,
 }
 
 /// Exit code the server uses to ask its supervisor for a restart (see server/src/updater/restart.ts).
@@ -351,6 +354,7 @@ fn pump<R: Read + Send + 'static>(r: R, logs: Arc<Mutex<VecDeque<String>>>) {
 
 fn start(app: &AppHandle) -> Result<(), String> {
     let ctx = app.state::<Ctx>();
+    let _starting = ctx.start_lock.lock().unwrap_or_else(|e| e.into_inner());
     if running(&ctx).is_some() {
         return Ok(());
     }

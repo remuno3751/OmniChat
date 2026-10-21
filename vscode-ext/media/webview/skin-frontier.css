@@ -1,0 +1,200 @@
+/*
+ * Frontier skin for the OmniChat webviews. Loaded after tokens.css, base.css and settings.css.
+ * Active only when <html data-oc-theme="frontier">; the Simple and Astral looks never match.
+ * Models the app's Frontier theme (app/src/themes/frontier.ts, ui/skin.tsx, ui/decor.tsx):
+ * square shapes, 1px frames (2px strong), caps labels with wide tracking, inverted plates for
+ * tags and selected segments, "//" section marks with a hairline, corner brackets and a faint hatch.
+ *
+ * Two layers:
+ *  - Structure (square shapes, frames, left bars, caps headings, inverted plates) applies always.
+ *  - Decoration (hatch, brackets, ticks, "//" marks, top accent wipe) needs body[data-oc-decor="on"].
+ *    Narrow keeps only a fainter hatch. High contrast and forced colours drop all decoration.
+ * Colours come only from --oc-* tokens. Text uses --oc-accent-ink; fills use --oc-accent.
+ * Motion plays once (one-shot, ocf- keyframes) and is off under prefers-reduced-motion.
+ */
+
+/* 1. Background: a faint 45deg hatch (12px pitch, about 5% ink). Narrow drops to about 2%. */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"] {
+  background-image: repeating-linear-gradient(45deg,
+    color-mix(in srgb, var(--oc-text) 5%, transparent) 0 1px, transparent 1px 12px);
+}
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"][data-oc-narrow] {
+  background-image: repeating-linear-gradient(45deg,
+    color-mix(in srgb, var(--oc-text) 2%, transparent) 0 1px, transparent 1px 12px);
+}
+
+/* 2. Header and plates. The plate is an inverted tag: text colour fill, background-coloured caps. */
+:root[data-oc-theme="frontier"] .oc-header__status { text-transform: uppercase; letter-spacing: var(--oc-label-tracking); font-size: 10px; }
+:root[data-oc-theme="frontier"] .oc-plate {
+  background: var(--oc-text); border-color: var(--oc-text); color: var(--oc-bg);
+  border-radius: 0; letter-spacing: var(--oc-label-tracking);
+}
+:root[data-oc-theme="frontier"] .oc-mark { border-radius: 0; background: var(--oc-accent); }
+
+/* 3. Message bubbles: square, 1px frame, 3px left bar (user = border-strong, assistant = accent-ink). */
+:root[data-oc-theme="frontier"] .oc-msg { border-radius: 0; }
+:root[data-oc-theme="frontier"] .oc-msg--user { border-left: 3px solid var(--oc-border-strong); }
+:root[data-oc-theme="frontier"] .oc-msg--assistant { border-left: 3px solid var(--oc-accent-ink); }
+:root[data-oc-theme="frontier"] .oc-msg__role { font-size: 10px; letter-spacing: var(--oc-label-tracking); }
+
+/* 4. Tool rows, track and chips. The track is a [ ] bar; empty segments are hatched under decor. */
+:root[data-oc-theme="frontier"] .oc-track__seg { border-radius: 0; }
+:root[data-oc-theme="frontier"] .oc-chip {
+  border-radius: 0; padding: 1px 6px; letter-spacing: var(--oc-label-tracking); background: var(--oc-panel2);
+}
+:root[data-oc-theme="frontier"] .oc-chip--run {
+  background: var(--oc-accent); border-color: var(--oc-accent); color: var(--oc-accent-text);
+}
+
+/* 5. Approval card: square frame, inverted caps bar, "//" heading (from base.css). */
+:root[data-oc-theme="frontier"] .oc-approval { border-radius: 0; }
+:root[data-oc-theme="frontier"] .oc-approval__bar { letter-spacing: var(--oc-label-tracking); }
+:root[data-oc-theme="frontier"] .oc-badge--protected { border-radius: 0; letter-spacing: var(--oc-label-tracking); }
+
+/* 6. Buttons, inputs and segments. Labels are Syncopate caps. Selected segment = inverted plate. */
+:root[data-oc-theme="frontier"] .oc-btn,
+:root[data-oc-theme="frontier"] .oc-iconbtn {
+  font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: none; border-radius: 0;
+}
+:root[data-oc-theme="frontier"] .oc-btn:hover { border-color: var(--oc-accent-ink); }
+:root[data-oc-theme="frontier"] .oc-btn--primary { font-weight: 700; }
+:root[data-oc-theme="frontier"] .oc-send { border-radius: 0; }
+:root[data-oc-theme="frontier"] .oc-input:focus,
+:root[data-oc-theme="frontier"] .oc-select:focus { border-color: var(--oc-accent-ink); }
+:root[data-oc-theme="frontier"] .oc-seg { border-radius: 0; gap: 0; padding: 0; }
+:root[data-oc-theme="frontier"] .oc-seg__btn {
+  border-radius: 0; font-family: var(--oc-font-label); font-size: 10px;
+  font-weight: var(--oc-label-w); letter-spacing: var(--oc-label-tracking); text-transform: uppercase;
+}
+:root[data-oc-theme="frontier"] .oc-seg__btn[aria-checked="true"] {
+  background: var(--oc-text); color: var(--oc-bg); font-weight: var(--oc-label-wb);
+}
+
+/* 7. Switch: square track and knob. Knob travel 16px fits the 2px frame at 36x20. */
+:root[data-oc-theme="frontier"] .oc-switch { border-radius: 0; width: 36px; height: 20px; }
+:root[data-oc-theme="frontier"] .oc-switch::before { border-radius: 0; top: 2px; left: 2px; width: 12px; height: 12px; }
+
+/* 8. Settings groups, cards and rows: square, border-strong frame. */
+:root[data-oc-theme="frontier"] .oc-group,
+:root[data-oc-theme="frontier"] .oc-card { border-radius: 0; border-color: var(--oc-border-strong); }
+:root[data-oc-theme="frontier"] .oc-item__label { letter-spacing: 0; }
+:root[data-oc-theme="frontier"] .oc-kv > span:first-child {
+  font-family: var(--oc-font-label); font-weight: var(--oc-label-w); font-size: 10px;
+  letter-spacing: var(--oc-label-tracking); text-transform: uppercase;
+}
+
+/* 9. Section titles: caps heading in the label font. The "//" mark and hairline are decoration. */
+:root[data-oc-theme="frontier"] .oc-section__title {
+  display: flex; align-items: center; gap: 8px; font-family: var(--oc-font-head), system-ui, sans-serif;
+  font-size: 10px; font-weight: 400; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-text);
+}
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"] .oc-section__title::before {
+  content: "// "; white-space: pre; color: var(--oc-accent-ink);
+}
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"] .oc-section__title::after {
+  content: ""; flex: 1 1 auto; min-width: 24px; height: var(--oc-bw-base); background: var(--oc-border-strong);
+}
+
+/* 10. Decoration: corner brackets (7px arms, border-strong) on frames. Full decor only, not narrow. */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"] :is(.oc-group, .oc-card) { position: relative; }
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) :is(.oc-group, .oc-card, .oc-approval)::after {
+  content: ""; position: absolute; inset: -1px; pointer-events: none;
+  background:
+    linear-gradient(var(--oc-border-strong), var(--oc-border-strong)) left top / var(--oc-bracket) var(--oc-bw-base) no-repeat,
+    linear-gradient(var(--oc-border-strong), var(--oc-border-strong)) left top / var(--oc-bw-base) var(--oc-bracket) no-repeat,
+    linear-gradient(var(--oc-border-strong), var(--oc-border-strong)) right top / var(--oc-bracket) var(--oc-bw-base) no-repeat,
+    linear-gradient(var(--oc-border-strong), var(--oc-border-strong)) right top / var(--oc-bw-base) var(--oc-bracket) no-repeat,
+    linear-gradient(var(--oc-border-strong), var(--oc-border-strong)) left bottom / var(--oc-bracket) var(--oc-bw-base) no-repeat,
+    linear-gradient(var(--oc-border-strong), var(--oc-border-strong)) left bottom / var(--oc-bw-base) var(--oc-bracket) no-repeat,
+    linear-gradient(var(--oc-border-strong), var(--oc-border-strong)) right bottom / var(--oc-bracket) var(--oc-bw-base) no-repeat,
+    linear-gradient(var(--oc-border-strong), var(--oc-border-strong)) right bottom / var(--oc-bw-base) var(--oc-bracket) no-repeat;
+}
+
+/* 11. Decoration: assistant bubbles get small accent-ink ticks at two opposite corners. */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .oc-msg--assistant::after {
+  content: ""; position: absolute; inset: -1px; pointer-events: none;
+  background:
+    linear-gradient(var(--oc-accent-ink), var(--oc-accent-ink)) left top / 4px var(--oc-bw-strong) no-repeat,
+    linear-gradient(var(--oc-accent-ink), var(--oc-accent-ink)) left top / var(--oc-bw-strong) 4px no-repeat,
+    linear-gradient(var(--oc-accent-ink), var(--oc-accent-ink)) right bottom / 4px var(--oc-bw-strong) no-repeat,
+    linear-gradient(var(--oc-accent-ink), var(--oc-accent-ink)) right bottom / var(--oc-bw-strong) 4px no-repeat;
+}
+
+/* 12. Decoration: approval card gets a top accent line that wipes in once from the left. */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"]:not([data-oc-narrow]) .oc-approval::before {
+  content: ""; position: absolute; top: -1px; left: -1px; right: -1px; height: var(--oc-bw-strong);
+  background: var(--oc-accent); pointer-events: none; transform-origin: left center;
+  animation: ocf-wipe var(--oc-dur-3) var(--oc-ease) 1 both;
+}
+
+/* 13. Decoration: tracks show their empty segments as a hatch. */
+:root[data-oc-theme="frontier"] body[data-oc-decor="on"] .oc-track__seg:not(.oc-track__seg--done):not(.oc-track__seg--current) {
+  background: repeating-linear-gradient(45deg,
+    color-mix(in srgb, var(--oc-border-strong) 70%, transparent) 0 1px, transparent 1px 4px);
+}
+
+/* 14. Motion. Enter is a short straight slide from the left, once. Off when decor is off. */
+@keyframes ocf-slide { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+@keyframes ocf-wipe { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+:root[data-oc-theme="frontier"] .oc-enter {
+  animation-name: ocf-slide; animation-duration: var(--oc-dur-2); animation-timing-function: var(--oc-ease);
+  animation-iteration-count: 1; animation-fill-mode: both;
+}
+:root[data-oc-theme="frontier"] body[data-oc-decor="off"] .oc-enter { animation: none; }
+
+/* 15. High contrast: VS Code colours and 1px frames only. Decoration is removed with !important
+ * so it beats the decor-on rules above whatever their specificity. */
+:root[data-oc-theme="frontier"] body.vscode-high-contrast,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast-light { background-image: none !important; }
+:root[data-oc-theme="frontier"] body.vscode-high-contrast .oc-group::after,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast .oc-card::after,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast .oc-approval::after,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast .oc-approval::before,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast .oc-msg--assistant::after,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast .oc-section__title::before,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast .oc-section__title::after,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast-light .oc-group::after,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast-light .oc-card::after,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast-light .oc-approval::after,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast-light .oc-approval::before,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast-light .oc-msg--assistant::after,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast-light .oc-section__title::before,
+:root[data-oc-theme="frontier"] body.vscode-high-contrast-light .oc-section__title::after {
+  content: none !important; animation: none !important;
+}
+
+/* 16. Narrow webview: square shapes stay, brackets and wipes go, the hatch is already faint. */
+:root[data-oc-theme="frontier"] body[data-oc-narrow] .oc-section__title { font-size: 9px; letter-spacing: var(--oc-label-tracking); }
+
+/* Forced colours (Windows high contrast): backgrounds and decoration drop out. Frames, the
+ * selected state and the switch knob are drawn with borders, outlines and currentColor. */
+@media (forced-colors: active) {
+  :root[data-oc-theme="frontier"] body { background-image: none; }
+  :root[data-oc-theme="frontier"] .oc-plate,
+  :root[data-oc-theme="frontier"] .oc-chip--run,
+  :root[data-oc-theme="frontier"] .oc-btn--primary,
+  :root[data-oc-theme="frontier"] .oc-seg__btn[aria-checked="true"] {
+    background: transparent; color: currentColor; border-color: currentColor;
+  }
+  :root[data-oc-theme="frontier"] .oc-seg__btn[aria-checked="true"] { outline: 2px solid currentColor; outline-offset: -3px; }
+  :root[data-oc-theme="frontier"] .oc-switch::before { background: currentColor; }
+  :root[data-oc-theme="frontier"] .oc-switch:checked { background: transparent; outline: 2px solid currentColor; outline-offset: 2px; }
+  :root[data-oc-theme="frontier"] .oc-group::after,
+  :root[data-oc-theme="frontier"] .oc-card::after,
+  :root[data-oc-theme="frontier"] .oc-approval::after,
+  :root[data-oc-theme="frontier"] .oc-approval::before,
+  :root[data-oc-theme="frontier"] .oc-msg--assistant::after,
+  :root[data-oc-theme="frontier"] .oc-section__title::before,
+  :root[data-oc-theme="frontier"] .oc-section__title::after { content: none; }
+  :root[data-oc-theme="frontier"] .oc-track__seg--current { background: currentColor; }
+}
+
+/* Reduced motion: no slide, no wipe, no colour fades. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-oc-theme="frontier"] .oc-enter,
+  :root[data-oc-theme="frontier"] .oc-approval::before { animation: none; }
+  :root[data-oc-theme="frontier"] .oc-btn,
+  :root[data-oc-theme="frontier"] .oc-switch,
+  :root[data-oc-theme="frontier"] .oc-switch::before,
+  :root[data-oc-theme="frontier"] .oc-seg__btn { transition: none; }
+}

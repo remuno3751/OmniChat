@@ -104,7 +104,7 @@ API キーは `/v1/*` 専用です。ハッシュのみ保存されます。
 
 | メソッド・パス | 認証 | 内容 |
 |---|---|---|
-| `PUT /conversations/:id` | 端末 | 作成または更新。受け付けるフィールド: `title`, `providerId`, `model`, `projectId`, `systemPrompt`, `systemMode` (`append`/`replace`), `effort` (`off`(推論なし)/`low`/`medium`/`high`/`max`/`null`(モデル標準)), `params`(サンプリング), `tools`(文字列配列または `null`), `searchMode` (`off`/`auto`/`always`/`null`), `responseFormat`, `headId`。`headId` だけの更新は `updatedAt` を変えない。不正な値は 400 |
+| `PUT /conversations/:id` | 端末 | 作成または更新。受け付けるフィールド: `title`, `providerId`, `model`, `projectId`, `systemPrompt`, `systemMode` (`append`/`replace`), `effort` (`off`(推論なし)/`low`/`medium`/`high`/`max`/`null`(モデル標準)), `params`(サンプリング), `tools`(文字列配列または `null`), `searchMode` (`off`/`smart`/`always`/`null`。`auto` は `smart` として読まれる), `responseFormat`, `headId`。`headId` だけの更新は `updatedAt` を変えない。不正な値は 400 |
 | `DELETE /conversations/:id` | 端末 | 論理削除。`conversation` を返す |
 
 フェーズ 5: `PUT /conversations/:id` は `pinned`(真偽値)も受け付けます。`true` で `pinnedAt` を記録し(既にピン留め済みなら時刻は変えない)、`false` で `pinnedAt` を消します。`updatedAt` は変わりません。
@@ -121,12 +121,12 @@ API キーは `/v1/*` 専用です。ハッシュのみ保存されます。
 
 | メソッド・パス | 認証 | 内容 |
 |---|---|---|
-| `PUT /projects/:id` | 端末 | 作成または更新。`name`, `systemPrompt`, `systemMode`, `defaultProviderId`, `defaultModel`, `effort`, `params`, `tools`, `searchMode`。`Project` を返す |
+| `PUT /projects/:id` | 端末 | 作成または更新。`name`, `systemPrompt`, `systemMode`, `defaultProviderId`, `defaultModel`, `effort`, `params`, `tools`, `searchMode` (`off`/`smart`/`always`。`auto` は `smart` の別名)。`Project` を返す |
 | `DELETE /projects/:id` | 端末 | 論理削除。所属する会話は「未分類」(`projectId: null`)に移る |
 | `PUT /presets/:id` | 端末 | システムプロンプトのプリセット。`{name?, text?}` |
 | `DELETE /presets/:id` | 端末 | 論理削除 |
 | `GET /settings` | 端末 | 全体設定 |
-| `PUT /settings` | 端末 | 部分更新。`systemPrompt`, `effort`, `params`, `devMode`, `tools`, `searchMode` (`off`/`auto`/`always`), `autoTitle`, `titleModel` (`"<providerId>::<model>"`), `modelParams`(キーは `"<providerId>::<model>"`), `contextOverflow` (`truncate`/`summarize`/`stop`), `contextLimits`、フェーズ 5 の `contextCompressAt` (50〜95、`null` で自動圧縮オフ、既定 80)、`contextCompressTarget` (20〜80、既定 50)、`defaultContextLength` (256〜10000000、`null` で未設定。モデル読み込み時の既定値と、バックエンドが上限を返さないときの想定上限) |
+| `PUT /settings` | 端末 | 部分更新。`systemPrompt`, `effort`, `params`, `devMode`, `tools`, `searchMode` (`off`/`smart`/`always`。`auto` は `smart` の別名), `search` (Web 検索の詳細設定 `searchModel`、`maxSites`、`maxSearches`、`allowDomains`、`denyDomains`、`readPages`、`readImages`、`maxImages`、`visionModel`、`guard` (`off`/`standard`/`strict`)、`allowPrivateUrls`。部分更新。詳しくは [SEARCH.md](SEARCH.md)。`searchMode` の `auto` は `smart` として読まれる), `autoTitle`, `titleModel` (`"<providerId>::<model>"`), `modelParams`(キーは `"<providerId>::<model>"`), `contextOverflow` (`truncate`/`summarize`/`stop`), `contextLimits`、フェーズ 5 の `contextCompressAt` (50〜95、`null` で自動圧縮オフ、既定 80)、`contextCompressTarget` (20〜80、既定 50)、`defaultContextLength` (256〜10000000、`null` で未設定。モデル読み込み時の既定値と、バックエンドが上限を返さないときの想定上限) |
 
 ---
 
@@ -263,6 +263,25 @@ WebSocket サーバー → クライアントの追加: `phase`(`thinking/search
 
 ---
 
+## VS Code ブリッジ(vscode-bridge)
+
+[VSCODE.md](VSCODE.md) と [design/VSCODE-BRIDGE.md](design/VSCODE-BRIDGE.md)。**状態: サーバー実装済み**(テスト: `server/src/code-agent.test.ts`、`code-approval-mode.test.ts`、`vscode-bridge*.test.ts`、`vscode-policy.test.ts`)。
+
+| メソッド・パス | 内容 |
+|---|---|
+| `PUT /providers/:id` | `kind: "vscode-bridge"`: `baseUrl` は端末名(URL ではない)、API キーなし。使うモデルは会話の `model` に `"<providerId>::<modelId>"` で持つ |
+| `POST /bridges/token` | `{name, kind:"vscode"}` で VS Code 拡張用の端末トークンを作る(端末名は `VS Code (<name>)`) |
+| `GET /bridges` | `kind:"vscode"` の要素に `version` `protocol` `tools` `trusted` `busy` `compat:{ok,minVersion}` `instances` が付く。同名の VS Code ウィンドウは 1 件にまとまり、`workspaces` は和集合 |
+| `PUT /conversations/:id` | `approvalMode: "manual"|"auto"|"full"`(Code 会話のみ。既定 `manual`。`full` は `confirmFull: true` が必要で、無いと 400 `{code:"confirm_required"}`)。サーバーが自動で戻すことはない。会話に `approvalMode` が付き、`/sync` と WS `upsert` で同期 |
+| `POST /code/checkpoints/:id/rewind` | vscode-bridge の会話では、そのフォルダを開いているウィンドウが実行。実行中は 409、未保存エディタがあれば 409 `{code:"dirty_editors"}` |
+
+- ツール呼び出しは既存の WS `tool`(`messages.toolCalls`)で見え、`decidedBy` は `rule:<id>` / `mode:<mode>` / `user` / `timeout` / `abort`。承認は既存の WS `tool_approval`(vscode では保護項目に `protected:true` と `reasons` が付き、「常に許可」は無効)と `tool_approval_reply`。
+- 環境変数: `OMNICHAT_CODE_MAX_ROUNDS`(1 送信あたりの最大ラウンド。既定 50、最大 200)、`TOOL_APPROVAL_TIMEOUT_MS`(承認待ち。既定 120000)。
+- 拡張 ⇄ サーバーのフレーム(`/bridge?kind=vscode&instance=<uuid>`)。拡張 → サーバー: `ready` `workspaces` `run_ack` `checkpoint` `event`(`tool_progress`)`tool_result` `approval` `approval_decision` `changes` `done` `rewound`。サーバー → 拡張: `welcome` `run` `tool_call`(`approval:{by,protectedOk}` 付き)`cancel` `approval_reply` `approval_pending` `approval_settled` `run_end` `rewind`。
+- VS Code 内チャット(0.5.4 以降、`ready.capabilities.chat` と `transcript` が true のとき): 拡張 → サーバー `prompt` `models_request` `conversations_request` `conversation_request` `set_approval_mode` `stop`、サーバー → 拡張 `prompt_ack` `models` `conversations` `transcript` `approval_mode` と `error {code:"rate_limited"}`(毎秒 30 フレームまで)。詳細は [VSCODE.md](VSCODE.md)。
+
+---
+
 ## WebSocket
 
 ### 接続
@@ -297,7 +316,7 @@ ws(s)://<サーバー>/ws?token=<端末トークン>
 | `type` | 内容と例 |
 |---|---|
 | `hello` | 上記 |
-| `snapshot` | `{"type":"snapshot","messages":[{"id":"…","conversationId":"…","content":"…","reasoning":null,"status":"streaming","toolCalls":null,"sources":null}]}`。受け取った側は内容を置き換える |
+| `snapshot` | `{"type":"snapshot","messages":[{"id":"…","conversationId":"…","content":"…","reasoning":null,"status":"streaming","toolCalls":null,"sources":null,"guardBlocked":null}]}`。受け取った側は内容を置き換える。`guardBlocked` は、検索の安全装置(`search.guard`)が取り除いた本文の一覧(無ければ `null`) |
 | `upsert` | `{"type":"upsert","messages":[…]}` ほか `conversations` / `projects` / `presets` / `providers` / `settings`。完了したメッセージの `status` は `done` / `stopped` / `error` |
 | `delta` | `{"type":"delta","messageId":"…","conversationId":"…","text":"こん"}`。`"kind":"reasoning"` が付けば思考過程、付かなければ本文 |
 | `tool` | ツール呼び出しの状態変化。`{"type":"tool","messageId":"…","conversationId":"…","call":{id,name,arguments,status,result?,error?,durationMs?}}` |

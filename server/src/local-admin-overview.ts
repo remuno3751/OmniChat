@@ -1,4 +1,5 @@
 // Read-mostly overview endpoints for the server app's dashboard (loopback + local-admin token, see local-admin.ts).
+import { isAgentBridgeKind, vscodeProviderRefusal } from "./agent-kinds.js";
 import type { FastifyInstance } from "fastify";
 import { AuthError } from "./auth.js";
 import { db, nextSeq, getProviderRow, toProvider } from "./db.js";
@@ -40,11 +41,13 @@ export function registerLocalAdminOverview(app: FastifyInstance): void {
     requireLocal(req);
     const b = (req.body ?? {}) as any;
     const kind = str(b.kind) ? b.kind.trim() : "openai-compatible";
-    if (!providerKinds().includes(kind)) throw new AuthError("Unknown provider kind", 400);
+    if (!providerKinds().includes(kind) && kind !== "vscode-bridge") throw new AuthError("Unknown provider kind", 400);
     if (!str(b.name) || !str(b.baseUrl)) throw new AuthError("name and baseUrl are required", 400);
     const baseUrl = b.baseUrl.trim();
-    const bad = kind === "dsh-bridge" ? null : forbiddenOutboundUrl(baseUrl);
+    const bad = isAgentBridgeKind(kind) ? null : forbiddenOutboundUrl(baseUrl);
     if (bad) throw new AuthError("baseUrl: " + bad, 400);
+    const vsBad = vscodeProviderRefusal(kind, baseUrl, b.apiKey);
+    if (vsBad) throw new AuthError(vsBad, 400);
     const owner = (str(b.owner)
       ? db.prepare("SELECT id FROM users WHERE username = ?").get(b.owner.trim())
       : db.prepare("SELECT id FROM users ORDER BY created_at ASC LIMIT 1").get()) as { id: string } | undefined;

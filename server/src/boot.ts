@@ -4,7 +4,8 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { DATA_DIR } from "./config.js";
+import { DATA_DIR, PORT } from "./config.js";
+import { otherServer, writeLock, removeLock } from "./instance-lock.js";
 import { restorePreUpdateBackup } from "./updater/preupdate.js";
 import { requestRestart } from "./updater/restart.js";
 import { readState, writeState, planBoot, markFailed, type FileState } from "./updater/state.js";
@@ -95,6 +96,16 @@ export async function bootMain(opts: BootOptions = {}): Promise<BootResult> {
   process.env.OMNICHAT_BOOT = "1";
   const delay = Number(process.env.OMNICHAT_START_DELAY_MS ?? 0);
   if (Number.isFinite(delay) && delay > 0 && delay <= 60_000) await sleep(delay);
+
+  // one server per data directory (a second one would share the SQLite file; launchers may pick another port)
+  const other = await otherServer(dataDir);
+  if (other) {
+    log(`another OmniChat server (pid ${other.pid}, port ${other.port}) already uses ${dataDir}; not starting a second one`);
+    exit(1);
+    return { ran: "installed", dir: installedRoot, restored: [] };
+  }
+  writeLock(dataDir, PORT);
+  process.once("exit", () => removeLock(dataDir));
 
   const installedVersion = readInstalledVersion(installedRoot);
   const s: FileState = readState(dataDir);

@@ -1,0 +1,162 @@
+/* OmniChat Chat view: header, status chip, icon buttons, history drawer and composer pickers.
+   Colours, radii and widths come only from --oc-* tokens. Class names use the ch- prefix. */
+
+[hidden] { display: none !important; }
+
+/* Logo mark: the ring is currentColor, the </> glyph is cut out with --oc-logo-cut. */
+.oc-logo { display: block; width: 22px; height: 22px; flex: none; color: var(--oc-accent-ink); }
+.oc-logo__cut { stroke: var(--oc-logo-cut, var(--oc-bg)); }
+
+/* Line icons: fill/stroke are inherited by the child shapes. */
+.ch-icon {
+  display: block; width: 16px; height: 16px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* Header row: hairline bottom border, 16px title, compact chip and icon buttons. */
+.ch-header {
+  --oc-logo-cut: var(--oc-bg);
+  display: flex; align-items: center; gap: 8px; min-width: 0; flex: none;
+  padding: 10px 14px; background: var(--oc-bg); color: var(--oc-text);
+  border-bottom: var(--oc-bw-base) solid var(--oc-border);
+}
+.ch-header__brand { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.ch-header__title {
+  margin: 0; min-width: 0; font-size: 16px; font-weight: 600; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ch-header__tools { display: flex; align-items: center; gap: 2px; flex: none; }
+
+/* Connection chip: pill with a coloured dot. */
+.ch-status {
+  display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 120px; min-width: 0;
+  padding: 2px 8px; border: var(--oc-bw-base) solid var(--oc-border); border-radius: var(--oc-r-pill);
+  font-size: 11px; line-height: 16px; color: var(--oc-sub); white-space: nowrap;
+}
+.ch-status__dot { display: block; width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--oc-sub); }
+.ch-status__dot--good { background: var(--oc-good); }
+.ch-status__dot--warn { background: var(--oc-warn); }
+.ch-status__dot--danger { background: var(--oc-danger); }
+.ch-status__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* Icon-only buttons: 28px square, always labelled through aria-label and title. */
+.ch-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 28px; height: 28px; margin: 0; padding: 0; border: 0; border-radius: var(--oc-r-sm);
+  background: transparent; color: var(--oc-sub); cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.ch-iconbtn:hover { background: var(--oc-panel2); color: var(--oc-text); }
+.ch-iconbtn[aria-expanded="true"] { background: var(--oc-panel2); color: var(--oc-accent-ink); }
+
+/* Small pill label (approval mode in the history list, and similar). */
+.ch-chip {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0;
+  padding: 1px 8px; border: var(--oc-bw-base) solid var(--oc-border); border-radius: var(--oc-r-pill);
+  font-size: 11px; line-height: 16px; color: var(--oc-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ch-chip--full { color: var(--oc-danger); border-color: var(--oc-danger); }
+
+/* History drawer: covers the page under the header. */
+.ch-history {
+  position: absolute; top: 48px; left: 0; right: 0; bottom: 0; z-index: 5;
+  display: flex; flex-direction: column; min-height: 0; background: var(--oc-bg); color: var(--oc-text);
+}
+.ch-history__head {
+  display: flex; align-items: center; gap: 6px; flex: none;
+  padding: 10px 14px; border-bottom: var(--oc-bw-base) solid var(--oc-border);
+}
+.ch-history__title {
+  flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ch-history__list {
+  flex: 1 1 auto; min-height: 0; margin: 0; padding: 8px; list-style: none; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.ch-history__row { margin: 0; padding: 0; }
+.ch-history__item {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; margin: 0; padding: 8px 10px;
+  border: var(--oc-bw-base) solid transparent; border-radius: var(--oc-r-md); background: transparent;
+  color: var(--oc-text); font: inherit; text-align: left; cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.ch-history__item:hover { background: var(--oc-panel2); }
+.ch-history__item[aria-current="true"] { border-color: var(--oc-accent-ink); background: var(--oc-panel); }
+.ch-history__name {
+  display: block; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ch-history__meta { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; color: var(--oc-sub); }
+.ch-history__time { white-space: nowrap; }
+.ch-history__note { margin: 0; padding: 16px 14px; font-size: 13px; color: var(--oc-sub); }
+
+/* Composer picker bar: folder, model and approval-mode controls in one row. */
+.ch-pickers {
+  display: flex; align-items: center; gap: 6px; flex: none; min-width: 0;
+  padding: 6px 10px; background: var(--oc-panel); border-top: var(--oc-bw-base) solid var(--oc-border);
+}
+.ch-select {
+  appearance: none; min-width: 0; max-width: 100%; height: 28px; margin: 0; padding: 0 22px 0 10px;
+  border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-pill);
+  background-color: var(--oc-input); color: var(--oc-text); font: inherit; font-size: 12px; line-height: 26px;
+  text-overflow: ellipsis; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--oc-sub) 50%),
+    linear-gradient(135deg, var(--oc-sub) 50%, transparent 50%);
+  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  background-size: 4px 4px; background-repeat: no-repeat;
+}
+.ch-select:disabled { opacity: 0.6; cursor: not-allowed; }
+.ch-folder { flex: 0 1 auto; max-width: 45%; }
+.ch-model { flex: 0 1 auto; }
+
+/* Segmented control for the approval mode. */
+.ch-seg {
+  display: inline-flex; align-items: stretch; flex: none; max-width: 100%; padding: 2px;
+  border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-pill); background: var(--oc-input);
+}
+.ch-seg__opt {
+  margin: 0; padding: 2px 10px; border: 0; border-radius: var(--oc-r-pill); background: transparent;
+  color: var(--oc-sub); font: inherit; font-size: 12px; line-height: 18px; white-space: nowrap; cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.ch-seg__opt:hover { background: var(--oc-panel2); color: var(--oc-text); }
+.ch-seg__opt[aria-checked="true"] { background: var(--oc-accent); color: var(--oc-accent-text); }
+.ch-seg__opt--full[aria-checked="true"] { background: var(--oc-danger); color: var(--oc-bg); }
+.ch-seg__opt:disabled { opacity: 0.6; cursor: not-allowed; }
+.ch-seg--disabled { opacity: 0.6; }
+
+/* Keyboard focus rings on every control in the Chat chrome. */
+.ch-header :focus-visible,
+.ch-history :focus-visible,
+.ch-pickers :focus-visible {
+  outline: 2px solid var(--oc-accent-ink); outline-offset: 2px;
+}
+
+/* Narrow panels (body[data-oc-narrow]): the chip shows only its dot, pickers wrap. */
+body[data-oc-narrow] .ch-header { gap: 6px; padding: 8px 10px; }
+body[data-oc-narrow] .ch-history__head { padding: 8px 10px; }
+body[data-oc-narrow] .ch-status__text {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+body[data-oc-narrow] .ch-pickers { flex-wrap: wrap; }
+body[data-oc-narrow] .ch-folder,
+body[data-oc-narrow] .ch-model { flex: 1 1 140px; max-width: 100%; }
+
+/* Forced colours: keep the borders that carry the structure. */
+@media (forced-colors: active) {
+  .ch-status,
+  .ch-chip,
+  .ch-select,
+  .ch-seg,
+  .ch-history__item { border-color: CanvasText; }
+  .ch-history__item[aria-current="true"] { border-color: Highlight; }
+  .ch-seg__opt[aria-checked="true"] { background: Highlight; color: HighlightText; }
+  .ch-iconbtn[aria-expanded="true"] { outline: 1px solid CanvasText; }
+}
+
+/* Reduced motion: no hover or state transitions. */
+@media (prefers-reduced-motion: reduce) {
+  .ch-header *,
+  .ch-history *,
+  .ch-pickers * { transition: none !important; animation: none !important; }
+}

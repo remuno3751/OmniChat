@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ApiError, api, getIsAdmin } from '../api';
 import { Chip, PermChips } from '../components/ToolCards';
+import SearchSettingsSection from '../components/SearchSettingsSection';
 import { hostOf, openUrl } from '../components/Sources';
 import type { SearchResult } from '../protocol';
 import { useT } from '../i18n';
@@ -160,7 +161,7 @@ export default function ToolsScreen({ onBack }: { onBack: () => void }) {
               {search.value.configured && (
                 <>
                   <Text style={{ color: t.sub, fontSize: 12, marginTop: 10, marginBottom: 4 }}>{tr('tools.searchDefault')}</Text>
-                  <Segmented<SearchMode> options={(['smart', 'off', 'auto', 'always'] as SearchMode[]).map((m) => ({ value: m, label: SEARCH_LABEL[m] }))} value={settings?.searchMode || 'smart'} onChange={setGlobalSearch} />
+                  <Segmented<SearchMode> options={(['off', 'smart', 'always'] as SearchMode[]).map((m) => ({ value: m, label: SEARCH_LABEL[m] }))} value={settings?.searchMode || 'smart'} onChange={setGlobalSearch} />
                   <Hint>{SEARCH_HELP[settings?.searchMode || 'smart']}</Hint>
                 </>
               )}
@@ -181,6 +182,7 @@ export default function ToolsScreen({ onBack }: { onBack: () => void }) {
               )}
               <View style={{ marginTop: 8 }}><Btn small label={tr('tools.refreshStatus')} onPress={() => search.refresh()} /></View>
             </View>
+            <SearchSettingsSection />
           </>
         )}
       </ScrollView>

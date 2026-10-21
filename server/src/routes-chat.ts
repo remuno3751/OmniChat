@@ -1,3 +1,4 @@
+import { isAgentBridgeKind } from "./agent-kinds.js";
 import { getUsableProviderRow } from "./shared-providers.js";
 import type { FastifyInstance } from "fastify";
 import { forbiddenOutboundUrl } from "./url-guard.js";
@@ -6,6 +7,7 @@ import { AuthError, authFromRequest } from "./auth.js";
 import { broadcast } from "./hub.js";
 import { toProject, toPreset, getProjectRow, getPresetRow, getSettings, saveSettings, CONTEXT_OVERFLOW, sanitizeContextLimits, sanitizeModelParams, sanitizeModelVision, intIn, COMPRESS_AT_RANGE, COMPRESS_TARGET_RANGE, DEFAULT_CONTEXT_RANGE, TITLE_EVERY_RANGE } from "./projects.js";
 import { SEARCH_MODES, TOOL_NAME_RE } from "./tools/types.js";
+import { GUARD_LEVELS, SEARCH_SITES_RANGE, SEARCH_CALLS_RANGE, SEARCH_IMAGES_RANGE } from "./search/options.js";
 import { sanitizeParams, sanitizeEffort } from "./sampling.js";
 import { messageBelongs } from "./branching.js";
 import { loadDebug } from "./debuglog.js";
@@ -15,6 +17,8 @@ import { isEphemeralId, runEphemeral, registerEphemeral, getEphemeral, touchEphe
 
 const isStr = (v: unknown): v is string => typeof v === "string";
 const bad = (msg: string) => new AuthError(msg, 400);
+/** A 400 that also carries a machine-readable `code` (the error handler in index.ts adds it to the body). */
+class CodedError extends AuthError { constructor(message: string, public code: string) { super(message, 400); } }
 const has = (b: any, k: string) => Object.prototype.hasOwnProperty.call(b, k);
 const MAX_PROMPT = 200_000;
 
@@ -48,8 +52,9 @@ function toolsOf(v: unknown): string[] | null {
 }
 function searchModeOf(v: unknown) {
   if (v === null) return null;
+  if (v === "auto") return "smart"; // older clients
   if (typeof v === "string" && (SEARCH_MODES as readonly string[]).includes(v)) return v;
-  throw bad("searchMode must be off, auto, always or null");
+  throw bad("searchMode must be off, smart, always or null");
 }
 function chatModeOf(v: unknown): "chat" | "code" {
   if (v === "chat" || v === "code") return v;
@@ -80,7 +85,8 @@ export function registerChatRoutes(app: FastifyInstance): void {
     if (!existing && b.projectId !== undefined && b.projectId !== null) throw bad("ephemeral chats cannot belong to a project");
     // provider: the explicit one, or on creation without one the user's default (what a send would resolve to)
     const pid = isStr(b.providerId) && b.providerId ? b.providerId : !existing ? defaultProviderId(userId) : undefined;
-    if (pid && getUsableProviderRow(userId, pid)?.kind === "dsh-bridge") throw bad("Ephemeral chats do not support dsh-bridge providers");
+    const pkind = pid ? getUsableProviderRow(userId, pid)?.kind : undefined;
+    if (pid && isAgentBridgeKind(pkind)) throw bad(`Ephemeral chats do not support ${pkind} providers`);
     if (!existing) registerEphemeral(userId, authFromRequest(req).deviceId, id);
     const created = !existing;
     const nb: any = { ...b, title: "Ephemeral chat", pinned: false, mode: "chat", projectId: null };
@@ -120,6 +126,15 @@ export function registerChatRoutes(app: FastifyInstance): void {
       ctxOverflow = b.contextOverflow;
     }
     const convMode = has(b, "mode") ? chatModeOf(b.mode) : undefined;
+    // VS Code bridge approval mode: only for Code conversations; "full" needs an explicit confirmation. Never reset by the server.
+    let approvalMode: "manual" | "auto" | "full" | undefined;
+    if (has(b, "approvalMode")) {
+      if (b.approvalMode !== "manual" && b.approvalMode !== "auto" && b.approvalMode !== "full") throw bad("approvalMode must be manual, auto or full");
+      if (b.approvalMode === "full" && b.confirmFull !== true) throw new CodedError("approvalMode full needs confirmFull: true", "confirm_required");
+      approvalMode = b.approvalMode;
+      const effMode = convMode ?? row?.mode;
+      if (row && effMode !== "code") throw bad("approvalMode is only for Code conversations");
+    }
     let responseFormat: unknown;
     if (has(b, "responseFormat")) {
       responseFormat = sanitizeResponseFormat(b.responseFormat);
@@ -149,7 +164,8 @@ export function registerChatRoutes(app: FastifyInstance): void {
       const pin = pinned === true;
       // Mode: explicit, else 'code' when the resolved provider is a dsh bridge (providerId, else the project default), else 'chat'.
       const resolvedProviderId = providerId ?? (projectId ? getProjectRow(projectId)?.default_provider_id ?? null : null);
-      const insertMode = convMode ?? (resolvedProviderId && getUsableProviderRow(userId, resolvedProviderId)?.kind === "dsh-bridge" ? "code" : "chat");
+      const insertMode = convMode ?? (resolvedProviderId && isAgentBridgeKind(getUsableProviderRow(userId, resolvedProviderId)?.kind) ? "code" : "chat");
+      if (approvalMode !== undefined && insertMode !== "code") throw bad("approvalMode is only for Code conversations");
       db.prepare(
         "INSERT INTO conversations (id, user_id, title, provider_id, model, created_at, updated_at, deleted, seq, project_id, system_prompt, system_mode, effort, params, head_id, tools, search_mode, response_format, pinned, pinned_at, mode, context_overflow) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       ).run(
@@ -184,6 +200,7 @@ export function registerChatRoutes(app: FastifyInstance): void {
         onlyHead ? row.updated_at : now, seq, id,
       );
     }
+    if (approvalMode !== undefined) db.prepare("UPDATE conversations SET approval_mode = ? WHERE id = ?").run(approvalMode === "manual" ? null : approvalMode, id);
     const conv = { ...toConversation(getConversationRow(id)), ...(isEphemeralId(id) ? { ephemeral: true } : {}) };
     broadcast(userId, { type: "upsert", conversations: [conv] });
     return conv;
@@ -308,8 +325,21 @@ export function registerChatRoutes(app: FastifyInstance): void {
     if (has(b, "devMode")) patch.devMode = !!b.devMode;
     if (has(b, "tools")) patch.tools = toolsOf(b.tools);
     if (has(b, "searchMode")) {
-      if (typeof b.searchMode !== "string" || !(SEARCH_MODES as readonly string[]).includes(b.searchMode)) throw bad("searchMode must be off, auto or always");
-      patch.searchMode = b.searchMode;
+      const sm = b.searchMode === "auto" ? "smart" : b.searchMode; // older clients
+      if (typeof sm !== "string" || !(SEARCH_MODES as readonly string[]).includes(sm)) throw bad("searchMode must be off, smart or always");
+      patch.searchMode = sm;
+    }
+    if (has(b, "search")) {
+      if (!b.search || typeof b.search !== "object" || Array.isArray(b.search)) throw bad("search must be an object");
+      const s = b.search as Record<string, unknown>;
+      const chk = (k: string, r: [number, number]) => { if (has(s, k) && !intIn(s[k], r)) throw bad(`search.${k} must be an integer ${r[0]}..${r[1]}`); };
+      chk("maxSites", SEARCH_SITES_RANGE); chk("maxSearches", SEARCH_CALLS_RANGE); chk("maxImages", SEARCH_IMAGES_RANGE);
+      for (const k of ["allowDomains", "denyDomains"]) if (has(s, k) && (!Array.isArray(s[k]) || (s[k] as unknown[]).length > 200)) throw bad(`search.${k} must be an array of up to 200 domains`);
+      if (has(s, "searchModel") && s.searchModel !== null && !(isStr(s.searchModel) && s.searchModel.includes("::") && s.searchModel.length <= 600)) throw bad("search.searchModel must be '<providerId>::<model>' or null");
+      if (has(s, "guard") && !(GUARD_LEVELS as readonly unknown[]).includes(s.guard)) throw bad("search.guard must be off, standard or strict");
+      if (has(s, "visionModel") && s.visionModel !== "answer" && s.visionModel !== "search") throw bad("search.visionModel must be answer or search");
+      for (const k of ["readPages", "readImages", "allowPrivateUrls"]) if (has(s, k) && typeof s[k] !== "boolean") throw bad(`search.${k} must be a boolean`);
+      patch.search = s;
     }
     if (has(b, "autoTitle")) {
       if (typeof b.autoTitle !== "boolean") throw bad("autoTitle must be a boolean");

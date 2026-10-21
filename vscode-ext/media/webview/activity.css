@@ -1,0 +1,42 @@
+/*
+ * Activity panel additions (docs/design/VSCODE-BRIDGE.md §5, THEMES-IMPL.md). Loaded after base.css.
+ * Only --oc-* tokens. No continuous animation: the panel has none, and base.css plays motion once.
+ */
+
+/* Author display rules below would override the UA rule for [hidden]; keep it winning. */
+[hidden] { display: none !important; }
+
+/* Header: cwd fills the rest of the bar and is cut with an ellipsis. */
+.oc-activity__cwd {
+  min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; color: var(--oc-sub); font-family: var(--oc-font-mono);
+}
+
+/* Empty state: a short line and a TIPS strip (reverse label, as in the Frontier popup style). */
+.oc-activity__empty { margin: 0 0 10px; color: var(--oc-sub); }
+.oc-tips { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 12px; }
+.oc-tips__label {
+  flex: none; padding: 1px 6px; background: var(--oc-text); color: var(--oc-bg);
+  font-family: var(--oc-font-head), system-ui, sans-serif; font-size: 10px; letter-spacing: 0.14em;
+}
+.oc-tips__text { min-width: 0; color: var(--oc-sub); }
+
+/* Run card: phase track, phase name, pending-approval chip, then the step list. */
+.oc-activity__run { display: grid; gap: 8px; }
+.oc-activity__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.oc-activity__phase { display: inline-flex; align-items: center; gap: 6px; }
+.oc-activity__phase-name {
+  font-family: var(--oc-font-head), system-ui, sans-serif; font-size: 10px;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--oc-text);
+}
+.oc-activity__steps { margin: 0; padding: 0; list-style: none; }
+
+/* Step rows: chip | label | duration, with the failure note on its own line below. */
+.oc-activity__step { grid-template-columns: auto minmax(0, 1fr) auto; }
+.oc-activity__dur { font-size: 11px; color: var(--oc-sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.oc-activity__note {
+  grid-column: 2 / -1; min-width: 0; font-size: 11px; color: var(--oc-sub);
+  font-family: var(--oc-font-mono); overflow-wrap: anywhere;
+}
+body[data-oc-narrow] .oc-activity__step { grid-template-columns: auto minmax(0, 1fr); }
+body[data-oc-narrow] .oc-activity__dur { grid-column: 2; justify-self: start; }

@@ -15,7 +15,7 @@ const light: Palette = {
   accent: '#f9c837', accentText: '#2a2827', accentInk: '#7a5a00', accent2: '#e6a14c',
   userBubble: '#f3e6c4', botBubble: '#f8f5ee',
   code: '#1e1e2e', codeText: '#e6e6f0', danger: '#b3212b', input: '#fffdf8', warn: '#8a5200', good: '#2f6b2a',
-  notify: '#f3303b', scrim: 'rgba(42,40,39,0.5)', diffAdd: '#e0a92a', diffDel: '#d9303a',
+  notify: '#f3303b', scrim: 'rgba(42,40,39,0.5)', diffAdd: '#8f6a00', diffDel: '#d9303a',
 };
 
 export const astral: ThemeDef = {

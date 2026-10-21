@@ -30,8 +30,12 @@ export interface ToolCall {
 }
 export interface SearchSource { index: number; title: string; url: string; snippet?: string }
 
-export type SearchMode = "off" | "auto" | "always" | "smart";
-export const SEARCH_MODES: readonly SearchMode[] = ["off", "auto", "always", "smart"];
+/** off = no search; smart = the model decides (web_search tool); always = every message is searched first. The old "auto" mode was merged into "smart". */
+/** A passage the prompt-injection guard removed from web content; shown after the answer (plain text only). */
+export interface GuardNotice { index: number; url: string; title?: string; excerpt: string; rule: string }
+
+export type SearchMode = "off" | "always" | "smart";
+export const SEARCH_MODES: readonly SearchMode[] = ["off", "smart", "always"];
 
 export const MAX_TOOL_ROUNDS = 6;
 export const TOOL_RESULT_CAP = 8 * 1024;

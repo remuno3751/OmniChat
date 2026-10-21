@@ -13,7 +13,7 @@ import { SearchModeSelect } from './ToolPickers';
 type Tr = (key: string, vars?: Record<string, string | number>) => string;
 /** Translated mode labels and help (the English constants live in toolState). */
 const modeLabel = (tr: Tr, m: SearchMode): string => tr(`composer.search.${m}`);
-const modeHelp = (tr: Tr, m: SearchMode): string => tr(m === 'auto' ? 'composer.search.helpAuto' : 'composer.search.helpAlways');
+const modeHelp = (tr: Tr, m: SearchMode): string => tr(m === 'smart' ? 'composer.search.helpSmart' : 'composer.search.helpAlways');
 
 /**
  * Search mode chip next to the effort chip (Off / Auto / Always). `chat` is the chat-level value (null = inherit),
@@ -28,7 +28,7 @@ export default function SearchChip({ chat, project, onPin }: { chat: SearchMode 
   const [open, setOpen] = useState(false);
   const st = status.value;
   const tip = st?.configured
-    ? tr('composer.search.tip', { auto: modeHelp(tr, 'auto'), always: modeHelp(tr, 'always') })
+    ? tr('composer.search.tip', { smart: modeHelp(tr, 'smart'), always: modeHelp(tr, 'always') })
     : tr('composer.search.notConfigured');
   // web tooltip: RN-web drops the `title` prop, so set the DOM attribute on the element found by its label
   useEffect(() => {
@@ -76,7 +76,7 @@ export default function SearchChip({ chat, project, onPin }: { chat: SearchMode 
           </Text>
           <Text style={{ color: t.text, fontSize: 13, fontWeight: '600', marginTop: 2 }}>{tr('sheet.search.effective', { mode: modeLabel(tr, r.mode), from: fromLabel(r.from) })}</Text>
         </View>
-        <Hint>{modeHelp(tr, 'auto')}</Hint>
+        <Hint>{modeHelp(tr, 'smart')}</Hint>
         <Hint>{modeHelp(tr, 'always')}</Hint>
       </Sheet>
     </>

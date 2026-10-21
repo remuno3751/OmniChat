@@ -9,6 +9,7 @@ import { broadcast } from "./hub.js";
 import { isValidCwd, normCwd } from "./cwd.js";
 import { requestBridgeApproval } from "./tools/approvals.js";
 import { listOmniModels, mintDshKey, revokeDshKey } from "./omni-models.js";
+import { handleVscodeUpgrade, isValidInstance, listVscodeBridges, closeVscodeDeviceBridges, type VscodeBridgeInfo } from "./vscode-bridge.js";
 
 export type DshEvent = { type: string; [k: string]: any };
 
@@ -59,7 +60,7 @@ const PATCH_TOTAL_CAP = 1024 * 1024;
 const nonNegInt = (v: unknown): number => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0);
 
 /** Sanitizes a bridge `changes` payload (PROTOCOL-v4 section 3). */
-function sanitizeChanges(raw: unknown): FileChange[] {
+export function sanitizeChanges(raw: unknown): FileChange[] {
   if (!Array.isArray(raw)) return [];
   const out: FileChange[] = [];
   let budget = PATCH_TOTAL_CAP;
@@ -297,8 +298,8 @@ export interface BridgeInfo {
   /** Code workspaces (plugin >= 0.9.0) */
   workspacesSupported: boolean; workspaces: string[]; allowAnyCwd: boolean;
 }
-export function listBridges(userId: string): BridgeInfo[] {
-  const out: BridgeInfo[] = [];
+export function listBridges(userId: string): (BridgeInfo | VscodeBridgeInfo)[] {
+  const out: (BridgeInfo | VscodeBridgeInfo)[] = [];
   for (const [k, b] of bridges) {
     if (!k.startsWith(userId + "\u0000") || b.ws.readyState !== b.ws.OPEN) continue;
     out.push({
@@ -306,6 +307,7 @@ export function listBridges(userId: string): BridgeInfo[] {
       workspacesSupported: b.workspacesSupported, workspaces: b.workspaces, allowAnyCwd: b.allowAnyCwd,
     });
   }
+  out.push(...listVscodeBridges(userId));
   return out;
 }
 
@@ -389,10 +391,13 @@ async function handleOmniFrame(b: Bridge, m: any): Promise<void> {
 export function handleBridgeUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, url: URL): void {
   const user = deviceFromToken(url.searchParams.get("token"));
   const name = (url.searchParams.get("name") ?? "").trim();
-  if (!user || !name) {
+  const kind = url.searchParams.get("kind") ?? "dsh";
+  const instance = url.searchParams.get("instance") ?? "";
+  if (!user || !name || (kind !== "dsh" && kind !== "vscode") || (kind === "vscode" && !isValidInstance(instance))) {
     socket.write(`HTTP/1.1 ${user ? "400 Bad Request" : "401 Unauthorized"}\r\nConnection: close\r\n\r\n`);
     return void socket.destroy();
   }
+  if (kind === "vscode") return handleVscodeUpgrade(req, socket, head, user, name, instance);
   wss.handleUpgrade(req, socket, head, (ws) => {
     const k = key(user.userId, name);
     const old = bridges.get(k);
@@ -521,6 +526,7 @@ export async function* runOnBridge(
 
 /** Close bridge sockets authenticated with a revoked device (code 4001). */
 export function closeDeviceBridges(userId: string, deviceId: string): void {
+  closeVscodeDeviceBridges(userId, deviceId);
   for (const b of [...bridges.values()]) {
     if (b.userId === userId && b.deviceId === deviceId) { try { b.ws.close(4001, "device revoked"); } catch { /* ignore */ } }
   }

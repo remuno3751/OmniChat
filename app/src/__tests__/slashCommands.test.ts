@@ -285,7 +285,7 @@ test('buildSlashEntries keeps the built-in actions, prompts and user templates a
   const firstPrompt = entries.findIndex((e) => e.key === 'builtin:email.reply');
   const user = entries.findIndex((e) => e.key === 'tpl:u1');
   assert.ok(lastCmd < firstAction && firstAction < firstPrompt && firstPrompt < user);
-  assert.equal(entries.filter((e) => e.kind === 'action').length, 7);
+  assert.equal(entries.filter((e) => e.kind === 'action').length, 6);
   assert.equal(entries.filter((e) => e.key.startsWith('builtin:email.')).length, 5);
   assert.equal(entries.find((e) => e.key === 'builtin:new_session').kind, 'action');
 });

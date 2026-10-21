@@ -78,6 +78,8 @@ export interface DeviceSettings {
   sidebarPinned: boolean;
   /** Code list with several PCs: group by device first, then workspace (default: off = one level, device shown as a badge) */
   codeGroupByDevice: boolean;
+  /** Settings > VS Code: create a vscode-bridge provider by itself when a PC has none (default on) */
+  vscodeAutoProvider: boolean;
 }
 
 export type DevicePatch = Partial<Omit<DeviceSettings, 'pets' | 'dsh' | 'codeLock'>> & {
@@ -111,6 +113,7 @@ export const DEVICE_DEFAULTS: DeviceSettings = {
   codeLock: CODE_LOCK_DEFAULTS,
   sidebarPinned: true,
   codeGroupByDevice: false,
+  vscodeAutoProvider: true,
 };
 
 const LANGUAGES: Language[] = ['auto', 'ja', 'en'];
@@ -169,6 +172,7 @@ function normalize(raw: any): DeviceSettings {
     codeLock: normalizeCodeLock(raw?.codeLock),
     sidebarPinned: typeof raw?.sidebarPinned === 'boolean' ? raw.sidebarPinned : d.sidebarPinned,
     codeGroupByDevice: typeof raw?.codeGroupByDevice === 'boolean' ? raw.codeGroupByDevice : d.codeGroupByDevice,
+    vscodeAutoProvider: typeof raw?.vscodeAutoProvider === 'boolean' ? raw.vscodeAutoProvider : d.vscodeAutoProvider,
   };
 }
 

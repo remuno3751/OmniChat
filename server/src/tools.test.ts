@@ -75,6 +75,7 @@ before(async () => {
   assert.equal((await call("POST", "/tools/reload")).status, 200);
   await call("PUT", "/settings", {
     autoTitle: false, searchMode: "off", tools: ["echo", "nonet", "netinfo", "fsread", "slow", "big", "boom"],
+    search: { readPages: false }, // the fake result URLs are not reachable; page reading has its own tests
   });
   cl = await connect(c);
 });
@@ -344,11 +345,13 @@ test("stop while a tool is running ends the message as stopped", async () => {
   llm.script = (b) => ({ text: [`R:${[...b.messages].reverse().find((m: any) => m.role === "user")?.content}`] });
 });
 
-test("builtin web_search via tool calling: results, numbering, sources, SEARCH_MAX_RESULTS default 5", async () => {
-  await call("PUT", "/settings", { searchMode: "auto" });
+test("builtin web_search via tool calling: results, numbering, sources, maxSites default 10 with a per-search share", async () => {
+  await call("PUT", "/settings", { searchMode: "smart" });
   await call("DELETE", "/tool-grants/web_search");
   const cv = await convWith({});
   const before = sx.queries.length;
+  const savedResults = sx.results;
+  sx.results = Array.from({ length: 10 }, (_, i) => ({ title: `Result ${i + 1}`, url: `https://example.com/r${i + 1}`, content: `Snippet number ${i + 1}` }));
   const start = llm.bodies.length;
   const seen = answerApprovals(cl, (f) => (f.tool === "web_search" ? "always" : null));
   llm.script = (b, n) => {
@@ -359,24 +362,29 @@ test("builtin web_search via tool calling: results, numbering, sources, SEARCH_M
   };
   const t = await say(c, cl, cv, "tell me about cats");
   assert.equal(t.asst.content, "Cats are cute [1][2].");
-  assert.deepEqual(sx.queries.slice(before), ["cute cats", "more cats"]);
+  assert.deepEqual(sx.queries.slice(before), ["cute cats", "more cats"], "the second search still has room and reaches the backend");
   const tc = calls(t.asst);
   assert.equal(tc[0].status, "done");
-  const lines = tc[0].result.split("\n");
-  assert.equal(lines.length, 5);
-  assert.equal(lines[0], "[1] Result 1 — https://example.com/r1 — Snippet number 1");
-  // second search returns the same URLs: numbering is shared per message (de-duplicated by URL)
-  assert.equal(tc[1].result.split("\n")[0], "[1] Result 1 — https://example.com/r1 — Snippet number 1");
-  assert.equal(t.asst.sources.length, 5);
-  assert.deepEqual(t.asst.sources[0], { index: 1, title: "Result 1", url: "https://example.com/r1", snippet: "Snippet number 1" });
-  assert.deepEqual(t.asst.sources.map((s: any) => s.index), [1, 2, 3, 4, 5]);
+  // results arrive inside the untrusted envelope, numbered, with the per-answer usage tail
+  assert.match(tc[0].result, /<<untrusted-[0-9a-f]+>>/);
+  assert.match(tc[0].result, /\[1\] Result 1 — https:\/\/example\.com\/r1\nSnippet number 1 for cute cats/);
+  assert.match(tc[0].result, /\[4\] Result 4 — /);
+  assert.doesNotMatch(tc[0].result, /\[5\]/, "a first search of 10 results yields only its share: max(3, ceil(10/3)) = 4");
+  assert.match(tc[0].result, /\(4\/10 sites used, 1\/3 searches used\)/);
+  // the second search still has room and adds the next 4 new sites, numbering continues
+  assert.match(tc[1].result, /\[5\] Result 5 — /);
+  assert.match(tc[1].result, /\(8\/10 sites used, 2\/3 searches used\)/);
+  assert.equal(t.asst.sources.length, 8);
+  assert.deepEqual(t.asst.sources[0], { index: 1, title: "Result 1", url: "https://example.com/r1", snippet: "Snippet number 1 for cute cats" });
+  assert.deepEqual(t.asst.sources.map((s: any) => s.index), [1, 2, 3, 4, 5, 6, 7, 8]);
   assert.equal(seen.filter((f) => f.tool === "web_search").length, 1, "asked once, then granted forever");
   const offered = llm.bodies[start].tools.map((x: any) => x.function.name);
   assert.ok(offered.includes("web_search"));
   // sources + toolCalls are in sync and survive a re-read
   const sm = (await call("GET", "/sync?since=0")).json.messages.find((x: any) => x.id === t.assistantMessageId);
-  assert.equal(sm.sources.length, 5);
+  assert.equal(sm.sources.length, 8);
   assert.equal(sm.toolCalls.length, 2);
+  sx.results = savedResults;
   await call("DELETE", "/tool-grants/web_search");
   await call("PUT", "/settings", { searchMode: "off" });
   llm.script = (b) => ({ text: [`R:${[...b.messages].reverse().find((m: any) => m.role === "user")?.content}`] });
@@ -384,7 +392,7 @@ test("builtin web_search via tool calling: results, numbering, sources, SEARCH_M
 
 test("searchMode off never offers web_search; resolution conversation > project > settings", async () => {
   const proj = randomUUID();
-  await call("PUT", `/projects/${proj}`, { name: "P", tools: ["nonet"], searchMode: "auto" });
+  await call("PUT", `/projects/${proj}`, { name: "P", tools: ["nonet"], searchMode: "smart" });
   await call("PUT", "/settings", { searchMode: "off", tools: ["echo"] });
   const names = async (body: Record<string, unknown>) => {
     const cv = await convWith(body);
@@ -401,7 +409,7 @@ test("searchMode off never offers web_search; resolution conversation > project 
   await call("PUT", "/settings", { tools: null });
 });
 
-test("always mode on a model without tool support: one search, system block, sources, pending approval", async () => {
+test("always mode on a model without tool support: one search, results in the user message, sources, pending approval", async () => {
   llm.toolSupport = false;
   await call("DELETE", "/tool-grants/web_search");
   const cv = await convWith({ searchMode: "always", tools: [] });
@@ -418,11 +426,13 @@ test("always mode on a model without tool support: one search, system block, sou
   assert.equal(b.tools, undefined);
   assert.equal(sx.queries.length - q0, 1);
   assert.equal(sx.queries.at(-1), "q".repeat(200), "latest user message trimmed to 200 chars");
-  const sys = roleOf(b, "system");
-  assert.equal(sys.length, 1);
-  assert.match(sys[0].content, /Search results/);
-  assert.match(sys[0].content, /\[1\] Result 1 — https:\/\/example\.com\/r1/);
-  assert.match(sys[0].content, /Cite sources as \[n\]\. These results OVERRIDE your memory/);
+  assert.equal(roleOf(b, "system").length, 0, "web text never gets system authority");
+  const ub = roleOf(b, "user").at(-1).content as string;
+  assert.ok(ub.startsWith("q".repeat(300)), "the user's own words come first");
+  assert.match(ub, /Web search results for the message above/);
+  assert.match(ub, /<<untrusted-[0-9a-f]+>>[\s\S]*<<end-untrusted-[0-9a-f]+>>/);
+  assert.match(ub, /\[1\] Result 1 — https:\/\/example\.com\/r1/);
+  assert.match(ub, /Cite sources as \[n\]\. These results OVERRIDE your memory/);
   assert.equal(seen.length, 1);
   assert.equal(seen[0].tool, "web_search");
   assert.deepEqual(seen[0].arguments, { query: "q".repeat(200) });
@@ -430,12 +440,12 @@ test("always mode on a model without tool support: one search, system block, sou
   assert.equal(tc.length, 1);
   assert.equal(tc[0].name, "web_search");
   assert.equal(tc[0].status, "done");
-  assert.equal(t.asst.sources.length, 5);
+  assert.equal(t.asst.sources.length, 4);
   const dbg = (await call("GET", `/messages/${t.assistantMessageId}/debug`)).json;
   assert.equal(dbg.final.search.mode, "always");
   assert.equal(dbg.final.search.injected, true);
-  assert.equal(dbg.final.search.sources, 5);
-  assert.match(dbg.final.messages[0].content, /Search results/);
+  assert.equal(dbg.final.search.sources, 4);
+  assert.match(dbg.final.messages.at(-1).content, /Web search results for the message above/);
 
   // denied approval: reply continues without results
   answerApprovals(cl, (f) => (f.tool === "web_search" ? "deny" : null));
@@ -444,18 +454,17 @@ test("always mode on a model without tool support: one search, system block, sou
   assert.equal(calls(t2.asst)[0].status, "denied");
   assert.equal(t2.asst.sources, null);
   // no results: the model is told not to invent citations
-  const noRes = roleOf(llm.bodies.at(-1), "system");
-  assert.equal(noRes.length, 1);
-  assert.match(noRes[0].content, /do NOT cite sources/);
-  assert.doesNotMatch(noRes[0].content, /Search results for the user/);
+  const noRes = roleOf(llm.bodies.at(-1), "user").at(-1).content as string;
+  assert.match(noRes, /do NOT cite sources/);
+  assert.doesNotMatch(noRes, /Web search results for the message above/);
   llm.toolSupport = true;
   llm.script = (b) => ({ text: [`R:${[...b.messages].reverse().find((m: any) => m.role === "user")?.content}`] });
 });
 
-test("auto falls back to always (once) when the backend rejects tools", async () => {
+test("smart falls back to always (once) when the backend rejects tools", async () => {
   llm.toolSupport = false;
   await call("DELETE", "/tool-grants/web_search");
-  await call("PUT", "/settings", { searchMode: "auto", tools: ["echo"] });
+  await call("PUT", "/settings", { searchMode: "smart", tools: ["echo"] });
   const cv = await convWith({});
   const start = llm.bodies.length;
   const q0 = sx.queries.length;
@@ -467,9 +476,9 @@ test("auto falls back to always (once) when the backend rejects tools", async ()
   assert.equal(llm.bodies.length - start, 2, "rejected request + one retry");
   assert.ok(llm.bodies[start].tools);
   assert.equal(llm.bodies[start + 1].tools, undefined);
-  assert.match(roleOf(llm.bodies[start + 1], "system")[0].content, /\[1\] Result 1/);
+  assert.match(roleOf(llm.bodies[start + 1], "user").at(-1).content, /\[1\] Result 1/);
   assert.equal(sx.queries.length - q0, 1);
-  assert.equal(t.asst.sources.length, 5);
+  assert.equal(t.asst.sources.length, 4);
   const dbg = (await call("GET", `/messages/${t.assistantMessageId}/debug`)).json;
   assert.equal(dbg.final.tools.fellBackToAlways, true);
   assert.equal(dbg.final.search.injected, true);
@@ -508,12 +517,10 @@ test("SearXNG errors: HTML instead of JSON gives the clear message; search failu
   assert.match(tc.error, /SearXNG returned HTML/);
   assert.equal(t.asst.sources, null);
   // the model is told that no results exist, so it must not invent citations
-  const failSys = roleOf(llm.bodies.at(-1), "system");
-  assert.equal(failSys.length, 1);
-  assert.match(failSys[0].content, /do NOT cite sources/);
+  assert.match(roleOf(llm.bodies.at(-1), "user").at(-1).content, /do NOT cite sources/);
 
-  // auto mode: the tool error goes back to the model, the reply still completes
-  await call("PUT", "/settings", { searchMode: "auto" });
+  // smart mode: the tool error goes back to the model, the reply still completes
+  await call("PUT", "/settings", { searchMode: "smart" });
   const cv2 = await convWith({});
   const start = llm.bodies.length;
   llm.script = (_b, n) => (n === start ? { calls: [{ id: "x", name: "web_search", args: { query: "q" } }] } : { text: ["answered without search"] });
@@ -538,11 +545,11 @@ test("SearXNG errors: HTML instead of JSON gives the clear message; search failu
   llm.script = (b) => ({ text: [`R:${[...b.messages].reverse().find((m: any) => m.role === "user")?.content}`] });
 });
 
-test("POST /search/test returns results (limit SEARCH_MAX_RESULTS=5)", async () => {
+test("POST /search/test returns results (limit SEARCH_MAX_RESULTS=5, a diagnostics knob; the chat tool uses maxSites)", async () => {
   const r = await call("POST", "/search/test", { query: "hello world" });
   assert.equal(r.status, 200);
   assert.equal(r.json.results.length, 5);
-  assert.deepEqual(r.json.results[0], { title: "Result 1", url: "https://example.com/r1", snippet: "Snippet number 1" });
+  assert.deepEqual(r.json.results[0], { title: "Result 1", url: "https://example.com/r1", snippet: "Snippet number 1 for hello world" });
   assert.ok(sx.queries.includes("hello world"));
   const st = (await call("GET", "/search/status")).json;
   assert.equal(st.reachable, true);
@@ -647,10 +654,10 @@ test("fields: validation, defaults, PUT/GET, sync and upsert carry tools / searc
   });
   assert.equal(ok.status, 200);
   assert.deepEqual(ok.json.tools, ["echo", "web_search"]);
-  assert.equal(ok.json.searchMode, "auto");
+  assert.equal(ok.json.searchMode, "smart", "stored auto (older clients) reads back as smart");
   assert.deepEqual(ok.json.modelParams, { "p::m": { temperature: 0.2 } });
   const part = (await call("PUT", "/settings", { devMode: true })).json;
-  assert.equal(part.searchMode, "auto", "partial merge keeps the rest");
+  assert.equal(part.searchMode, "smart", "partial merge keeps the rest");
 
   const cv = randomUUID();
   assert.equal((await call("PUT", `/conversations/${cv}`, { tools: ["x y"] })).status, 400);
@@ -671,10 +678,10 @@ test("fields: validation, defaults, PUT/GET, sync and upsert carry tools / searc
   assert.equal((await call("PUT", `/projects/${pid}`, { tools: 5 })).status, 400);
   const pr = (await call("PUT", `/projects/${pid}`, { name: "T", tools: [], searchMode: "auto" })).json;
   assert.deepEqual(pr.tools, []);
-  assert.equal(pr.searchMode, "auto");
+  assert.equal(pr.searchMode, "smart");
   const sync = (await call("GET", "/sync?since=0")).json;
   assert.deepEqual(sync.projects.find((p: any) => p.id === pid).tools, []);
-  assert.equal(sync.settings.searchMode, "auto");
+  assert.equal(sync.settings.searchMode, "smart");
   assert.deepEqual(sync.conversations.find((x: any) => x.id === cv).tools, null);
   await call("PUT", "/settings", { tools: null, searchMode: "off", autoTitle: false, titleModel: null, modelParams: null });
 });
@@ -704,7 +711,7 @@ test("snapshot, upsert and sync carry toolCalls + sources while a call is pendin
   cl2.send({ type: "tool_approval_reply", approvalId: fs.approvalId, decision: "once" });
   const done = await cl.waitMsg(aid, (m) => m.status === "done");
   assert.equal(done.content, "end");
-  assert.equal(done.sources.length, 5, "sources are in the final upsert");
+  assert.equal(done.sources.length, 4, "sources are in the final upsert");
   assert.deepEqual(done.toolCalls.map((x: any) => [x.name, x.status]), [["web_search", "done"], ["fsread", "done"]]);
   assert.ok(cl2.frames.some((f) => f.type === "tool" && f.messageId === aid), "other devices see tool events");
   cl2.ws.close();
@@ -727,9 +734,111 @@ test("without SEARXNG_URL: web_search unavailable, /search/status not configured
     const cv = await newConv(c2, {});
     const t = await say(c2, cl3, cv, "hi");
     assert.equal(t.asst.status, "done");
-    assert.equal(t.asst.content, "R:hi-end");
+    assert.match(t.asst.content, /^R:hi\n\n\[Web search was requested[\s\S]*-end$/,"the note rides on the user message (echoed by the fake model)");
     assert.equal(t.asst.toolCalls[0].status, "error");
     assert.match(t.asst.toolCalls[0].error, /no search backend/);
     cl3.ws.close();
   } finally { c2.stop(); }
+});
+
+test("settings.search: validation, defaults, domain normalisation, merge; stored 'auto' reads back as 'smart'", async () => {
+  const bad = async (search: unknown) => assert.equal((await call("PUT", "/settings", { search })).status, 400, JSON.stringify(search));
+  await bad({ maxSites: 0 });
+  await bad({ maxSites: 31 });
+  await bad({ maxSites: "5" });
+  await bad({ maxSearches: 11 });
+  await bad({ maxImages: 0 });
+  await bad({ guard: "paranoid" });
+  await bad({ visionModel: "x" });
+  await bad({ readPages: "yes" });
+  await bad({ searchModel: "no-separator" });
+  await bad({ allowDomains: "example.com" });
+  await bad([]);
+  await bad(null);
+
+  const fresh = (await api(c.s.base, "GET", "/settings", undefined, userTok2)).json;
+  assert.equal(fresh.search.maxSites, 10, "default");
+  assert.equal(fresh.search.maxSearches, 3, "default");
+  assert.equal(fresh.search.readPages, true, "default");
+  assert.equal(fresh.search.guard, "standard", "default");
+  assert.equal(fresh.search.searchModel, null);
+
+  const ok = await call("PUT", "/settings", { search: { maxSites: 7, allowDomains: ["https://WWW.Example.com/path?q=1", "*.foo.org", "not a domain", "example.com"], denyDomains: ["Bad.COM:8080"] } });
+  assert.equal(ok.status, 200, ok.text);
+  assert.equal(ok.json.search.maxSites, 7);
+  assert.deepEqual(ok.json.search.allowDomains, ["example.com", "foo.org"], "normalised, invalid dropped, de-duplicated");
+  assert.deepEqual(ok.json.search.denyDomains, ["bad.com"]);
+  assert.equal(ok.json.search.maxSearches, 3);
+  const merged = (await call("PUT", "/settings", { search: { maxSearches: 2 } })).json.search;
+  assert.equal(merged.maxSites, 7, "a partial search object keeps the other fields");
+  assert.equal(merged.maxSearches, 2);
+  assert.equal(merged.readPages, false, "the suite's own setting is kept");
+  assert.equal((await call("GET", "/settings")).json.search.maxSites, 7);
+  assert.equal((await call("GET", "/sync?since=0")).json.settings.search.maxSites, 7, "sync carries it");
+  await call("PUT", "/settings", { search: { maxSites: 10, maxSearches: 3, allowDomains: [], denyDomains: [] } });
+
+  // older clients send "auto": stored and read back as "smart" everywhere
+  assert.equal((await call("PUT", "/settings", { searchMode: "auto" })).json.searchMode, "smart");
+  assert.equal((await call("GET", "/settings")).json.searchMode, "smart");
+  const cvId = randomUUID();
+  assert.equal((await call("PUT", `/conversations/${cvId}`, { searchMode: "auto" })).json.searchMode, "smart");
+  const pid = randomUUID();
+  assert.equal((await call("PUT", `/projects/${pid}`, { name: "A", searchMode: "auto" })).json.searchMode, "smart");
+  await call("PUT", "/settings", { searchMode: "off" });
+});
+
+test("smart mode with a search model: the pre-answer plan call decides the query (and 'no search')", async () => {
+  const llm2 = await startLlm();
+  const prov2 = randomUUID();
+  try {
+    await call("PUT", `/providers/${prov2}`, { name: "Planner", kind: "openai-compatible", baseUrl: llm2.base, model: "planner" });
+    await call("PUT", "/settings", { searchMode: "smart", tools: [], search: { searchModel: `${prov2}::planner` } });
+    await call("DELETE", "/tool-grants/web_search");
+    answerApprovals(cl, (f) => (f.tool === "web_search" ? "always" : null));
+    const cv = await convWith({});
+    llm.script = (b) => ({ text: [`R:${[...b.messages].reverse().find((m: any) => m.role === "user")?.content}`] });
+
+    llm2.titleReply = '```json\n{"search": true, "query": "Qwen3.6 release date"}\n```';
+    const start = llm.bodies.length, q0 = sx.queries.length, p0 = llm2.titleBodies.length;
+    const t = await say(c, cl, cv, "hey, when did that new qwen thing come out? thanks!");
+    assert.equal(t.asst.status, "done");
+    assert.equal(llm.bodies.length - start, 1, "one answer request; the plan went to the search model");
+    assert.equal(llm.bodies[start].tools, undefined, "no web_search tool is offered when a search model plans");
+    assert.deepEqual(sx.queries.slice(q0), ["Qwen3.6 release date"], "the model's query, not the user's words");
+    assert.ok(llm2.titleBodies.length - p0 >= 1);
+    assert.equal(llm2.titleBodies[p0].model, "planner");
+    assert.match(llm2.titleBodies[p0].messages[1].content, /when did that new qwen thing come out/);
+    const ub = roleOf(llm.bodies[start], "user").at(-1).content as string;
+    assert.match(ub, /Web search results for the message above/);
+    assert.match(ub, /Snippet number 1 for Qwen3\.6 release date/);
+    assert.equal(roleOf(llm.bodies[start], "system").length, 0);
+    assert.equal(t.asst.sources.length, 4);
+    const dbg = (await call("GET", `/messages/${t.assistantMessageId}/debug`)).json;
+    assert.equal(dbg.final.search.planned, "model");
+    assert.equal(dbg.final.search.query, "Qwen3.6 release date");
+    assert.equal(dbg.final.search.injected, true);
+
+    // the model says no search: nothing is searched, nothing is injected
+    llm2.titleReply = '{"search": false, "query": ""}';
+    const q1 = sx.queries.length, s1 = llm.bodies.length;
+    const t2 = await say(c, cl, cv, "thanks, that is all");
+    assert.equal(t2.asst.status, "done");
+    assert.equal(sx.queries.length, q1);
+    assert.doesNotMatch(roleOf(llm.bodies[s1], "user").at(-1).content, /Web search/);
+    assert.equal(t2.asst.sources, null);
+
+    // an unusable plan reply (HTTP 500 here) falls back to the user's own words
+    llm2.titleReply = null;
+    const q2 = sx.queries.length;
+    const t3 = await say(c, cl, await convWith({ searchMode: "always" }), "plain words query");
+    assert.equal(t3.asst.status, "done");
+    assert.deepEqual(sx.queries.slice(q2), ["plain words query"]);
+    const dbg3 = (await call("GET", `/messages/${t3.assistantMessageId}/debug`)).json;
+    assert.equal(dbg3.final.search.planned, "fallback");
+  } finally {
+    await call("PUT", "/settings", { searchMode: "off", tools: null, search: { searchModel: null } });
+    await call("DELETE", "/tool-grants/web_search");
+    llm2.close();
+    llm.script = (b) => ({ text: [`R:${[...b.messages].reverse().find((m: any) => m.role === "user")?.content}`] });
+  }
 });

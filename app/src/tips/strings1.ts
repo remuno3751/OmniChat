@@ -37,8 +37,8 @@ export const en: Record<string, string> = {
   'tips.search.smart.body': 'Smart searches the web first only when a message seems to need current information, such as prices, news, releases, dates or the word "latest". It works with any model.',
   'tips.search.smart.kw': 'smart, fresh, latest, news, price, release, current, any model, スマート, 最新, ニュース, 価格, リリース',
 
-  'tips.search.auto.title': 'Auto: the model decides',
-  'tips.search.auto.body': 'Auto gives the model the web search tool and lets it decide whether to search. The model must support tool calling.',
+  'tips.search.auto.title': 'Smart: the model decides',
+  'tips.search.auto.body': 'Smart gives the model the web search tool. It decides whether to search and writes the search query itself.',
   'tips.search.auto.kw': 'auto, tool, tool calling, model decides, function, 自動, ツール, モデル, 判断',
 
   'tips.search.always.title': 'Always: search every message',
@@ -138,8 +138,8 @@ export const ja: Record<string, string> = {
   'tips.search.smart.body': 'スマートは、価格・ニュース・リリース・日付・「最新」など最新の情報が必要そうなメッセージのときだけ、先にWeb検索する。どのモデルでも使える。',
   'tips.search.smart.kw': 'smart, fresh, latest, news, price, release, current, any model, スマート, 最新, ニュース, 価格, リリース, 日付',
 
-  'tips.search.auto.title': '自動: モデルが判断',
-  'tips.search.auto.body': '自動は、Web検索をツールとしてモデルに渡し、検索するかどうかをモデルに決めさせる。モデルがツール呼び出しに対応している必要がある。',
+  'tips.search.auto.title': 'スマート: モデルが判断',
+  'tips.search.auto.body': 'スマートは、Web検索をツールとしてモデルに渡します。検索するかどうか、検索する語句をモデルが決めます。',
   'tips.search.auto.kw': 'auto, tool, tool calling, model decides, function, 自動, ツール, モデル, 判断, ツール呼び出し',
 
   'tips.search.always.title': '常に: 毎回検索',

@@ -1,0 +1,214 @@
+{
+  "name": "omnichat-vscode",
+  "displayName": "OmniChat VS",
+  "description": "Chat with your self-hosted OmniChat server from the VS Code activity bar, and let it use this window's tools (files, search, edits, diagnostics, git) with your approval.",
+  "homepage": "https://github.com/remuno3751/omnichat/tree/main/vscode-ext#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/remuno3751/omnichat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/remuno3751/omnichat/issues"
+  },
+  "version": "0.2.6",
+  "publisher": "omnichat",
+  "license": "AGPL-3.0-only",
+  "private": false,
+  "categories": [
+    "Other",
+    "AI"
+  ],
+  "keywords": [
+    "omnichat",
+    "ai",
+    "chat",
+    "agent",
+    "self-hosted",
+    "tools"
+  ],
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onUri",
+    "onCommand:omnichat.pair",
+    "onCommand:omnichat.unpair",
+    "onCommand:omnichat.showLog",
+    "onCommand:omnichat.showActivity",
+    "onView:omnichat.chat",
+    "onView:omnichat.settings",
+    "onCommand:omnichat.openChat",
+    "onCommand:omnichat.openSettings",
+    "onCommand:omnichat.newConversation"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "OmniChat",
+      "properties": {
+        "omnichat.theme": {
+          "type": "string",
+          "enum": [
+            "simple",
+            "frontier",
+            "astral"
+          ],
+          "enumItemLabels": [
+            "Simple",
+            "Frontier",
+            "Astral"
+          ],
+          "enumDescriptions": [
+            "Simple: plain rounded cards, no ornaments (the look of 0.2.2).",
+            "Frontier: the OmniChat app's Frontier look: square bracketed panels, caps labels, hatch background (default).",
+            "Astral: Astral colours with the Simple layout."
+          ],
+          "default": "frontier",
+          "description": "Visual theme (skin and colours) for the OmniChat views. Frontier is the default."
+        },
+        "omnichat.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "URL of your self-hosted OmniChat server (for example, https://omnichat.example.com, or http://192.168.0.10:8787 on a LAN or Tailscale address)."
+        },
+        "omnichat.deviceName": {
+          "type": "string",
+          "default": "",
+          "description": "Name this VS Code window shows as in the OmniChat app. Set by pairing; leave empty to use the machine name."
+        },
+        "omnichat.shell": {
+          "type": "string",
+          "default": "",
+          "description": "Shell used by run_command. Leave empty to use $SHELL on Linux and macOS, or cmd.exe on Windows."
+        },
+        "omnichat.autoSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save the file after OmniChat edits. When off, edits stay unsaved in the editor (still undoable)."
+        },
+        "omnichat.decorations": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "on",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Decorations on wide views, off on narrow ones.",
+            "Always show the background decorations.",
+            "Never show them."
+          ],
+          "default": "auto",
+          "description": "Background decorations in the OmniChat views (high-contrast themes always turn them off)."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "omnichat.pair",
+        "title": "%omnichat.cmd.pair%"
+      },
+      {
+        "command": "omnichat.unpair",
+        "title": "%omnichat.cmd.unpair%"
+      },
+      {
+        "command": "omnichat.showLog",
+        "title": "%omnichat.cmd.showLog%"
+      },
+      {
+        "command": "omnichat.showActivity",
+        "title": "%omnichat.cmd.showActivity%"
+      },
+      {
+        "command": "omnichat.openChat",
+        "title": "%omnichat.cmd.openChat%",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "omnichat.openSettings",
+        "title": "%omnichat.cmd.openSettings%",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "omnichat.newConversation",
+        "title": "%omnichat.cmd.newConversation%",
+        "icon": "$(add)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "omnichat",
+          "title": "OmniChat VS",
+          "icon": "media/omnichat-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "omnichat": [
+        {
+          "type": "webview",
+          "id": "omnichat.chat",
+          "name": "%omnichat.view.chat%",
+          "icon": "media/omnichat-activity.svg"
+        },
+        {
+          "type": "webview",
+          "id": "omnichat.settings",
+          "name": "%omnichat.view.settings%",
+          "icon": "media/omnichat-activity.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "omnichat.newConversation",
+          "when": "view == omnichat.chat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "omnichat.openSettings",
+          "when": "view == omnichat.chat",
+          "group": "navigation@2"
+        },
+        {
+          "command": "omnichat.showLog",
+          "when": "view == omnichat.settings",
+          "group": "overflow@1"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "gen-tokens": "node scripts/gen-tokens.mjs",
+    "build": "npm run gen-tokens && node esbuild.mjs",
+    "typecheck": "tsc --noEmit",
+    "check:contrast": "node scripts/check-contrast.mjs",
+    "test": "vitest run",
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "@types/ws": "^8.5.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.25.0",
+    "playwright-core": "^1.64.1",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "galleryBanner": {
+    "color": "#101012",
+    "theme": "dark"
+  }
+}

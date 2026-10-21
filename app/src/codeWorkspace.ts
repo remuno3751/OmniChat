@@ -1,6 +1,6 @@
 import type { BridgeInfo } from './api';
 import type { Conversation, Provider } from './protocol';
-import { deviceOf, normCwd } from './codeGroups';
+import { bridgeKindOfProvider, deviceOf, normCwd } from './codeGroups';
 
 /* Code tab, new chat: which device and workspace the first message goes to. Pure; docs/design/CODE-WORKSPACES.md. */
 
@@ -11,6 +11,8 @@ export interface CodeDevice {
   online: boolean;
   /** the bridge reports workspaces (plugin >= 0.9.0): the picker can send a cwd */
   workspaces: boolean;
+  /** which kind of bridge: DeepSeek Harness or the VS Code extension */
+  kind: 'dsh' | 'vscode';
 }
 
 const MAX_OPTIONS = 30;
@@ -20,21 +22,23 @@ export function codeDevices(providers: Provider[], bridges: BridgeInfo[] | null)
   const out: CodeDevice[] = [];
   const seen = new Set<string>();
   for (const p of providers) {
-    if (p.kind !== 'dsh-bridge' || p.deleted) continue;
+    const kind = bridgeKindOfProvider(p.kind);
+    if (!kind || p.deleted) continue;
     const name = (p.baseUrl ?? '').trim();
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    const b = bridges?.find((x) => x.name === name && x.online);
-    out.push({ providerId: p.id, name, online: !!b, workspaces: b?.workspacesSupported === true });
+    if (!name || seen.has(kind + '\u0000' + name)) continue;
+    seen.add(kind + '\u0000' + name);
+    const b = bridges?.find((x) => x.name === name && x.online && (x.kind ?? 'dsh') === kind);
+    // a VS Code extension always reports its workspaces
+    out.push({ providerId: p.id, name, online: !!b, workspaces: b?.workspacesSupported === true || (kind === 'vscode' && !!b), kind });
   }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
+  return out.sort((a, b) => a.name.localeCompare(b.name) || a.kind.localeCompare(b.kind));
 }
 
 /**
  * Folders offered for a device: the ones its bridge reported (most recent first), then folders of its known conversations
  * (newest first; they also cover a bridge that is offline). Duplicates by normalized path are dropped.
  */
-export function workspaceOptions(device: string, bridges: BridgeInfo[] | null, convs: Conversation[], providers: Record<string, Provider>): string[] {
+export function workspaceOptions(device: string, bridges: BridgeInfo[] | null, convs: Conversation[], providers: Record<string, Provider>, kind?: 'dsh' | 'vscode'): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   const add = (p: string | null | undefined) => {
@@ -44,7 +48,7 @@ export function workspaceOptions(device: string, bridges: BridgeInfo[] | null, c
     seen.add(k);
     out.push(p);
   };
-  const b = bridges?.find((x) => x.name === device && x.online);
+  const b = bridges?.find((x) => x.name === device && x.online && (!kind || (x.kind ?? 'dsh') === kind));
   for (const w of b?.workspaces ?? []) add(w);
   for (const c of [...convs].sort((x, y) => y.updatedAt - x.updatedAt)) if (deviceOf(c, providers) === device) add(c.cwd);
   return out.slice(0, MAX_OPTIONS);

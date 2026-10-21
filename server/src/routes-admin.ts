@@ -1,4 +1,5 @@
 /* Admin HTTP API (PROTOCOL-v7-admin.md). Every handler is admin-only via requireAdminUser; mutations are rate limited. */
+import { isAgentBridgeKind } from "./agent-kinds.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { AuthError } from "./auth.js";
 import { requireAdminUser, checkRate, getGeneral, updateGeneral, listAudit, recordAudit } from "./admin-core.js";
@@ -210,7 +211,7 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     if (typeof b.shared !== "boolean") throw new AuthError("shared must be a boolean", 400);
     const row = getProviderRow(id);
     if (!row || row.deleted || row.user_id !== a.userId) throw new AuthError("Provider not found", 404);
-    if (row.kind === "dsh-bridge") throw new AuthError("A dsh-bridge provider cannot be shared", 400);
+    if (isAgentBridgeKind(row.kind)) throw new AuthError(`A ${row.kind} provider cannot be shared`, 400);
     const before = !!row.shared;
     if (before !== b.shared) {
       db.prepare("UPDATE providers SET shared = ?, seq = ? WHERE id = ?").run(b.shared ? 1 : 0, nextSeq(), id);

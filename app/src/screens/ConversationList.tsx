@@ -6,6 +6,7 @@ import { isEphemeralId } from '../ephemeral';
 import { isPinned, setPinned } from '../chatActions';
 import Icon from '../components/Icon';
 import ProjectSheet from '../components/ProjectSheet';
+import VscodeSection from '../components/VscodeSection';
 import type { ChatMode, Conversation } from '../protocol';
 import { useT } from '../i18n';
 import { activeProjects, activeProviders, applyUpsert, sortedConversations, toggleCollapsed, useStore } from '../store';
@@ -312,6 +313,7 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
             </View>
           );
         })}
+        {mode === 'code' && <VscodeSection bridges={bridges} onStart={() => onNew()} />}
         {showUncl && header('', tr('list.unclassified'), groups.loose.length, null)}
         {(!showUncl || !collapsed['']) && (mode === 'code' ? codeLoose() : groups.loose.map((c) => row(c, showUncl)))}
       </ScrollView>

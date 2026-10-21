@@ -8,7 +8,7 @@
 // Usage:
 //   node packaging/build-release.mjs [--out .release/stage] [--version 1.2.3]
 //        [--node <path to node(.exe)>] [--web <prebuilt web dir>] [--dist <prebuilt dist dir>]
-//        [--skip-web] [--platform linux|win32]  (platform only affects launcher scripts; default: all)
+//        [--skip-web] [--vsix] [--platform linux|win32]  (platform only affects launcher scripts; default: all)
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -85,6 +85,15 @@ fs.writeFileSync(path.join(dest, "package.json"), JSON.stringify({ ...pkg, versi
 run(npm, ["ci", "--omit=dev", "--no-audit", "--no-fund"], dest);
 fs.writeFileSync(path.join(dest, "package.json"), JSON.stringify(sp, null, 2) + "\n");
 rm(path.join(dest, "node_modules", ".package-lock.json"));
+
+// 2b. optional (--vsix): the VS Code extension package next to the server folder. Skipped (not an error) when vscode-ext/node_modules is missing.
+if (flag("vsix")) {
+  const extDir = path.join(root, "vscode-ext");
+  if (fs.existsSync(path.join(extDir, "node_modules"))) {
+    run(npm, ["run", "package"], extDir);
+    for (const f of fs.readdirSync(extDir).filter((n) => /^omnichat-vscode-.+.vsix$/.test(n))) fs.copyFileSync(path.join(extDir, f), path.join(out, f));
+  } else console.warn("vscode-ext/node_modules is missing: .vsix not built (run: cd vscode-ext && npm ci && npm run package)");
+}
 
 // 3. config + metadata + launchers
 fs.copyFileSync(path.join(root, "packaging", "config.env.example"), path.join(dest, "config.env.example"));
