@@ -39,7 +39,7 @@ Lets the AI work in the folder you have open in VS Code (chat, models, approvals
 
 Install: `code --install-extension OmniChat-VS.vsix --force`, then run "Reload Window". Setup and usage: [docs/VSCODE.md](docs/VSCODE.md) (Japanese).
 
-> **v1.0 is the first major version (current: v1.0.1).** Some parts are not fully verified on real devices (see [Status and verification](#status-and-verification)). Please back up important data regularly.
+> **v1.0 is the first major version (current: v1.0.2).** Some parts are not fully verified on real devices (see [Status and verification](#status-and-verification)). Please back up important data regularly.
 
 > **Note:** the installers are not code-signed, so your OS shows a warning on first launch.
 
@@ -132,7 +132,7 @@ Four ways (details in **[docs/INSTALL.md](docs/INSTALL.md)**, Japanese). Release
 | `desktop/` | Tauri 2 desktop launcher (Windows / macOS / Linux) |
 | `server-app/` | OmniChat Server: a Tauri 2 app that runs and manages the server |
 | `bridge/` | A resident program on your PC that remote-controls dsh (daemon type) |
-| `dsh-plugin/` | The same role as a dsh plugin, running inside the dsh process (`@omnichat/dsh-bridge`, v1.0.1) |
+| `dsh-plugin/` | The same role as a dsh plugin, running inside the dsh process (`@omnichat/dsh-bridge`, v1.0.2) |
 | `packaging/` | Build scripts for the distributables |
 | `cli/` | Command-line client `omnichat` (no external dependencies) |
 | `docs/` | User and developer documentation (mostly Japanese) |
@@ -173,7 +173,7 @@ cd app && npx expo start                  # on a device with Expo Go
 
 ## Status and verification
 
-Version 1.0.1 (DSH plugin 1.0.1, OmniChat VS 1.0.1). See [CHANGELOG.md](CHANGELOG.md) (Japanese) for details.
+Version 1.0.2 (DSH plugin 1.0.2, OmniChat VS 1.0.2). See [CHANGELOG.md](CHANGELOG.md) (Japanese) for details.
 
 **Verified in practice**
 

@@ -408,6 +408,7 @@ fn start(app: &AppHandle) -> Result<(), String> {
         .env("DATA_DIR", &p.data_dir)
         .env("WEB_DIR", p.server_dir.join("web"))
         .env("OMNICHAT_INSTALL_TYPE", "server-app")
+        .env("OMNICHAT_UPDATE_CHECK_HOURS", "0")
         .env("OMNICHAT_SUPERVISED", "1");
     #[cfg(windows)]
     {
@@ -860,6 +861,9 @@ pub fn run() {
             extra::plugin_inspect,
             extra::plugin_install,
             extra::plugin_check_update,
+            extra::update_status,
+            extra::update_check,
+            extra::update_apply,
             extra::usage_users_get,
             extra::usage_daily_get,
             extra::quotas_get,

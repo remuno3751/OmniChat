@@ -1,6 +1,6 @@
 {
   "name": "omnichat-server-app",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "license": "AGPL-3.0-only",
   "private": true,
   "description": "OmniChat Server: desktop app that runs and manages the OmniChat server (Tauri 2, Windows + Linux)",

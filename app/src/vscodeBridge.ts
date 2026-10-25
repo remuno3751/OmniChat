@@ -7,7 +7,7 @@ import { compareSemver } from './updateState';
 /* VS Code bridge (docs/design/VSCODE-BRIDGE.md sections 6 and 8): pure helpers, no React. */
 
 /** Version of the bundled omnichat-vscode extension (vscode-ext/package.json; a test keeps it in step). */
-export const VSCODE_EXT_VERSION = '1.0.1';
+export const VSCODE_EXT_VERSION = '1.0.2';
 export const VSCODE_PROVIDER_NAME = 'VS Code (PC bridge)';
 export const VSCODE_PROVIDER_MODEL = 'vscode';
 

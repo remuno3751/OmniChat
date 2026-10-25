@@ -524,6 +524,22 @@ pub async fn plugin_check_update(app: AppHandle, id: String) -> Result<Value, St
     .await
 }
 
+/// Manual updates of the server itself (docs/UPDATES.md): status, check now, apply. Nothing here runs by itself.
+#[tauri::command]
+pub async fn update_status(app: AppHandle) -> Result<Value, String> {
+    blocking(move || admin_call_secs(&app, "GET", "/local-admin/update/status", None, 20)).await
+}
+
+#[tauri::command]
+pub async fn update_check(app: AppHandle) -> Result<Value, String> {
+    blocking(move || admin_call_secs(&app, "POST", "/local-admin/update/check", Some(json!({})), 60)).await
+}
+
+#[tauri::command]
+pub async fn update_apply(app: AppHandle) -> Result<Value, String> {
+    blocking(move || admin_call_secs(&app, "POST", "/local-admin/update/apply", Some(json!({})), 120)).await
+}
+
 /// Every user's tokens, active time and last activity (days = 0: all time; tz = minutes east of UTC).
 #[tauri::command]
 pub async fn usage_users_get(app: AppHandle, days: i64, tz: i64) -> Result<Value, String> {

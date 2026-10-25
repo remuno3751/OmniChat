@@ -1167,7 +1167,7 @@ fn install_windows(app: &AppHandle, o: &Offer) -> Result<(), String> {
     Ok(())
 }
 
-/// Detached PowerShell: wait until this process exits, run the NSIS installer silently (/S,
+/// Helper PowerShell (hidden console, outlives this process): wait until this process exits, run the NSIS installer silently (/S,
 /// currentUser install), then start the app again when the install succeeded and the exe exists.
 /// The script is passed as -EncodedCommand and paths via env vars, so no quoting is involved.
 #[cfg(windows)]
@@ -1175,34 +1175,54 @@ fn launch_installer_helper(installer: &Path, exe: &Path) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const SCRIPT: &str = "$ErrorActionPreference = 'SilentlyContinue'\n\
+    // Lets the helper outlive this process even when it was started inside a job object (not allowed in every job).
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+    // Not DETACHED_PROCESS: powershell.exe needs a console (a hidden one is fine) and, without any, exits at once without
+    // running the script, so the installer never ran and the app never came back.
+    // Every step is logged to %TEMP%\omnichat-update.log. The app is started again even when the install failed,
+    // so the user is never left without it; a failed silent install is retried once with the installer's own window.
+    const SCRIPT: &str = "$ErrorActionPreference = 'Continue'\n\
+        function L($m) { try { Add-Content -LiteralPath $env:OMNI_UPD_LOG -Value ((Get-Date -Format o) + ' ' + $m) } catch {} }\n\
+        L 'helper started'\n\
         $p = Get-Process -Id ([int]$env:OMNI_UPD_PID) -ErrorAction SilentlyContinue\n\
         if ($p) { [void]$p.WaitForExit(120000) }\n\
-        $i = Start-Process -FilePath $env:OMNI_UPD_INSTALLER -ArgumentList '/S' -Wait -PassThru\n\
-        if ($i -and $i.ExitCode -eq 0 -and (Test-Path -LiteralPath $env:OMNI_UPD_EXE)) { Start-Process -FilePath $env:OMNI_UPD_EXE }\n";
+        Start-Sleep -Milliseconds 800\n\
+        L 'app exited, running the installer'\n\
+        $code = -1\n\
+        try { $i = Start-Process -FilePath $env:OMNI_UPD_INSTALLER -ArgumentList '/S' -Wait -PassThru; $code = $i.ExitCode } catch { L ('silent install failed: ' + $_.Exception.Message) }\n\
+        L ('silent installer exit code ' + $code)\n\
+        if ($code -ne 0) {\n\
+          try { $j = Start-Process -FilePath $env:OMNI_UPD_INSTALLER -Wait -PassThru; L ('interactive installer exit code ' + $j.ExitCode) } catch { L ('interactive install failed: ' + $_.Exception.Message) }\n\
+        }\n\
+        if (Test-Path -LiteralPath $env:OMNI_UPD_EXE) { L 'starting the app'; Start-Process -FilePath $env:OMNI_UPD_EXE } else { L 'app exe not found' }\n";
     let utf16: Vec<u8> = SCRIPT.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
     let encoded = base64_encode(&utf16);
-    Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-WindowStyle",
-            "Hidden",
-            "-EncodedCommand",
-            &encoded,
-        ])
-        .env("OMNI_UPD_PID", std::process::id().to_string())
-        .env("OMNI_UPD_INSTALLER", installer)
-        .env("OMNI_UPD_EXE", exe)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
-        .spawn()
+    let log = std::env::temp_dir().join("omnichat-update.log");
+    let start = |flags: u32| {
+        Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-EncodedCommand",
+                &encoded,
+            ])
+            .env("OMNI_UPD_PID", std::process::id().to_string())
+            .env("OMNI_UPD_INSTALLER", installer)
+            .env("OMNI_UPD_EXE", exe)
+            .env("OMNI_UPD_LOG", &log)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(flags)
+            .spawn()
+    };
+    start(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB)
+        .or_else(|_| start(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP))
         .map(|_| ())
         .map_err(|_| "launch".to_string())
 }

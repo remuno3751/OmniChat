@@ -154,9 +154,23 @@
   }
   function validPort(p) { return typeof p === 'number' && p >= 1 && p <= 65535 && Math.floor(p) === p; }
 
+  function updStatus() {
+    var newer = q.upd === '1' && M.version === '0.9.2';
+    return {
+      current: M.version, installType: 'server-app', selfUpdate: true, selfUpdateReason: null, dockerCommand: null, channel: 'stable', checkHours: 0, tokenSet: false,
+      latest: M.updChecked || newer ? { tag: 'v0.9.3', version: newer ? '0.9.3' : M.version, name: 'test', notes: '', prerelease: false, publishedAt: '', htmlUrl: SOURCE_URL + '/releases/tag/v0.9.3', assets: [] } : null,
+      updateAvailable: newer && !!M.updChecked, skipped: false, skippedVersions: [], bundleAssetFound: true, lastCheckedAt: M.updChecked || null, lastError: null,
+      phase: M.updPhase || 'idle', progress: M.updPhase === 'downloading' ? 0.4 : null, lastApply: null, plugin: null, isAdmin: true
+    };
+  }
+
   // ---------- commands ----------
   var CMDS = {
     get_state: function () { return later(40, getState); },
+    // manual server update (mock: ?upd=1 offers a newer version)
+    update_status: function () { return later(60, function () { return updStatus(); }); },
+    update_check: function () { return later(500, function () { M.updChecked = Date.now(); return updStatus(); }); },
+    update_apply: function () { return later(300, function () { M.updPhase = 'downloading'; setTimeout(function () { M.updPhase = 'restarting'; setTimeout(function () { M.version = '0.9.3'; M.updPhase = 'idle'; }, 2500); }, 2000); return { ok: true, phase: 'downloading' }; }); },
     start_server: function () {
       if (M.running) return later(40, getState);
       return later(600, function () { startServer(); return getState(); });

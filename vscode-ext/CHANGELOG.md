@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+
+- No functional change; the version follows the OmniChat 1.0.2 release.
+
 ## 1.0.1
 
 - No functional change; the version follows the OmniChat 1.0.1 release.

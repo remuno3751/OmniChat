@@ -27,6 +27,20 @@
       'about.themeHint': '画面の見た目を切り替えます。ライト / ダークは、Windows の設定に合わせます。',
       'about.theme.frontier': 'フロンティア(既定)', 'about.theme.astral': 'アストラル', 'about.theme.simple': 'シンプル',
       'about.language': '言語',
+      'update.title': 'サーバーのアップデート',
+      'update.manualOnly': '自動では確認も更新もしません。ここで「更新を確認」を押したときだけ調べ、「更新する」を押したときだけ更新します。',
+      'update.check': '更新を確認', 'update.apply': '更新する', 'update.openPage': 'リリースページを開く',
+      'update.loading': '状態を読み込み中…', 'update.never': 'まだ確認していません',
+      'update.current': '現在のバージョン: {current}(最新です)', 'update.available': '新しいバージョンがあります: {current} → {latest}',
+      'update.lastChecked': '最後に確認した日時: {at}。', 'update.upToDate': '最新のバージョンです。',
+      'update.cannotSelf': 'この環境では、アプリからは更新できません。リリースページから新しいインストーラーを入れてください。',
+      'update.noBundle': 'このバージョンには更新用のファイルまたはチェックサムがないため、アプリからは更新できません。リリースページを開いてください。',
+      'update.error': 'エラー: {message}',
+      'update.confirmTitle': 'サーバーを更新しますか?',
+      'update.confirmText': 'バージョン {latest} をダウンロードして検証し、データのバックアップを作ってから、サーバーを再起動します(約1分)。その間、接続中のクライアントはつながりません。',
+      'update.restartNote': 'サーバーが自動で再起動します。この画面は閉じても構いません。',
+      'update.done': '更新しました。現在のバージョン: {current}',
+      'update.phase.checking': '確認中', 'update.phase.downloading': 'ダウンロード中', 'update.phase.verifying': '検証中', 'update.phase.staging': '展開中', 'update.phase.backing-up': 'バックアップ中', 'update.phase.restarting': 'サーバーを再起動中',
       'about.langHint': '表示言語を切り替えます。'
     },
     en: {
@@ -49,6 +63,20 @@
       'about.themeHint': 'Changes the look. Light / dark follows the Windows setting.',
       'about.theme.frontier': 'Frontier (default)', 'about.theme.astral': 'Astral', 'about.theme.simple': 'Simple',
       'about.language': 'Language',
+      'update.title': 'Server update',
+      'update.manualOnly': 'Nothing is checked or installed automatically. It looks for a new version only when you press "Check for updates", and installs only when you press "Update".',
+      'update.check': 'Check for updates', 'update.apply': 'Update', 'update.openPage': 'Open release page',
+      'update.loading': 'Loading…', 'update.never': 'not checked yet',
+      'update.current': 'Current version: {current} (up to date)', 'update.available': 'A new version is available: {current} -> {latest}',
+      'update.lastChecked': 'Last checked: {at}.', 'update.upToDate': 'You are on the latest version.',
+      'update.cannotSelf': 'This install cannot update itself. Install the new installer from the release page.',
+      'update.noBundle': 'This release has no update file or checksum, so it cannot be installed from here. Open the release page.',
+      'update.error': 'Error: {message}',
+      'update.confirmTitle': 'Update the server?',
+      'update.confirmText': 'Version {latest} is downloaded and verified, your data is backed up, and the server restarts (about a minute). Connected clients are disconnected meanwhile.',
+      'update.restartNote': 'The server restarts by itself. You can close this page.',
+      'update.done': 'Updated. Current version: {current}',
+      'update.phase.checking': 'Checking', 'update.phase.downloading': 'Downloading', 'update.phase.verifying': 'Verifying', 'update.phase.staging': 'Unpacking', 'update.phase.backing-up': 'Backing up', 'update.phase.restarting': 'Restarting the server',
       'about.langHint': 'Changes the interface language.'
     }
   });
@@ -123,6 +151,8 @@
       langCard.querySelector('.hint').id = 'about-lang-hint';
 
       root.appendChild(h('div', { cls: 'grid' }, [appCard, licCard]));
+      var upd = buildUpdateCard();
+      root.appendChild(h('div', { cls: 'grid' }, [upd.card]));
       // ---- Theme
       var swatches = { frontier: ['#fffa00', '#101113'], astral: ['#f9c837', '#202635'], simple: ['#5b4bf0', '#f4f5f8'] };
       var themeBox = h('div', { cls: 'theme-opts', attrs: { role: 'radiogroup', 'aria-label': t('about.theme') } });
@@ -156,10 +186,97 @@
 
       return {
         onState: apply,
-        destroy: function () {}
+        destroy: function () { upd.destroy(); }
       };
     }
   });
+
+  // ---- Manual update of the server (nothing checks or installs by itself)
+  function buildUpdateCard() {
+    var alive = true;
+    var timer = null;
+    var statusEl = h('p', { cls: 'small', text: '' });
+    var detailEl = h('p', { cls: 'hint', text: '' });
+    var errEl = h('p', { cls: 'hint', attrs: { hidden: '' } });
+    var status = null;
+    var working = false;
+    var checkBtn = OC.btn(t('update.check'), 'sm', function () { doCheck(); });
+    var applyBtn = OC.btn(t('update.apply'), 'sm primary', function () { doApply(); });
+    var pageBtn = OC.btn(t('update.openPage'), 'sm', function () {
+      if (status && status.latest && /^https:\/\//.test(status.latest.htmlUrl || '')) OC.safe(OC.invoke('open_url', { url: status.latest.htmlUrl }));
+    }, 'external');
+    pageBtn.hidden = true;
+    var card = OC.card(t('update.title'), [
+      h('p', { cls: 'card-sub', text: t('update.manualOnly') }),
+      statusEl, detailEl, errEl,
+      h('div', { cls: 'row' }, [checkBtn, applyBtn, pageBtn])
+    ]);
+
+    function when(ms) { return ms ? new Date(ms).toLocaleString() : t('update.never'); }
+    function paint() {
+      var s = status;
+      var busyPhase = s && s.phase && s.phase !== 'idle' && s.phase !== 'error';
+      checkBtn.disabled = working || busyPhase;
+      var canApply = !!(s && s.updateAvailable && s.selfUpdate && s.bundleAssetFound && !busyPhase && !working);
+      applyBtn.hidden = !(s && s.updateAvailable);
+      applyBtn.disabled = !canApply;
+      pageBtn.hidden = !(s && s.latest);
+      errEl.hidden = true;
+      if (!s) { statusEl.textContent = t('update.loading'); detailEl.textContent = ''; return; }
+      if (busyPhase) {
+        var pct = typeof s.progress === 'number' ? ' ' + Math.round(s.progress * 100) + '%' : '';
+        statusEl.textContent = t('update.phase.' + s.phase) + pct;
+        detailEl.textContent = t('update.restartNote');
+        return;
+      }
+      if (s.updateAvailable && s.latest) statusEl.textContent = t('update.available', { current: s.current, latest: s.latest.version });
+      else statusEl.textContent = t('update.current', { current: s.current });
+      var parts = [t('update.lastChecked', { at: when(s.lastCheckedAt) })];
+      if (s.updateAvailable && !s.selfUpdate) parts.push(s.selfUpdateReason || t('update.cannotSelf'));
+      else if (s.updateAvailable && !s.bundleAssetFound) parts.push(t('update.noBundle'));
+      detailEl.textContent = parts.join(' ');
+      var msg = s.lastError ? s.lastError.message : (s.lastApply && s.lastApply.status === 'failed' ? s.lastApply.message : '');
+      if (msg) { errEl.textContent = t('update.error', { message: msg }); errEl.hidden = false; }
+    }
+    function load() {
+      return OC.invoke('update_status').then(function (s) { status = s; if (alive) paint(); return s; }, function () { if (alive) paint(); });
+    }
+    var applyStart = null;
+    function poll() {
+      clearTimeout(timer);
+      if (!alive) return;
+      timer = setTimeout(function () {
+        load().then(function (s) {
+          if (!alive) return;
+          // the server restarts at the end of an update (no answer for a while): keep asking until the version changed,
+          // an error was reported, or five minutes passed
+          var done = applyStart && ((s && (s.current !== applyStart.version || s.phase === 'error')) || Date.now() - applyStart.at > 300000);
+          if (!applyStart || done) {
+            var changed = applyStart && s && s.current !== applyStart.version;
+            working = false; applyStart = null; paint();
+            if (changed) OC.toast(t('update.done', { current: s.current }));
+          } else poll();
+        });
+      }, 2000);
+    }
+    function doCheck() {
+      working = true; paint();
+      OC.invoke('update_check').then(function (s) { status = s; working = false; paint(); if (!s.updateAvailable) OC.toast(t('update.upToDate')); },
+        function (e) { working = false; OC.toast(e.message, 'err'); paint(); });
+    }
+    function doApply() {
+      if (!status || !status.latest) return;
+      OC.confirm(t('update.confirmTitle'), t('update.confirmText', { latest: status.latest.version }), t('update.apply'), false).then(function (ok) {
+        if (!ok) return;
+        working = true; applyStart = { version: status.current, at: Date.now() }; paint();
+        OC.invoke('update_apply').then(function () { poll(); },
+          function (e) { working = false; applyStart = null; OC.toast(e.message, 'err'); paint(); });
+      });
+    }
+    paint();
+    load();
+    return { card: card, destroy: function () { alive = false; clearTimeout(timer); } };
+  }
 
   function noticeItem(name, license) {
     return h('div', { cls: 'list-item' }, [

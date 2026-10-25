@@ -51,3 +51,14 @@ test("local-admin mirrors reach attachments, quotas and plugins as the first adm
   // repeated use keeps working (cached internal device)
   assert.equal((await adm("GET", "/local-admin/plugins")).status, 200);
 });
+
+test("local-admin update: status for the server app, token required; apply is refused when the install cannot update itself", async () => {
+  assert.equal((await adm("GET", "/local-admin/update/status", undefined, "")).status, 401);
+  const st = await adm("GET", "/local-admin/update/status");
+  assert.equal(st.status, 200, st.text);
+  assert.equal(typeof st.json.current, "string");
+  assert.equal(st.json.selfUpdate, false, "the test server is not started by a launcher");
+  const apply = await adm("POST", "/local-admin/update/apply", {});
+  assert.notEqual(apply.status, 200, "nothing to apply here");
+  assert.equal((await adm("POST", "/local-admin/update/check", {}, "")).status, 401);
+});
