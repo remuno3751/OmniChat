@@ -161,6 +161,15 @@ describe("chat controller", () => {
     const { c, sent, open, ready } = setup();
     ready();
     open("c1");
+    // The run ends first: a prompt written while a run is active is queued, not sent.
+    c.handleFrame({
+      type: "transcript",
+      conversationId: "c1",
+      items: [
+        { kind: "user", id: "u", text: "x" },
+        { kind: "assistant", id: "a", text: "ok", status: "done" },
+      ],
+    });
     c.newConversation();
     expect(c.snapshot().conversationId).toBeNull();
     sent.length = 0;
@@ -456,5 +465,84 @@ describe("chat controller", () => {
     sent.length = 0;
     c.refresh();
     expect(sent.map((f) => f.type)).toEqual(["models_request", "conversations_request", "conversation_request"]);
+  });
+});
+
+describe("chat controller: stale deltas", () => {
+  /** A controller with a clock the test moves by hand. */
+  function setupClock() {
+    const sent: Frame[] = [];
+    let now = 10_000;
+    const c = createChatController({
+      send: (f) => {
+        sent.push(f);
+        return true;
+      },
+      roots: () => ["/work/app"],
+      onChange: () => undefined,
+      now: () => now,
+    });
+    const lastRequestId = (): string => (sent[sent.length - 1] as { requestId: string }).requestId;
+    c.setOnline(true);
+    c.handleFrame({ type: "models", requestId: "m0", items: [MODEL] });
+    c.sendPrompt("x");
+    c.handleFrame({ type: "prompt_ack", requestId: lastRequestId(), ok: true, conversationId: "c1" });
+    c.handleFrame({
+      type: "transcript",
+      conversationId: "c1",
+      items: [{ kind: "assistant", id: "a1", text: "He", status: "streaming" }],
+    });
+    sent.length = 0;
+    return { c, sent, setNow: (t: number) => (now = t) };
+  }
+  const delta = (from: number): Frame => ({
+    type: "transcript",
+    conversationId: "c1",
+    items: [{ kind: "assistant", id: "a1", text: "y", from, status: "streaming" }],
+  });
+
+  it("asks for the full conversation when a delta does not apply, and keeps the text", () => {
+    const { c, sent } = setupClock();
+    c.handleFrame(delta(9));
+    expect(sent.map((f) => f.type)).toEqual(["conversation_request"]);
+    expect(sent[0]).toMatchObject({ conversationId: "c1" });
+    expect(c.snapshot().items).toEqual([{ kind: "assistant", id: "a1", text: "He", status: "streaming" }]);
+  });
+
+  it("throttles resyncs to one per second per conversation", () => {
+    const { c, sent, setNow } = setupClock();
+    c.handleFrame(delta(9));
+    c.handleFrame(delta(9));
+    expect(sent).toHaveLength(1);
+    setNow(10_999);
+    c.handleFrame(delta(9));
+    expect(sent).toHaveLength(1);
+    setNow(11_000);
+    c.handleFrame(delta(9));
+    expect(sent).toHaveLength(2);
+  });
+
+  it("does not throttle a delta that applies", () => {
+    const { c, sent } = setupClock();
+    c.handleFrame(delta(2));
+    expect(sent).toHaveLength(0);
+    expect(c.snapshot().items).toEqual([{ kind: "assistant", id: "a1", text: "Hey", status: "streaming" }]);
+  });
+
+  it("a full reply replaces the text after a stale delta", () => {
+    const { c, sent, setNow } = setupClock();
+    c.handleFrame(delta(9));
+    c.handleFrame({
+      type: "transcript",
+      conversationId: "c1",
+      reset: true,
+      items: [{ kind: "assistant", id: "a1", text: "Hello there", status: "streaming" }],
+    });
+    expect(c.snapshot().items).toEqual([{ kind: "assistant", id: "a1", text: "Hello there", status: "streaming" }]);
+    setNow(20_000);
+    sent.length = 0;
+    c.handleFrame(delta(11)); // matches the new text, so it applies without a resync
+    expect(sent.some((f) => f.type === "conversation_request")).toBe(false);
+    expect(c.snapshot().items).toEqual([{ kind: "assistant", id: "a1", text: "Hello therey", status: "streaming" }]);
   });
 });

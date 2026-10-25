@@ -24,7 +24,110 @@ export interface ShapeArrow { type: "arrow"; from?: string; to?: string; x1?: nu
 export type ChartKind = "bar" | "column" | "line" | "pie" | "doughnut" | "area";
 export interface ShapeChart { type: "chart"; kind: ChartKind; title?: string; categories: string[]; series: { name: string; values: number[] }[]; x: number; y: number; w: number; h: number }
 export type Shape = ShapeBox | ShapeLine | ShapeArrow | ShapeChart;
-export interface ShapesSpec { bg?: string; body: "top" | "left" | "right" | "none"; notes?: string; elements: Shape[] }
+export type SlideLayout = "cover" | "section" | "cards" | "twoCol" | "quote";
+export interface SlideBox { x: number; y: number; w: number; h: number }
+/* layout / accent are what the author wrote; ink, titleBox and bodyBox are filled by parseShapes from them (decoration goes into elements). */
+export interface ShapesSpec {
+  bg?: string; body: "top" | "left" | "right" | "none"; notes?: string; elements: Shape[];
+  layout?: SlideLayout; accent?: string;
+  /** text color of the title and the body: set by parseShapes (light on a dark bg) */
+  ink?: string;
+  /** title placement in percent + size (pt) + align; absent = the default top-left title */
+  titleBox?: SlideBox & { size: number; align: "left" | "center" | "right" };
+  /** body placement in percent; absent = derived from `body` */
+  bodyBox?: SlideBox;
+}
+
+export type CodeTokKind = "plain" | "comment" | "string" | "keyword" | "number";
+export interface CodeTok { text: string; kind: CodeTokKind }
+/* Common keywords of PHP, JS/TS, Python, Java, Go, Rust and SQL (compared in lower case). */
+const CODE_KEYWORDS: ReadonlySet<string> = new Set([
+  // JS / TS
+  "var", "let", "const", "function", "return", "if", "else", "for", "while", "do", "switch", "case", "break", "continue",
+  "new", "class", "extends", "import", "export", "from", "default", "try", "catch", "finally", "throw", "async", "await",
+  "typeof", "instanceof", "interface", "type", "enum", "implements", "null", "undefined", "true", "false", "this", "super",
+  "yield", "void",
+  // PHP
+  "echo", "isset", "foreach", "namespace", "use", "public", "private", "protected", "static", "abstract", "final", "elseif",
+  "endif", "as", "require", "include", "global", "array", "match", "fn",
+  // Python
+  "def", "elif", "pass", "lambda", "with", "is", "not", "and", "or", "none", "nonlocal", "raise", "assert", "del", "yield",
+  "except", "in",
+  // Java / C#-like
+  "package", "throws", "int", "long", "double", "float", "boolean", "char", "byte", "short", "synchronized", "volatile",
+  // Go
+  "func", "go", "defer", "chan", "map", "range", "select", "struct", "fallthrough", "goto",
+  // Rust
+  "fn", "let", "mut", "impl", "trait", "pub", "mod", "crate", "loop", "where", "move", "ref", "self", "unsafe", "dyn", "else",
+  // SQL
+  "insert", "into", "update", "delete", "create", "alter", "drop", "join", "inner", "outer", "having", "like", "between",
+  "distinct", "union", "exists", "select", "where",
+]);
+
+/** One line of code -> colored pieces. Stateless and language-agnostic: the texts concatenate back to `line` exactly. */
+export function codeTokens(line: string): CodeTok[] {
+  const out: CodeTok[] = [];
+  const push = (text: string, kind: CodeTokKind): void => {
+    if (!text) return;
+    const last = out[out.length - 1];
+    if (last && last.kind === kind) last.text += text;
+    else out.push({ text, kind });
+  };
+  const n = line.length;
+  const atStart = (i: number) => i === 0 || /\s/.test(line[i - 1]);
+  let i = 0;
+  while (i < n) {
+    const c = line[i];
+    // line comments: // anywhere, # and -- only at the start of a word (so `a#b` is not a comment)
+    if (line.startsWith("//", i) || ((c === "#" || line.startsWith("--", i)) && atStart(i))) {
+      push(line.slice(i), "comment");
+      break;
+    }
+    // block comment, on one line only
+    if (line.startsWith("/*", i)) {
+      const end = line.indexOf("*/", i + 2);
+      const stop = end < 0 ? n : end + 2;
+      push(line.slice(i, stop), "comment");
+      i = stop;
+      continue;
+    }
+    // strings with backslash escapes; an unclosed string runs to the end of the line
+    if (c === "'" || c === '"' || c === "`") {
+      let j = i + 1;
+      while (j < n) {
+        const d = line[j];
+        if (d === "\\") { j += 2; continue; }
+        j++;
+        if (d === c) break;
+      }
+      j = Math.min(j, n);
+      push(line.slice(i, j), "string");
+      i = j;
+      continue;
+    }
+    const prev = i === 0 ? "" : line[i - 1];
+    const inWord = /[A-Za-z0-9_$]/.test(prev);
+    // numbers: not part of an identifier
+    if (!inWord && (/[0-9]/.test(c) || (c === "." && /[0-9]/.test(line[i + 1] ?? "")))) {
+      const m = /^(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?|\.\d[\d_]*(?:[eE][+-]?\d+)?)/.exec(line.slice(i));
+      if (m) {
+        push(m[0], "number");
+        i += m[0].length;
+        continue;
+      }
+    }
+    // identifiers and keywords
+    if (/[A-Za-z_$]/.test(c)) {
+      const word = /^[A-Za-z_$][A-Za-z0-9_$]*/.exec(line.slice(i))![0];
+      push(word, CODE_KEYWORDS.has(word.toLowerCase()) ? "keyword" : "plain");
+      i += word.length;
+      continue;
+    }
+    push(c, "plain");
+    i++;
+  }
+  return out;
+}
 
 const INLINE = /(`[^`\n]+`|\*\*[^*\n]+?\*\*|__[^_\n]+?__|\*[^*\s][^*\n]*?\*|_[^_\s][^_\n]*?_)/g;
 

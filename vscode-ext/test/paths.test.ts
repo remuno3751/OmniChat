@@ -189,6 +189,54 @@ describe("resolveInWorkspace (Windows-style root)", () => {
   });
 });
 
+describe("resolveInWorkspace: false outside verdicts", () => {
+  it("accepts a case-differing path under a macOS root", async () => {
+    const fs = fakeFs({ "/Users/a/proj": "/Users/a/proj" });
+    expect(await resolveInWorkspace("/Users/a/proj", "/users/a/proj/x.ts", fs)).toEqual({
+      ok: true,
+      abs: "/users/a/proj/x.ts",
+    });
+  });
+
+  it("keeps POSIX roots outside case-sensitive", async () => {
+    const fs = fakeFs({ "/home/a/proj": "/home/a/proj" });
+    const r = await resolveInWorkspace("/home/a/proj", "/HOME/a/proj/x.ts", fs);
+    expect(r).toMatchObject({ ok: false, reason: "outside_workspace" });
+  });
+
+  it("accepts a path that is outside lexically but resolves inside through an alias", async () => {
+    const fs = fakeFs({
+      "/tmp/ws": "/private/tmp/ws",
+      "/private/tmp/ws/a.ts": "/private/tmp/ws/a.ts",
+    });
+    expect(await resolveInWorkspace("/tmp/ws", "/private/tmp/ws/a.ts", fs)).toEqual({
+      ok: true,
+      abs: "/private/tmp/ws/a.ts",
+    });
+  });
+
+  it("refuses a lexically outside path whose real location is outside too", async () => {
+    const fs = fakeFs({ "/ws/proj": "/ws/proj", "/alias-out": "/etc" });
+    const r = await resolveInWorkspace("/ws/proj", "/alias-out/file", fs);
+    expect(r).toMatchObject({ ok: false, reason: "outside_workspace" });
+  });
+
+  it("refuses a symlink inside the root that points outside (unchanged)", async () => {
+    expect(await resolveInWorkspace(POSIX_ROOT, "link/passwd", posixFs)).toMatchObject({
+      ok: false,
+      reason: "outside_workspace",
+    });
+  });
+
+  it("keeps the refusal when the realpath of the root fails", async () => {
+    const fs = fakeFs({}, { "/tmp/ws": "EACCES" });
+    expect(await resolveInWorkspace("/tmp/ws", "/private/tmp/ws/a.ts", fs)).toMatchObject({
+      ok: false,
+      reason: "outside_workspace",
+    });
+  });
+});
+
 describe("isSecretPath", () => {
   it.each([
     ".env",

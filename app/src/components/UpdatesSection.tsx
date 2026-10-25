@@ -6,9 +6,10 @@ import { clientVersionLine, desktopVersionFromWindow } from '../clientVersion';
 import { SOURCE_LINKS } from '../sourceLinks';
 import { useT } from '../i18n';
 import { setAvailableUpdateVersion, skipDeviceUpdate, unskipDeviceUpdate } from '../updateStore';
-import { canApkUpdate, updateErrorText } from '../updateState';
+import { canApkUpdate, isPrereleaseNewerThan, updateErrorText } from '../updateState';
 import { asChannel, checkResultText, desktopUpdateBridge, isPrereleaseVersion, parseCheckResult, updateActionHintKey } from '../desktopUpdate';
 import type { DesktopCheckResult, DesktopUpdateBridge } from '../desktopUpdate';
+import { canInstallFromHere, isNativeUpdatePlatform, UPDATE_RETRY_AFTER_ERROR_MS } from '../updateTypes';
 import type { Channel, UpdateStatus } from '../updateTypes';
 import { useTheme } from '../theme';
 import { Btn, Field, Hint, Label, Segmented, fmtAgo } from '../ui/kit';
@@ -150,6 +151,8 @@ export default function UpdatesSection({ scope = 'all' }: { scope?: 'all' | 'ser
   const view = useApplyView();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [loadErr, setLoadErr] = useState(false);
+  /** epoch ms of the last load attempt (re-arms the retry timer on every attempt) */
+  const [loadedAt, setLoadedAt] = useState(0);
   const [checking, setChecking] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [hours, setHours] = useState('');
@@ -166,10 +169,19 @@ export default function UpdatesSection({ scope = 'all' }: { scope?: 'all' | 'ser
     } catch {
       setLoadErr(true);
     }
+    setLoadedAt(Date.now());
   }, []);
 
   // load on mount, and again when an update starts / ends (the status changes then)
   useEffect(() => { void load(); }, [load, view.phase]);
+
+  // a failed load or a server lastError: retry in 15 min (the regular 6 h poll runs in the update popup)
+  const failed = loadErr || !!status?.lastError;
+  useEffect(() => {
+    if (!failed) return;
+    const h = setTimeout(() => { void load(); }, UPDATE_RETRY_AFTER_ERROR_MS);
+    return () => clearTimeout(h);
+  }, [failed, loadedAt, load]);
 
   // keep the Settings > Updates badge in step with what this page just learned (check / skip / config)
   useEffect(() => {
@@ -182,7 +194,9 @@ export default function UpdatesSection({ scope = 'all' }: { scope?: 'all' | 'ser
   const failure = admin || view.phase === 'failed' ? failureOf(view, status, tr) : null;
   const applying = view.phase === 'starting' || view.phase === 'working' || view.phase === 'restarting' || view.phase === 'done';
   const isDocker = status?.installType === 'docker';
-  const canSelfUpdate = !!status && admin && status.selfUpdate && status.bundleAssetFound && status.updateAvailable && !!latest;
+  // native phones only link to the release page (no self-install)
+  const native = isNativeUpdatePlatform(Platform.OS);
+  const canSelfUpdate = canInstallFromHere(Platform.OS, !!status && admin && status.selfUpdate && status.bundleAssetFound && status.updateAvailable && !!latest);
 
   const check = async () => {
     setChecking(true);
@@ -282,7 +296,7 @@ export default function UpdatesSection({ scope = 'all' }: { scope?: 'all' | 'ser
       </>)}
 
       {!serverOnly && <Section title={tr('update.serverSection')} />}
-      {loadErr && !status && <Hint danger>{tr('update.loadFailed')}</Hint>}
+      {loadErr && <Hint danger>{tr('update.loadFailed')}</Hint>}
       {status && (
         <View style={{ gap: 6, minWidth: 0 }}>
           <Text selectable style={{ color: t.text, fontSize: 14 }}>{tr('update.version', { version: status.current })}</Text>
@@ -290,6 +304,10 @@ export default function UpdatesSection({ scope = 'all' }: { scope?: 'all' | 'ser
           <Hint>{status.lastCheckedAt ? tr('update.lastChecked', { when: fmtAgo(status.lastCheckedAt) }) : tr('update.neverChecked')}</Hint>
           {status.lastError && <Hint danger>{tr(updateErrorText(status.lastError).key, updateErrorText(status.lastError).params)}</Hint>}
         </View>
+      )}
+
+      {failed && (
+        <Btn small label={tr('update.retry')} disabled={checking || applying} onPress={() => { if (admin) void check(); else void load(); }} />
       )}
 
       {admin && (
@@ -305,10 +323,13 @@ export default function UpdatesSection({ scope = 'all' }: { scope?: 'all' | 'ser
               <Text style={{ color: t.accentText, backgroundColor: t.accent, fontSize: 11, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' }}>{tr('update.prerelease')}</Text>
             )}
           </View>
-          {status && !status.updateAvailable && <Hint>{tr('update.upToDate')}</Hint>}
+          {status && !status.updateAvailable && (isPrereleaseNewerThan(status.current, latest.version)
+            ? <Hint>{tr('update.prereleaseInUse', { version: latest.version })}</Hint>
+            : <Hint>{tr('update.upToDate')}</Hint>)}
           {status && status.updateAvailable && status.skipped && <Hint>{tr('update.skipped')}</Hint>}
 
           <Btn small label={notesOpen ? tr('update.notes.hide') : tr('update.notes.show')} onPress={() => setNotesOpen((o) => !o)} />
+          {native && !androidApk && status?.updateAvailable && <Btn small label={tr('update.apk.download')} onPress={openApk} />}
           {notesOpen && (
             <ScrollView style={{ maxHeight: 220, borderWidth: 1, borderColor: t.border, borderRadius: 8, padding: 10 }} nestedScrollEnabled>
               <Text selectable style={{ color: t.text, fontSize: 13, lineHeight: 18 }}>{latest.notes || tr('update.notes.empty')}</Text>
@@ -324,8 +345,8 @@ export default function UpdatesSection({ scope = 'all' }: { scope?: 'all' | 'ser
                   <CopyBlock text={status.dockerCommand} />
                 </>
               )}
-              {!canSelfUpdate && !isDocker && !!status.selfUpdateReason && <Hint>{tr('update.selfUpdateOff', { reason: status.selfUpdateReason })}</Hint>}
-              {!canSelfUpdate && !isDocker && !status.selfUpdateReason && status.selfUpdate && !status.bundleAssetFound && <Hint>{tr('update.noBundle')}</Hint>}
+              {!native && !canSelfUpdate && !isDocker && !!status.selfUpdateReason && <Hint>{tr('update.selfUpdateOff', { reason: status.selfUpdateReason })}</Hint>}
+              {!native && !canSelfUpdate && !isDocker && !status.selfUpdateReason && status.selfUpdate && !status.bundleAssetFound && <Hint>{tr('update.noBundle')}</Hint>}
               <Btn small label={status.skipped ? tr('update.unskip') : tr('update.skip')} onPress={toggleSkip} />
             </View>
           )}

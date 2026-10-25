@@ -40,6 +40,8 @@ export interface GithubClientOptions {
   allowHttp?: boolean;
   fetchImpl?: typeof fetch;
   userAgent?: string;
+  /** Waits before each retry of a network error or 5xx (default 2 s, then 6 s; tests pass 0). */
+  retryDelaysMs?: number[];
 }
 
 export interface ListResult {
@@ -71,6 +73,22 @@ function errMsg(e: unknown): string {
 function causeSuffix(e: unknown): string {
   const code = (e as { cause?: { code?: unknown } } | null)?.cause?.code;
   return typeof code === "string" ? ` (${code})` : "";
+}
+
+const DEFAULT_RETRY_DELAYS_MS = [2_000, 6_000];
+
+/** Sleeps ms; resolves early (without error) when the signal aborts, so the caller's next fetch fails fast. */
+function delay(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    }
+    signal?.addEventListener("abort", done, { once: true });
+  });
 }
 
 async function drain(res: Response): Promise<void> {
@@ -164,6 +182,7 @@ export class GithubClient {
   private readonly allowHttp: boolean;
   private readonly fetchImpl: typeof fetch;
   private readonly userAgent: string;
+  private readonly retryDelaysMs: number[];
 
   constructor(opts: GithubClientOptions) {
     this.apiBase = opts.apiBase.replace(/\/+$/, "");
@@ -172,6 +191,28 @@ export class GithubClient {
     this.allowHttp = opts.allowHttp === true;
     this.fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
     this.userAgent = opts.userAgent ?? DEFAULT_USER_AGENT;
+    this.retryDelaysMs = opts.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
+  }
+
+  /**
+   * fetch with retries for network errors and 5xx only (2 s, then 6 s; at most 3 attempts).
+   * 4xx responses are returned untouched, so rate limits and 404s are never retried.
+   */
+  private async fetchRetry(url: string | URL, init: RequestInit): Promise<Response> {
+    for (let attempt = 0; ; attempt++) {
+      const last = attempt >= this.retryDelaysMs.length;
+      let res: Response;
+      try {
+        res = await this.fetchImpl(url, init);
+      } catch (e) {
+        if (last || init.signal?.aborted) throw e;
+        await delay(this.retryDelaysMs[attempt], init.signal);
+        continue;
+      }
+      if (res.status < 500 || res.status > 599 || last) return res;
+      await drain(res);
+      await delay(this.retryDelaysMs[attempt], init.signal);
+    }
   }
 
   /** GET releases of the repo. Pass prev (etag + cached releases) for a conditional request. */
@@ -186,7 +227,7 @@ export class GithubClient {
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
 
     return this.withTimeout(API_TIMEOUT_MS, async (signal) => {
-      const res = await this.fetchImpl(url, { headers, redirect: "manual", signal });
+      const res = await this.fetchRetry(url, { headers, redirect: "manual", signal });
       const etag = res.headers.get("etag");
 
       if (res.status === 304) {

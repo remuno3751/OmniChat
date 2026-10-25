@@ -593,6 +593,8 @@ test("auto title: after the first reply, sanitised, broadcast, titleModel, never
   const t3 = await say(c, cl, cv3, "please fail the title");
   await sleep(300);
   assert.equal(llm.titleBodies.at(-1).model, "tiny-title-model");
+  await sleep(700); // a failed title request is retried once, 500 ms later
+  assert.equal(llm.titleBodies.filter((b: any) => b.model === "tiny-title-model").length, 2);
   assert.equal(t3.asst.status, "done");
   assert.equal((await call("GET", "/sync?since=0")).json.conversations.find((x: any) => x.id === cv3).title, "please fail the title");
 

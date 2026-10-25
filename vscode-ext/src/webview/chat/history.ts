@@ -1,5 +1,7 @@
 /** History drawer: the recent-conversation list that covers the page under the header. */
 import { el, svg } from "./dom";
+import type { RecentConversation } from "../../chat/viewModel";
+import { createHistorySearch } from "./historySearch";
 import type { ChatViewState, Part, Send } from "./types";
 
 const ICON_REFRESH: Array<[string, Record<string, string>]> = [
@@ -19,6 +21,14 @@ function iconButton(icon: SVGSVGElement, onClick: () => void): HTMLButtonElement
 export function createHistory(send: Send): Part & { toggle(open?: boolean): void } {
   const root = el("section", "ch-history");
   root.hidden = true;
+  let last: ChatViewState | null = null;
+  // Search over all conversations: a query replaces the recent list (see historySearch.ts).
+  const search = createHistorySearch(send, {
+    onOpenHit: () => toggle(false),
+    onChange: () => {
+      if (last) update(last);
+    },
+  });
 
   const head = el("div", "ch-history__head");
   const heading = el("h2", "ch-history__title");
@@ -28,7 +38,7 @@ export function createHistory(send: Send): Part & { toggle(open?: boolean): void
 
   const note = el("p", "ch-history__note");
   const list = el("ul", "ch-history__list");
-  root.append(head, note, list);
+  root.append(head, search.input, search.note, search.list, note, list);
 
   /** Opens or closes the drawer; opening also asks the host for a fresh list. */
   function toggle(next?: boolean): void {
@@ -38,6 +48,8 @@ export function createHistory(send: Send): Part & { toggle(open?: boolean): void
     if (open) {
       send({ type: "refreshHistory" });
       closeBtn.focus();
+    } else {
+      search.clear();
     }
   }
 
@@ -49,7 +61,8 @@ export function createHistory(send: Send): Part & { toggle(open?: boolean): void
     if (sig === signature) return;
     signature = sig;
     list.replaceChildren();
-    for (const c of state.recent) {
+    // The host flags pinned conversations (the /pin command) and lists them first.
+    for (const c of state.recent as Array<RecentConversation & { pinned?: boolean }>) {
       const row = el("li", "ch-history__row");
       const item = el("button", "ch-history__item");
       item.type = "button";
@@ -58,6 +71,7 @@ export function createHistory(send: Send): Part & { toggle(open?: boolean): void
       name.title = c.title;
       const meta = el("span", "ch-history__meta");
       meta.append(el("span", "ch-history__time", c.relative), el("span", `ch-chip ch-chip--${c.approvalMode}`, c.approvalLabel));
+      if (c.pinned) item.append(el("span", "ch-history__pin", "\u2605"));
       item.append(name, meta);
       item.addEventListener("click", () => {
         send({ type: "openConversation", id: c.id });
@@ -69,6 +83,7 @@ export function createHistory(send: Send): Part & { toggle(open?: boolean): void
   }
 
   function update(state: ChatViewState): void {
+    last = state;
     const S = state.strings;
     heading.textContent = S.recentTitle;
     refreshBtn.title = S.refresh;
@@ -76,10 +91,11 @@ export function createHistory(send: Send): Part & { toggle(open?: boolean): void
     closeBtn.title = S.close;
     closeBtn.setAttribute("aria-label", S.close);
 
+    const searching = search.update(state);
     renderList(state);
     const empty = state.recent.length === 0;
-    list.hidden = empty;
-    note.hidden = !empty;
+    list.hidden = empty || searching;
+    note.hidden = searching || !empty;
     if (empty) {
       note.textContent = state.snapshot.conversationsState === "loading" ? S.loadingConversation : S.noHistory;
     }

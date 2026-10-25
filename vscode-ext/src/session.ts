@@ -6,7 +6,7 @@
  * outlive their connection. Stale client callbacks (from a stopped or restarted session) are ignored.
  */
 import * as gitops from "@gitops";
-import { createClient, type Client, type ClientStatus } from "./conn/client";
+import { createClient, type Client, type ClientStatus, type RetryInfo } from "./conn/client";
 import { createRewindHandler } from "./conn/rewind";
 import { createRunManager, type RunManager } from "./conn/runs";
 import { createServerApprovals } from "./conn/server-approvals";
@@ -70,7 +70,9 @@ export interface SessionOptions {
   isTrusted: () => boolean;
   shell: () => string | undefined;
   log: (line: string) => void;
-  onStatus: (status: ClientStatus, detail?: string) => void;
+  onStatus: (status: ClientStatus, detail?: string, retry?: RetryInfo) => void;
+  /** Round-trip time of each answered ping, in ms. */
+  onLatency?: (ms: number) => void;
   /** An accepted welcome from the server, before the status goes "online". */
   onWelcome?: (frame: WelcomeFrame) => void;
   /**
@@ -226,14 +228,18 @@ export function createSession(opts: SessionOptions): Session {
         else if (frame.type === "cancel") serverApprovals.cancelAll();
         manager?.handleFrame(frame);
       },
-      onStatus: (status, detail) => {
+      onStatus: (status, detail, retry) => {
         if (my !== generation) return;
         if (status === "online") {
           if (client) attach(client);
         } else {
           dropManager();
         }
-        opts.onStatus(status, detail);
+        opts.onStatus(status, detail, retry);
+      },
+      onLatency: (ms: number) => {
+        if (my !== generation) return;
+        opts.onLatency?.(ms);
       },
     });
     return true;

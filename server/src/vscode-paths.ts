@@ -84,7 +84,8 @@ function isWindowsStyle(normalized: string): boolean {
 /** True when `child` equals `root` or lies beneath it. Both must be normalised. */
 function isWithin(child: string, root: string): boolean {
   if (isWindowsStyle(child) !== isWindowsStyle(root)) return false;
-  const ci = isWindowsStyle(root);
+  // macOS volumes are case-insensitive by default, so /Users/me/Proj and /Users/me/proj are the same folder.
+  const ci = isWindowsStyle(root) || /^\/(Users|Volumes)\//.test(root);
   const c = ci ? child.toLowerCase() : child;
   const r = ci ? root.toLowerCase() : root;
   if (c === r) return true;

@@ -5,7 +5,9 @@
  * with `protected_path`, both lexically and after symlink resolution.
  */
 import type { Host } from "../host/types";
+import { openDocumentFor, relUnder } from "../host/vscode";
 import { isSecretPath, normalizePath, resolveInWorkspace } from "../guard/paths";
+import { outsideCandidate, outsideRefusal } from "../guard/outside";
 import { toolError, type ToolContext, type ToolRegistry } from "./index";
 import type { GlobArgs, ListDirArgs, ReadFileArgs } from "./schemas";
 import { globToRegExp } from "./glob-match";
@@ -38,21 +40,14 @@ function protectedErr(): Error {
   return toolError("protected_path", "path is protected");
 }
 
-/** Path relative to `root` (both normalised). Returns `abs` unchanged when it is outside. */
-function relTo(root: string, abs: string): string {
-  if (abs === root) return ".";
-  const prefix = root.endsWith("/") ? root : `${root}/`;
-  return abs.startsWith(prefix) ? abs.slice(prefix.length) : abs;
-}
-
 /** P3 on the lexical path and on the symlink-resolved path. */
 async function checkSecret(host: Host, root: string, abs: string): Promise<Guarded> {
-  const rel = relTo(root, abs);
+  const rel = relUnder(root, abs);
   if (isSecretPath(rel)) throw protectedErr();
   const real = await host.realpath(abs).catch(() => undefined);
   if (real !== undefined) {
     const realRoot = normalizePath(await host.realpath(root).catch(() => root));
-    if (isSecretPath(relTo(realRoot, normalizePath(real)))) throw protectedErr();
+    if (isSecretPath(relUnder(realRoot, normalizePath(real)))) throw protectedErr();
   }
   return { abs, rel };
 }
@@ -65,10 +60,19 @@ async function checkSecret(host: Host, root: string, abs: string): Promise<Guard
 async function guard(ctx: ToolContext, raw: string): Promise<Guarded> {
   const realpath = (p: string) => ctx.host.realpath(p);
   const roots = ABSOLUTE.test(raw) ? ctx.roots : [ctx.root];
+  let onlyOutside = true;
   for (const root of roots) {
     const res = await resolveInWorkspace(root, raw, realpath);
     if (res.ok) return checkSecret(ctx.host, normalizePath(root), res.abs);
     if (res.reason === "invalid_args") throw toolError("invalid_args", res.message);
+    if (res.reason !== "outside_workspace") onlyOutside = false;
+  }
+  if (ctx.allowOutside && onlyOutside) {
+    const abs = outsideCandidate(ctx.root, raw);
+    if (abs !== null) {
+      if ((await outsideRefusal(abs, realpath, false)) !== null) throw protectedErr();
+      return { abs, rel: abs };
+    }
   }
   throw toolError("outside_workspace", "path is outside the workspace");
 }
@@ -117,7 +121,7 @@ export async function readFile(args: ReadFileArgs, ctx: ToolContext): Promise<Re
   if (st.kind === "dir") throw toolError("invalid_args", "path is a directory");
 
   // A dirty editor buffer is the source of truth (spec: "開いている dirty バッファ").
-  const open = ctx.host.openDocuments.get(g.abs);
+  const open = openDocumentFor(ctx.host.openDocuments, g.abs);
   let text: string;
   if (open?.dirty) {
     if (ENCODER.encode(open.text).length > READ_FILE_MAX_BYTES) {

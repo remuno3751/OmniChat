@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { parseArtifactInfo } from '../artifacts';
+import { countPartialSlides, parseArtifactInfo } from '../artifacts';
 import type { SearchSource } from '../protocol';
 import { useAppearance, useThemeDef, type Theme } from '../theme';
 import { useT } from '../i18n';
@@ -32,7 +32,7 @@ const bodyLh = (fs: number, boost = 0) => Math.round(fs * (1.45 + boost));
 
 const MONO = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' });
 
-import { parseBlocks, parseInline, type Align, type Block, type Inline } from './markdownParse';
+import { parseBlocks, parseInline, splitArtifactBlocks, type Align, type Block, type Inline } from './markdownParse';
 export { parseBlocks, parseInline };
 export type { Block, Inline };
 
@@ -126,10 +126,19 @@ function renderBlock(b: Block, ctx: Ctx): React.ReactNode {
     case 'code':
       if (b.lang === 'artifact') {
         const art = parseArtifactInfo(b.info ?? '');
-        if (art) return <ArtifactCard artifact={{ type: art.type, title: art.title, content: b.body }} t={t} />;
+        if (art) {
+          // Still streaming: the body is not shown (it can be hundreds of lines), only progress.
+          if (b.open && ctx.streaming) {
+            return <ArtifactCard artifact={{ type: art.type, title: art.title, content: '' }} t={t} generating={{ slides: art.type === 'pptx' ? countPartialSlides(b.body) : 0 }} />;
+          }
+          return <ArtifactCard artifact={{ type: art.type, title: art.title, content: b.body }} t={t} />;
+        }
       }
       if (b.lang === 'chart') {
         return <ChartBlock source={b.body} t={t} fallback={<CodeBlock lang={b.lang} body={b.body} t={t} fs={ctx.fs} plain={ctx.streaming} />} />;
+      }
+      if (b.lang === 'shapes') {
+        return <CodeBlock lang={b.lang} body={b.body} t={t} fs={ctx.fs} plain={ctx.streaming} collapsible />;
       }
       return <CodeBlock lang={b.lang} body={b.body} t={t} fs={ctx.fs} plain={ctx.streaming} />;
     case 'quote':
@@ -183,18 +192,36 @@ function renderBlock(b: Block, ctx: Ctx): React.ReactNode {
   }
 }
 
-function CodeBlock({ lang, body, t, fs, plain }: { lang: string; body: string; t: Theme; fs: number; plain: boolean }) {
+function CodeBlock({ lang, body, t, fs, plain, collapsible = false }: { lang: string; body: string; t: Theme; fs: number; plain: boolean; collapsible?: boolean }) {
   const tr = useT();
   const th = useThemeDef();
   const faces = useFaces();
+  // A collapsible block (```shapes) starts folded; its header row stays (with Copy) in both states.
+  const [open, setOpen] = useState(!collapsible);
+  const lineCount = body === '' ? 0 : body.split('\n').length;
   const tokens = useMemo(
-    () => (plain || body.split('\n').length > HIGHLIGHT_MAX_LINES ? null : tokenize(body, lang)),
-    [body, lang, plain],
+    () => (plain || !open || lineCount > HIGHLIGHT_MAX_LINES ? null : tokenize(body, lang)),
+    [body, lang, plain, open, lineCount],
+  );
+  const label = collapsible ? null : (
+    <Text style={[{ color: t.codeText, opacity: 0.7, fontSize: 12 }, faces.label, th.def.fonts.labelCaps && { fontSize: 10 }]}>{lang || tr('md.plainText')}</Text>
   );
   return (
     <View style={[s.code, { backgroundColor: t.code, borderRadius: th.r(8) }]}>
-      <View style={s.codeHead}>
-        <Text style={[{ color: t.codeText, opacity: 0.7, fontSize: 12 }, faces.label, th.def.fonts.labelCaps && { fontSize: 10 }]}>{lang || tr('md.plainText')}</Text>
+      <View style={[s.codeHead, !open && { borderBottomWidth: 0 }]}>
+        {collapsible ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: open }}
+            accessibilityLabel={tr('art.shapes.summary', { n: lineCount })}
+            hitSlop={6}
+            onPress={() => setOpen((o) => !o)}
+            style={s.foldBtn}
+          >
+            <Icon name={open ? 'collapse' : 'expand'} size={16} color={t.codeText} />
+            <Text style={[{ color: t.codeText, fontSize: 12, fontWeight: '600' }, faces.label]}>{tr('art.shapes.summary', { n: lineCount })}</Text>
+          </Pressable>
+        ) : label}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={tr('md.copyCode')}
@@ -208,13 +235,15 @@ function CodeBlock({ lang, body, t, fs, plain }: { lang: string; body: string; t
           <Text style={{ color: t.codeText, fontSize: 12, fontWeight: '600' }}>{tr('common.copy')}</Text>
         </Pressable>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={{ padding: 10 }}>
-        <Text selectable style={[s.codeText, { color: t.codeText, fontSize: sc(fs, 13), lineHeight: sc(fs, 19) }]}>
-          {tokens
-            ? tokens.map((tk, k) => (tk.kind === 'plain' ? tk.text : <Text key={k} style={{ color: t.hl[tk.kind] }}>{tk.text}</Text>))
-            : body}
-        </Text>
-      </ScrollView>
+      {open && (
+        <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={{ padding: 10 }}>
+          <Text selectable style={[s.codeText, { color: t.codeText, fontSize: sc(fs, 13), lineHeight: sc(fs, 19) }]}>
+            {tokens
+              ? tokens.map((tk, k) => (tk.kind === 'plain' ? tk.text : <Text key={k} style={{ color: t.hl[tk.kind] }}>{tk.text}</Text>))
+              : body}
+          </Text>
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -304,7 +333,10 @@ export default function Markdown({ text, t, sources, onCite, streaming = false }
     return same ? { blocks: stripCodeMarks(b), fx: true } : { blocks: plain, fx: false };
   }, [text, streaming]);
   const skin = th.def.id === 'simple' ? null : { ef: th.def.variants.tabs === 'tag', dark: th.dark, lh: th.def.fonts.lineHeightBoost, faces };
-  return <View>{blocksView(blocks, { t, tr, sources, onCite, fs: fontSize, streaming, r: th.r, skin, fx: fx ? { open: false } : undefined })}</View>;
+  // Artifact cards go after everything else in the message, in their original order.
+  const { body, artifacts } = useMemo(() => splitArtifactBlocks(blocks), [blocks]);
+  const ctx: Ctx = { t, tr, sources, onCite, fs: fontSize, streaming, r: th.r, skin, fx: fx ? { open: false } : undefined };
+  return <View>{blocksView(body, ctx)}{blocksView(artifacts, ctx)}</View>;
 }
 
 const s = StyleSheet.create({
@@ -323,6 +355,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 10, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.12)',
   },
+  foldBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 },
   copyBtn: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
   extImage: { borderWidth: 1, borderRadius: 8, padding: 10, gap: 6, marginVertical: 6, maxWidth: 360 },
   extImageBtn: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1 },

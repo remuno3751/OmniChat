@@ -114,7 +114,23 @@ test('nested pets partial object: known fields kept, the rest default', async ()
     size: 256,
     activity: defaults.pets.activity,
     clickThrough: defaults.pets.clickThrough,
+    pos: null,
+    desktop: defaults.pets.desktop,
+    inApp: defaults.pets.inApp,
+    multi: defaults.pets.multi,
+    explicit: defaults.pets.explicit,
   });
+});
+
+test('pets.pos: fractions clamped into 0..1, malformed values become null (default spot)', async () => {
+  const hi = await loadStored(JSON.stringify({ pets: { pos: { fx: 2, fy: -1 } } }));
+  assert.deepEqual(hi.getDevice().pets.pos, { fx: 1, fy: 0 });
+  const mid = await loadStored(JSON.stringify({ pets: { pos: { fx: 0.25, fy: 0.5 } } }));
+  assert.deepEqual(mid.getDevice().pets.pos, { fx: 0.25, fy: 0.5 });
+  for (const pos of [{ fx: 0.5 }, { fx: 'a', fy: 0 }, { fx: null, fy: 1 }, [0.1, 0.2], 'left', { fx: 1e999, fy: 0 }]) {
+    const bad = await loadStored(JSON.stringify({ pets: { pos } }));
+    assert.equal(bad.getDevice().pets.pos, null, JSON.stringify(pos));
+  }
 });
 
 test('nested dsh partial object: known fields kept, the rest default', async () => {

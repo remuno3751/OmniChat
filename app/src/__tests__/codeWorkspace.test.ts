@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { codeDevices, workspaceOptions, pickerAvailable, cwdToSend, changeDevice } from '../codeWorkspace';
+import { codeDevices, workspaceOptions, pickerAvailable, cwdToSend, changeDevice, defaultCwdOf, defaultDevice } from '../codeWorkspace';
 
 const prov = (id, baseUrl, extra = {}) => ({ id, kind: 'dsh-bridge', baseUrl, deleted: false, ...extra });
 const providers = [prov('p2', 'laptop'), prov('p1', 'desk'), { id: 'o', kind: 'openai-compatible', baseUrl: 'http://x' }, prov('p3', 'gone', { deleted: true })];
@@ -47,8 +47,45 @@ test('cwdToSend: default sends nothing; only offered folders are sent; old bridg
   assert.equal(cwdToSend({ providerId: 'p2', cwd: '/b' }, laptop, opts), undefined);
 });
 
+const vsProviders = [{ id: 'v1', kind: 'vscode-bridge', baseUrl: 'pc', deleted: false }];
+const vsBridges = [{ name: 'pc', kind: 'vscode', online: true, cwd: 'C:\\w\\app', workspaces: ['C:\\w\\app', 'C:\\w\\lib'] }];
+
+test('vscode device with bridges not loaded: the picked folder is still sent', () => {
+  const [pc] = codeDevices(vsProviders, null);
+  assert.equal(pc.kind, 'vscode');
+  assert.equal(cwdToSend({ providerId: 'v1', cwd: 'C:\\w\\lib' }, pc, [], null), 'C:\\w\\lib');
+  // no folder known yet: nothing to resolve the default from
+  assert.equal(cwdToSend({ providerId: 'v1', cwd: null }, pc, [], null), undefined);
+});
+
+test('vscode device default: the folder open in VS Code (cwd, else first open workspace)', () => {
+  const [pc] = codeDevices(vsProviders, vsBridges);
+  assert.equal(cwdToSend({ providerId: 'v1', cwd: null }, pc, ['C:\\w\\app', 'C:\\w\\lib'], vsBridges), 'C:\\w\\app');
+  assert.equal(defaultCwdOf(pc, vsBridges), 'C:\\w\\app');
+  assert.equal(defaultCwdOf(pc, [{ name: 'pc', kind: 'vscode', online: true, workspaces: ['/x', '/y'] }]), '/x');
+  assert.equal(defaultCwdOf(pc, null), undefined);
+  // a DSH device keeps its own default: nothing is sent
+  assert.equal(defaultCwdOf({ ...pc, kind: 'dsh' }, vsBridges), undefined);
+  assert.equal(cwdToSend({ providerId: 'p1', cwd: null }, { ...pc, kind: 'dsh' }, ['C:\\w\\app'], vsBridges), undefined);
+});
+
+test('workspaceOptions for an online VS Code PC lists only the folders open in VS Code', () => {
+  const convs = [conv('C:\\old\\proj', 9, 'v1')];
+  assert.deepEqual(workspaceOptions('pc', vsBridges, convs, { v1: vsProviders[0] }, 'vscode'), ['C:\\w\\app', 'C:\\w\\lib']);
+  // offline: the folders of known chats
+  assert.deepEqual(workspaceOptions('pc', [], convs, { v1: vsProviders[0] }, 'vscode'), ['C:\\old\\proj']);
+});
+
 test('changeDevice: the folder survives only if the new device offers it', () => {
   assert.deepEqual(changeDevice({ providerId: 'p1', cwd: '/b' }, 'p2', ['/b']), { providerId: 'p2', cwd: '/b' });
   assert.deepEqual(changeDevice({ providerId: 'p1', cwd: '/b' }, 'p2', ['/c']), { providerId: 'p2', cwd: null });
   assert.deepEqual(changeDevice({ providerId: 'p1', cwd: null }, 'p2', ['/c']), { providerId: 'p2', cwd: null });
+});
+
+test('defaultDevice: the first online device, else the first one, else none', () => {
+  const dev = (name: string, online: boolean) => ({ providerId: 'p-' + name, name, online, workspaces: false, kind: 'vscode' as const });
+  const offlineFirst = [dev('my-pc', false), dev('zeta', true), dev('zz', true)];
+  assert.equal(defaultDevice(offlineFirst)?.name, 'zeta');
+  assert.equal(defaultDevice([dev('a', false), dev('b', false)])?.name, 'a');
+  assert.equal(defaultDevice([]), undefined);
 });

@@ -5,6 +5,7 @@ import { t as tt, useT } from '../i18n';
 import { useTheme } from '../theme';
 import { stripMarks, useStreamText } from '../ui/streamText';
 import Icon from './Icon';
+import { thinkingMs } from '../waitState';
 
 export const fmtSecs = (ms: number) => (ms < 10000 ? tt('msg.secs', { n: (ms / 1000).toFixed(1) }) : ms < 120000 ? tt('msg.secs', { n: Math.round(ms / 1000) }) : tt('msg.minSecs', { m: Math.floor(ms / 60000), s: Math.round((ms % 60000) / 1000) }));
 
@@ -28,8 +29,9 @@ export default function ThinkingBlock({ m }: { m: Message }) {
 
   const exact = m.metrics?.reasoningTokens;
   const tokens = exact != null ? tr('msg.think.tokens', { n: exact }) : tr('msg.think.approx', { n: Math.max(1, Math.ceil(text.length / 4)) });
-  const dur = m.thinkStartedAt ? (m.thinkEndedAt ?? (thinking ? now : null)) : null;
-  const durText = dur != null && m.thinkStartedAt ? fmtSecs(Math.max(0, dur - m.thinkStartedAt)) : '';
+  // from the first reasoning delta (not the request start) to the first answer delta; the wait before the first token is in MetricsLine (TTFT)
+  const ms = m.thinkEndedAt || thinking ? thinkingMs(m.thinkStartedAt, m.thinkEndedAt, now) : null;
+  const durText = ms != null ? fmtSecs(ms) : '';
   const label = thinking
     ? (durText ? tr('msg.think.thinkingDur', { tokens, dur: durText }) : tr('msg.think.thinkingLabel', { tokens }))
     : (durText ? tr('msg.think.thoughtFor', { dur: durText, tokens }) : tr('msg.think.plain', { tokens }));

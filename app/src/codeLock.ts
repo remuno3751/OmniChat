@@ -24,6 +24,8 @@ export interface CodeLockSettings {
   pinSalt: string | null;
   /** hex SHA-256 (iterated) of the PIN, null when no PIN is set */
   pinHash: string | null;
+  /** desktop (Mac / Windows): also offer fingerprint / face / Windows Hello; the PIN always stays as the fallback */
+  biometric: boolean;
   /** consecutive wrong PIN entries */
   failCount: number;
   /** epoch ms until which PIN entry is refused (0 = not locked out) */
@@ -36,6 +38,7 @@ export const CODE_LOCK_DEFAULTS: CodeLockSettings = {
   relockSeconds: 300,
   pinSalt: null,
   pinHash: null,
+  biometric: false,
   failCount: 0,
   lockedUntil: 0,
 };
@@ -44,6 +47,7 @@ export const CODE_LOCK_DEFAULTS: CodeLockSettings = {
 export const CODE_LOCK_PIN_CLEARED: Partial<CodeLockSettings> = {
   pinSalt: null,
   pinHash: null,
+  biometric: false,
   failCount: 0,
   lockedUntil: 0,
 };
@@ -64,6 +68,8 @@ export function normalizeCodeLock(raw: any): CodeLockSettings {
     relockSeconds: (RELOCK_OPTIONS as readonly number[]).includes(r.relockSeconds) ? r.relockSeconds : d.relockSeconds,
     pinSalt: paired ? salt : null,
     pinHash: paired ? hash : null,
+    // biometrics only ever add to a PIN, so they count only while a PIN exists
+    biometric: r.biometric === true && paired,
     failCount: typeof r.failCount === 'number' && Number.isInteger(r.failCount) && r.failCount >= 0 && r.failCount <= 100000
       ? r.failCount : d.failCount,
     lockedUntil: typeof r.lockedUntil === 'number' && Number.isFinite(r.lockedUntil) && r.lockedUntil > 0 ? r.lockedUntil : d.lockedUntil,

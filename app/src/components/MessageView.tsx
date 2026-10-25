@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Message } from '../protocol';
 import { Theme, useTheme, useThemeDef } from '../theme';
@@ -27,6 +27,7 @@ import type { IconName } from './Icon';
 import type { DebugTab } from './DebugSheet';
 import { prettyJson } from '../devState';
 import { useT } from '../i18n';
+import { waitStage } from '../waitState';
 
 export function MessageContent({ text, t, sources, onCite, streaming }: { text: string; t: Theme; sources?: SearchSource[] | null; onCite?: (s: SearchSource) => void; streaming?: boolean }) {
   const shown = useStreamText(text, !!streaming);
@@ -48,6 +49,19 @@ interface Props {
   onDebug: (tab: DebugTab) => void;
   /** arrived after this chat was opened and newer than what was shown at open (ChatScreen's fresh tracker) */
   late?: boolean;
+}
+
+/** Status next to the spinner while a reply has no content or reasoning yet: elapsed seconds by stage. Ticks only while mounted. */
+function WaitStatus({ since, hasToolActivity }: { since: number; hasToolActivity: boolean }) {
+  const t = useTheme();
+  const tr = useT();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const i = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(i);
+  }, []);
+  const { key, s } = waitStage(now - since, hasToolActivity);
+  return <Text style={{ color: t.sub, fontSize: 12, flexShrink: 1 }}>{tr(key, { s })}</Text>;
 }
 
 export default function MessageView({ m, sibIndex, sibTotal, onSwitch, canBranch, busy, onRegenerate, onEditResend, onDebug, late }: Props) {
@@ -134,7 +148,12 @@ export default function MessageView({ m, sibIndex, sibTotal, onSwitch, canBranch
         {m.attachments?.length ? <AttachmentList attachments={m.attachments} /> : null}
         {!user && <SourcesList sources={m.sources} highlight={cite.src?.index} />}
         {!user && <GuardBlockedNotice items={m.guardBlocked} />}
-        {m.status === 'streaming' && (!!m.content || !m.reasoning) && <ActivityIndicator size="small" color={t.accentInk} style={{ alignSelf: 'flex-start', marginTop: m.content ? 6 : 0 }} />}
+        {m.status === 'streaming' && (!!m.content || !m.reasoning) && (
+          <View style={[styles.waitRow, { marginTop: m.content ? 6 : 0 }]}>
+            <ActivityIndicator size="small" color={t.accentInk} />
+            {!m.content && <WaitStatus since={m.createdAt} hasToolActivity={!!m.toolCalls?.length} />}
+          </View>
+        )}
         {m.status === 'stopped' && <Text style={{ color: t.sub, fontSize: 12, marginTop: 4 }}>{tr('msg.statusStopped')}</Text>}
         {m.status === 'error' && <Text style={{ color: t.danger, fontSize: 12, marginTop: 4 }}>{tr('msg.statusError')}</Text>}
       </Pressable>)}
@@ -188,6 +207,7 @@ function ActionBtn({ icon, label, onPress, onFocusChange }: { icon: IconName; la
 }
 
 const styles = StyleSheet.create({
+  waitRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6 },
   row: { flexDirection: 'row' },
   actBtn: { width: 28, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
   bubble: { maxWidth: '88%', paddingHorizontal: 12, paddingVertical: 8 },

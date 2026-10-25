@@ -10,7 +10,7 @@
   "bugs": {
     "url": "https://github.com/remuno3751/omnichat/issues"
   },
-  "version": "0.2.6",
+  "version": "1.0.0",
   "publisher": "omnichat",
   "license": "AGPL-3.0-only",
   "private": false,
@@ -36,16 +36,18 @@
   "main": "./dist/extension.js",
   "activationEvents": [
     "onStartupFinished",
-    "onUri",
     "onCommand:omnichat.pair",
     "onCommand:omnichat.unpair",
     "onCommand:omnichat.showLog",
     "onCommand:omnichat.showActivity",
     "onView:omnichat.chat",
     "onView:omnichat.settings",
+    "onView:omnichat.chatRight",
     "onCommand:omnichat.openChat",
     "onCommand:omnichat.openSettings",
-    "onCommand:omnichat.newConversation"
+    "onCommand:omnichat.newConversation",
+    "onCommand:omnichat.openChatInEditor",
+    "onCommand:omnichat.moveToSecondarySideBar"
   ],
   "contributes": {
     "configuration": {
@@ -139,6 +141,16 @@
         "command": "omnichat.newConversation",
         "title": "%omnichat.cmd.newConversation%",
         "icon": "$(add)"
+      },
+      {
+        "command": "omnichat.openChatInEditor",
+        "title": "%omnichat.cmd.openChatInEditor%",
+        "icon": "$(window)"
+      },
+      {
+        "command": "omnichat.moveToSecondarySideBar",
+        "title": "%omnichat.cmd.moveToSecondarySideBar%",
+        "icon": "$(layout-sidebar-right)"
       }
     ],
     "viewsContainers": {
@@ -148,9 +160,24 @@
           "title": "OmniChat VS",
           "icon": "media/omnichat-activity.svg"
         }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "omnichatRight",
+          "title": "OmniChat VS",
+          "icon": "media/omnichat-activity.svg"
+        }
       ]
     },
     "views": {
+      "omnichatRight": [
+        {
+          "type": "webview",
+          "id": "omnichat.chatRight",
+          "name": "%omnichat.view.chat%",
+          "icon": "media/omnichat-activity.svg"
+        }
+      ],
       "omnichat": [
         {
           "type": "webview",
@@ -162,7 +189,8 @@
           "type": "webview",
           "id": "omnichat.settings",
           "name": "%omnichat.view.settings%",
-          "icon": "media/omnichat-activity.svg"
+          "icon": "media/omnichat-activity.svg",
+          "visibility": "collapsed"
         }
       ]
     },
@@ -182,6 +210,16 @@
           "command": "omnichat.showLog",
           "when": "view == omnichat.settings",
           "group": "overflow@1"
+        },
+        {
+          "command": "omnichat.openChatInEditor",
+          "when": "view == omnichat.chat",
+          "group": "navigation@3"
+        },
+        {
+          "command": "omnichat.moveToSecondarySideBar",
+          "when": "view == omnichat.chat",
+          "group": "navigation@4"
         }
       ]
     }

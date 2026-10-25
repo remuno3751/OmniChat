@@ -2,11 +2,24 @@ import { TIPS_JA } from '../tips/content';
 import { ADMIN_JA } from './adminStringsIndex';
 import { ja as SHARED_JA } from './sharedStrings';
 import { ja as SLIDE_JA } from './slideStrings';
+import { ja as C56S_JA } from './v056cSlideStrings';
+import { ja as C56F_JA } from './v056cFolderStrings';
+import { ja as C56P_JA } from './v056cPetStrings';
+import { ja as C56A_JA } from './v056cArtifactStrings';
+import { ja as C56D_JA } from './v056dStrings';
+import { ja as C56E_JA } from './v056eStrings';
+import { ja as C56H_JA } from './v056hStrings';
+import { ja as C56F_DESK_JA } from './v056fStrings';
+import { ja as C56G_JA } from './v056gStrings';
+import { ja as C56I_JA } from './v056iStrings';
 import { ja as CODE_PREVIEW_JA } from './codePreviewStrings';
 import { ja as ATTACH_JA } from './attachStrings';
 import { ja as PLUGINS_JA } from './pluginsAdminStrings';
 import { ja as QUOTA_JA } from './quotaStrings';
 import { ja as DESKTOP_JA } from './desktopStrings';
+import { ja as FOLDER_JA } from './folderStrings';
+import { ja as BIO_JA } from './bioStrings';
+import { ja as TIP_JA } from './tipStrings';
 // 日本語の文言。en.ts と同じキーを持つこと。
 const messages: Record<string, string> = {
   'settings.title': '設定',
@@ -285,16 +298,12 @@ const messages: Record<string, string> = {
   'integ.vscode.step1.title': '拡張機能をインストール',
   'integ.vscode.step1.hint': '{file} を VS Code にインストールします（ファイルのある場所のターミナルで実行するか、「VSIX からのインストール…」を使います）。',
   'integ.vscode.step2.title': 'VS Code をこのサーバーとペアリング',
-  'integ.vscode.step2.hint': 'この PC 用のペアリングコードを作り、VS Code の「OmniChat: Pair with Server」に貼り付けるか、リンクを開きます。',
+  'integ.vscode.step2.hint': 'この PC 用のペアリングコードを作り、VS Code の「OmniChat: Pair with Server」に貼り付けます(コピーして貼り付ける方式のみです)。',
   'integ.vscode.field.name': 'PC 名',
   'integ.vscode.field.nameHint': 'Code タブに表示されます。PC ごとに 1 つの名前にします。',
   'integ.vscode.createCode': 'ペアリングコードを作成',
   'integ.vscode.codeLabel': 'ペアリングコード',
   'integ.vscode.codeOnce': 'コードにはデバイストークンが含まれ、今しか表示されません。解除は 設定 > デバイス で失効させます。',
-  'integ.vscode.openLink': 'VS Code で開く',
-  'integ.vscode.linkLabel': 'ペアリングリンク',
-  'integ.vscode.openFailed': 'VS Code を開けませんでした。代わりにペアリングコードをコピーしてください。',
-  'integ.vscode.openHint': '開かない場合は、コードをコピーして VS Code のコマンドパレット「OmniChat: Pair with Server」に貼り付けてください。',
   'integ.vscode.step3.title': '接続状態',
   'integ.vscode.none': 'VS Code 拡張はまだ接続していません。',
   'integ.vscode.version': '拡張 {version}',
@@ -1772,6 +1781,7 @@ const messages: Record<string, string> = {
   'update.check': '更新を確認',
   'update.checking': '確認中...',
   'update.checkFailed': '更新を確認できませんでした。',
+  'update.retry': '再試行',
   'update.latest': '最新版: {version}',
   'update.prerelease': 'プレリリース',
   'update.upToDate': '最新版を使用中です。',
@@ -1870,11 +1880,14 @@ const messages: Record<string, string> = {
   'maint.unsupported': 'このサーバーはメンテナンスモードに対応していません。',
   ...TIPS_JA,
   ...ADMIN_JA,
-  ...SHARED_JA, ...SLIDE_JA, ...CODE_PREVIEW_JA,
+  ...SHARED_JA, ...SLIDE_JA, ...C56S_JA, ...C56F_JA, ...C56P_JA, ...C56A_JA, ...C56D_JA, ...C56E_JA, ...C56H_JA, ...C56F_DESK_JA, ...C56G_JA, ...C56I_JA, ...CODE_PREVIEW_JA,
   ...ATTACH_JA,
   ...PLUGINS_JA,
   ...QUOTA_JA,
   ...DESKTOP_JA,
+  ...FOLDER_JA,
+  ...BIO_JA,
+  ...TIP_JA,
   "guard.blocked.title": "プロンプトインジェクションをブロックしました",
   "guard.blocked.lead": "次の Web 上のテキストは削除され、モデルには渡していません。",
   "guard.blocked.more": "ほか {n} 件",
@@ -1912,6 +1925,29 @@ const messages: Record<string, string> = {
   "search.opts.allowPrivate": "プライベート・ローカルのアドレスを許可",
   "search.opts.allowPrivateHint": "検索で、社内ネットワークやローカルのアドレス（192.168.x.x や localhost など）を開けるようにします。",
   "search.opts.allowPrivateWarn": "警告: これをオンにすると、Web 検索が社内ネットワークやローカルのサービスに届くことがあります。すべての検索を信頼できる場合にだけオンにしてください。",
+  // v0.5.6 session A
+  "code.pickModelFirst": "先にモデルを選んでください（右下のモデル選択から）。",
+  "code.brokenConv": "この会話は端末に接続されていません。",
+  "code.reattach": "端末に付け直す",
+  "general.aboutVersionPlain": "OmniChat {version}",
+  "update.prereleaseInUse": "試験版を使用中です（最新の正式版: {version}）",
+  "notify.osTitle": "OS の通知",
+  "notify.osHint": "通知は OS の設定（Windows: 設定 → システム → 通知）で許可してください。",
+  "notify.permLine": "通知の許可: {perm}",
+  "notify.perm.granted": "許可",
+  "notify.perm.denied": "拒否",
+  "notify.perm.default": "未設定",
+  "devices.revokeStale": "古い端末を取り消す",
+  "devices.staleConfirm": "30 日以上確認できない端末 {n} 件を取り消しますか？",
+  "devices.convsTitle": "この端末の会話",
+  "devices.convsMsg": "この端末の会話が {n} 件あります。一覧に残すか、この端末を一覧から非表示にするかを選んでください。",
+  "devices.convsKeep": "残す",
+  "devices.convsHide": "非表示にする",
+  "devices.revokeSomeFailed": "{n} 件は取り消せませんでした",
+  "attach.hint": "ドラッグ&ドロップや貼り付け（Ctrl+V）でも添付できます。",
+  "wait.waiting": '応答を待っています… {s} 秒',
+  "wait.processing": 'プロンプトを処理中… {s} 秒',
+  "wait.slow": 'プロンプトを処理中（モデルの読み込みや長い入力に時間がかかっています）… {s} 秒',
 };
 
 export default messages;

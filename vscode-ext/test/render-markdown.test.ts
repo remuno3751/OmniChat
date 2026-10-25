@@ -4,7 +4,7 @@ import { plainToHtml } from "../src/webview/render/chat-text";
 
 const OPTS = { copyLabel: "Copy" };
 const ALLOWED_TAGS = new Set(
-  "p h3 strong em del code pre div span button a ul ol li blockquote table thead tbody tr th td hr br".split(" "),
+  "p h3 strong em del code pre div span button a ul ol li blockquote table thead tbody tr th td hr br svg path".split(" "),
 );
 const TAG_RE = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)((?:\s+[a-zA-Z][a-zA-Z0-9-]*(?:="[^"<>]*")?)*)\s*(\/?)>/g;
 const ATTR_RE = /([a-zA-Z][a-zA-Z0-9-]*)(?:="([^"<>]*)")?/g;
@@ -177,7 +177,8 @@ describe("links", () => {
 describe("code blocks", () => {
   it("has the copy button with data-oc-copy and the label", () => {
     const html = renderMarkdown("```ts\nconst a = 1;\n```", { copyLabel: "Copy <code>" });
-    expect(html).toContain('<button type="button" class="oc-code__copy" data-oc-copy>Copy &lt;code&gt;</button>');
+    expect(html).toContain('<button type="button" class="oc-code__copy" data-oc-copy aria-label="Copy &lt;code&gt;" title="Copy &lt;code&gt;">');
+    expect(html).toContain("oc-ico--check");
     expect(html).toContain('<span class="oc-code__lang">ts</span>');
     expect(html).toContain('<div class="oc-code"><div class="oc-code__bar">');
     checkSafe(html);
@@ -334,5 +335,17 @@ describe("size cap", () => {
     expect(out).toContain("&lt;b&gt;tail&lt;/b&gt;");
     expect(out).not.toContain("<b>");
     expect(MAX_MARKDOWN_CHARS).toBe(60000);
+  });
+});
+
+describe("inline code file paths", () => {
+  it("marks path-like inline code with data-oc-path and line", () => {
+    const html = renderMarkdown("see `src/a/b.ts:12` and `plain`", OPTS);
+    checkSafe(html);
+    expect(html).toContain('data-oc-path="src/a/b.ts" data-oc-line="12"');
+    expect(html).toContain('<code class="oc-md-code">plain</code>');
+  });
+  it("does not mark urls or versions", () => {
+    expect(renderMarkdown("`https://a.com/x.ts` `1.2.3`", OPTS)).not.toContain("data-oc-path");
   });
 });

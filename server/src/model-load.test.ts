@@ -448,16 +448,17 @@ test("9. invalid loadPolicy is ignored: model_conflict, nothing happens", async 
 
 // ---------- 10: code mode is never gated ----------
 
-test("10. code-mode conversation: no conflict, no unload, straight to completion", async () => {
+test("10. code-mode conversation: never gated by the model conflict; a non-bridge provider is refused (code_not_bridge), nothing loads", async () => {
   const h = await harness({ loaded: ["chat-a"] });
   try {
     const cid = await conv(h, "chat-b", { mode: "code" });
     const { assistantMessageId } = sendTurn(h, cid);
-    const asst = await h.cl.waitMsg(assistantMessageId);
-    assert.equal(asst.status, "done");
+    const err = await h.cl.waitFrame((f) => f.type === "error" && f.messageId === assistantMessageId);
+    assert.equal(err.code, "code_not_bridge");
     assert.equal(h.cl.frames.some((f) => f.type === "error" && f.code === "model_conflict"), false);
-    assert.deepEqual(h.mock.log, ["completion chat-b"]);
-    assert.deepEqual([...h.mock.loaded].sort(), ["chat-a", "chat-b"]);
+    assert.deepEqual(h.mock.log, []);
+    assert.deepEqual([...h.mock.loaded], ["chat-a"]);
+    assert.equal((await storedIn(h, cid)).messages.length, 0);
   } finally {
     h.stop();
   }

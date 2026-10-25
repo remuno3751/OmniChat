@@ -60,6 +60,27 @@ test("mode matrix", () => {
   assert.equal(d.action, "allow");
 });
 
+test("full mode waives only the outside-workspace protection", () => {
+  const out = { tool: "read_file", args: { path: "/etc/hosts" }, roots: R, rules: none };
+  const full = decide({ ...out, mode: "full" });
+  assert.deepEqual([full.action, full.by, full.protected, full.outsideOk], ["allow", "mode:full", false, true]);
+  for (const mode of ["manual", "auto"] as const) {
+    const d = decide({ ...out, mode });
+    assert.deepEqual([d.action, d.protected, d.outsideOk], ["ask", true, true]);
+  }
+  const cmd = decide({ tool: "run_command", args: { command: "ls /etc" }, roots: R, mode: "full", rules: none });
+  assert.deepEqual([cmd.action, cmd.outsideOk], ["allow", true]);
+  // secrets, .git and risky commands still ask in full mode and never carry outsideOk
+  const secret = decide({ tool: "read_file", args: { path: ".env" }, roots: R, mode: "full", rules: none });
+  assert.deepEqual([secret.action, secret.outsideOk], ["ask", undefined]);
+});
+
+test("macOS roots compare case-insensitively", () => {
+  const roots = ["/Users/me/Proj"];
+  assert.equal(matchProtected("read_file", { path: "/users/me/proj/a.ts" }, roots).protected, false);
+  assert.equal(matchProtected("read_file", { path: "/Users/me/other/a.ts" }, roots).protected, true);
+});
+
 test("protected is always ask, even in full mode, without always-allow", () => {
   for (const mode of ["manual", "auto", "full"] as const) {
     const d = decide({ tool: "run_command", args: { command: "git push" }, roots: R, mode, rules: none });

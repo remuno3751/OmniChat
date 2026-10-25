@@ -18,6 +18,7 @@ import { migrate as migrateSearch } from "./migrate-search.js";
 import { migrate as migrateAttachments } from "./migrate-attachments.js";
 import { migrate as migratePlugins } from "./migrate-plugins.js";
 import { migrate as migrateQuota } from "./migrate-quota.js";
+import { migrate as migrateFolders } from "./migrate-folders.js";
 import { encryptExistingKeys } from "./secret.js";
 import { parseResponseFormat } from "./structured.js";
 import type { ResponseFormat } from "./structured.js";
@@ -121,6 +122,27 @@ migrateAdmin(rawDb);
 migrateAttachments(rawDb);
 migratePlugins(rawDb);
 migrateQuota(rawDb);
+migrateFolders(rawDb);
+// Stills pets (pets.ts): one row per state image, plus one meta row per pet.
+rawDb.exec(`
+CREATE TABLE IF NOT EXISTS pet_stills (
+  user_id TEXT NOT NULL,
+  pet_id TEXT NOT NULL,
+  state TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  data BLOB NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, pet_id, state)
+);
+CREATE TABLE IF NOT EXISTS pet_stills_meta (
+  user_id TEXT NOT NULL,
+  pet_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, pet_id)
+);
+`);
 encryptExistingKeys(rawDb);
 
 // ---- ephemeral store (see docs/EPHEMERAL.md) ----
@@ -227,7 +249,10 @@ export interface SamplingParams {
 export interface Conversation {
   id: string; title: string; providerId: string | null; model: string | null;
   createdAt: number; updatedAt: number; deleted: boolean; seq: number;
-  projectId: string | null; systemPrompt: string | null; systemMode: "append" | "replace";
+  projectId: string | null;
+  /** chat folder (folders.ts); null = unclassified. Never set on ephemeral chats. */
+  folderId: string | null;
+  systemPrompt: string | null; systemMode: "append" | "replace";
   effort: Effort | null; params: SamplingParams | null; headId: string | null;
   tools: string[] | null; searchMode: SearchMode | null;
   /** per-chat override of the overflow policy (null = follow the user default) */
@@ -298,7 +323,7 @@ const parseJsonArray = (v: any): any[] | null => {
 export const toConversation = (r: any): Conversation => ({
   id: r.id, title: r.title, providerId: r.provider_id ?? null, model: r.model ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at, deleted: !!r.deleted, seq: r.seq,
-  projectId: r.project_id ?? null, systemPrompt: r.system_prompt ?? null,
+  projectId: r.project_id ?? null, folderId: r.folder_id ?? null, systemPrompt: r.system_prompt ?? null,
   systemMode: r.system_mode === "replace" ? "replace" : "append",
   effort: r.effort ?? null, params: parseJson(r.params), headId: r.head_id ?? null,
   tools: parseToolList(r.tools), searchMode: parseSearchMode(r.search_mode),

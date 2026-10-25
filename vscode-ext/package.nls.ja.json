@@ -7,5 +7,7 @@
   "omnichat.cmd.showActivity": "OmniChat: アクティビティを表示",
   "omnichat.cmd.openChat": "OmniChat: チャットを開く",
   "omnichat.cmd.openSettings": "OmniChat: 設定を開く",
-  "omnichat.cmd.newConversation": "OmniChat: 新しい会話"
+  "omnichat.cmd.newConversation": "OmniChat: 新しい会話",
+  "omnichat.cmd.openChatInEditor": "OmniChat: エディタで開く",
+  "omnichat.cmd.moveToSecondarySideBar": "OmniChat: チャットを右のサイドバーで開く"
 }

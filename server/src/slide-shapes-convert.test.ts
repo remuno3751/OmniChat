@@ -62,18 +62,19 @@ test("markdownToPptx keeps the body position of a slide without shapes", async (
   assert.match(slide2, /<a:ext cx="11064240"/, "12.1 in wide");
 });
 
-test("markdownToPptx without shapes still produces the old layout", async () => {
-  const zip = await zipOf(await markdownToPptx("## One\n- a\n", "Deck"));
+test("markdownToPptx without shapes gets the automatic design (cover, then a framed slide)", async () => {
+  const zip = await zipOf(await markdownToPptx("## One\n- a\n\n## Two\n- x\n- y\n- z\n- w\n- v\n", "Deck"));
   const s1 = await readEntry(zip, "ppt/slides/slide1.xml");
-  assert.equal((s1.match(/<p:sp>/g) ?? []).length, 2, "title and body only");
-  assert.match(s1, /<a:off x="548640" y="1371600"\/>/);
+  assert.match(s1, /<a:srgbClr val="0F172A"\/>/, "the cover has a dark background");
+  const s2 = await readEntry(zip, "ppt/slides/slide2.xml");
+  assert.ok((s2.match(/<p:sp>/g) ?? []).length > 2, "title, body and the decoration");
+  assert.match(s2, /<a:srgbClr val="F8FAFC"\/>/, "light page background");
 });
 
-test("markdownToPptx falls back to code for a shapes block that does not parse", async () => {
+test("markdownToPptx drops a shapes block that does not parse (its YAML is not slide text)", async () => {
   const zip = await zipOf(await markdownToPptx("## Bad\n\n```shapes\nelements: [\n```\n", "Deck"));
   const s1 = await readEntry(zip, "ppt/slides/slide1.xml");
-  assert.match(s1, /elements: \[/, "the raw YAML is shown as text");
-  assert.equal((s1.match(/<p:sp>/g) ?? []).length, 2, "title and body only, no extra shapes");
+  assert.doesNotMatch(s1, /elements: \[/, "the raw YAML is not shown");
 });
 
 test("markdownToDocx puts a (図) stand-in with the element texts", async () => {
@@ -116,11 +117,11 @@ test("POST /artifacts/convert/preview returns slides with the parsed shapes spec
   assert.equal(sh.spec.elements[3].kind, "column");
 });
 
-test("POST /artifacts/convert/preview: a broken shapes block comes back as code with no spec", async () => {
+test("POST /artifacts/convert/preview: a broken shapes block is dropped, never shown as code", async () => {
   const r = await preview({ type: "pptx", markdown: "## A\n\n```shapes\nelements: [\n```\n" });
   const j = (await r.json()) as { slides: { blocks: any[] }[] };
-  const b = j.slides[0].blocks[0];
-  assert.equal(b.kind, "code");
+  assert.ok(j.slides[0].blocks.every((b) => b.kind !== "code"));
+  assert.ok(j.slides[0].blocks.some((b) => b.kind === "shapes" && b.spec), "the slide got the automatic design");
 });
 
 test("POST /artifacts/convert/preview without auth is 401, and bad input is 400 or 413", async () => {

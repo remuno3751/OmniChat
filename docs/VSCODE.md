@@ -23,7 +23,7 @@ VS Code の拡張機能ビューの「…」→「VSIX からのインストー�
 ## ペアリング
 
 1. OmniChat アプリの 設定 → **VS Code** カードで「ペアリングコード」を作ります(端末トークンが作られ、デバイス一覧に `VS Code (<名前>)` として出ます)。
-2. VS Code で コマンドパレット → **OmniChat: Pair with Server** にコードを貼ります(カードの `vscode://` リンクを開いても同じです)。トークンは VS Code の SecretStorage に保存され、ログには出ません。
+2. VS Code で コマンドパレット → **OmniChat: Pair with Server** にコードを貼ります(ペアリングは、このコードのコピー&貼り付けだけです。リンクで VS Code を開く方式は廃止しました)。トークンは VS Code の SecretStorage に保存され、ログには出ません。
 3. ステータスバーが「接続済み」になります。アプリのカードのスイッチで、`vscode-bridge` プロバイダーを自動で作れます(手動なら、種類 `vscode-bridge`・ベース URL に **端末名**・API キーなし)。
 4. Code タブで新しい会話を作り、VS Code で開いているフォルダを選び、**モデル**(別のプロバイダーのモデル)を選んで送信します。
 
@@ -35,7 +35,7 @@ VS Code の拡張機能ビューの「…」→「VSIX からのインストー�
 - **https が必要なもの**: 上記以外の公開ホスト。https 以外は拒否されます。
 - URL にユーザー名・パスワードを含めることはできません。
 
-貼り付けは寛容です。前後の空白・改行、見えない文字、引用符、`vscode://` リンク全体を貼っても読み取れます。
+貼り付けは寛容です。前後の空白・改行、見えない文字、引用符が付いていても読み取れます。
 
 ### トラブルシュート
 
@@ -50,15 +50,12 @@ VS Code の拡張機能ビューの「…」→「VSIX からのインストー�
 |---|---|
 | コードが空です | 何も貼られていません。アプリの VS Code カードでコードを作ってください |
 | 貼り付けた内容が長すぎます | コード以外が含まれています。コードだけを貼ってください |
-| リンクが OmniChat のペアリング用ではありません | `vscode://omnichat.omnichat-vscode/pair?code=…` の形式が必要です |
 | コードの形式が正しくありません | コードが途中で切れています。全体をコピーし直してください |
 | コードを読み取れませんでした(復号エラー) | コードが壊れています。コピーし直してください |
 | コードの内容が正しくありません | アプリでコードを作り直してください |
 | サーバーアドレスが正しくありません | アプリのサーバー URL を確認してください |
 | 公開サーバーに http では接続できません | https にするか、LAN / Tailscale のアドレスを使ってください |
 | トークン / デバイス名が正しくありません | アプリでコードを作り直してください |
-
-アプリの「VS Code で開く」を押しても VS Code が開かない場合は、コードをコピーして VS Code のコマンドパレット「OmniChat: Pair with Server」に貼り付けてください。
 
 接続を解除するには、アプリのデバイス一覧でその端末を失効させます(拡張は再ペアリングを促します)。
 
@@ -88,29 +85,65 @@ VS Code の拡張機能ビューの「…」→「VSIX からのインストー�
 
 実行の前に、**全モードで**Git のチェックポイントが作られます(Git のフォルダのみ。そうでなければ警告のみで続行)。実行後の変更は変更一覧に出ます。巻き戻しは既存の `POST /code/checkpoints/:id/rewind` で、そのフォルダを開いているウィンドウが実行します。実行中は 409、未保存の変更があるエディタがあれば 409 `dirty_editors` です。
 
+## チェックポイント画面・出典・最後のプロンプトの編集(v0.5.6-E 以降)
+
+- **チェックポイント**: チャットのヘッダーの「チェックポイント」ボタンで、実行の前の状態の一覧が開きます(新しい順、最大 50 件)。各行に時刻・依頼・変更ファイル数が出ます。「戻す」を押すと、確認のダイアログが出ます。確認したときだけ、ファイルが戻ります(会話は消えません)。戻す直前の状態は Git の退避ブランチ `refs/omnichat/checkpoints/pre-rewind-…` に自動で保存されます。「戻す(新しく作られたファイルも削除)」を選ぶと、その後に作られたファイルも消えます。実行中、未保存の変更があるエディタがあるとき、Git のリポジトリでないときは戻せません(理由を通知で出します)。戻すと、会話に「○○の時点に戻しました」の行が残ります。
+- **出典**: Web 検索を使った回答の後ろに「情報源 (N)」が出ます。開くと、タイトルとサイトのホスト名の一覧で、クリックすると既定のブラウザで開きます。開くのは http / https のリンクだけです(ユーザー情報の付いた URL は出しません)。
+- **最後のプロンプトの編集**: 最後のユーザーメッセージの「編集」で本文を入力欄に戻し、送信すると、そのメッセージ以降の回答とツールの記録が会話から消えて、編集した内容で送り直されます。ファイルの変更は戻りません(必要ならチェックポイントから戻します)。実行中は編集できません(通知で伝えます)。編集は待ち行列に入らず、すぐ送られます。
+
+これらは拡張の機能で、サーバー側の対応(チェックポイント一覧・戻し・出典・最後のプロンプトの置き換え)が必要です。対応していないサーバーでは一覧が出ないだけで、チャットの他の機能は従来どおりです。
+
 ## OmniChat VS ビュー(拡張 0.2.0 以降)
 
 左のアクティビティバーの **OmniChat VS** に、2 つのビューが出ます。
 
 - **チャット**: 開いているフォルダの会話の一覧、会話の表示、モデル・承認モードの選択、送信と停止、ツールの実行状況、承認カード(今回だけ許可 / 拒否、保護バッジ、差分の表示)。承認待ちが出ると、このビューが前面に出ます。ステータスバーの OmniChat 表示を押してもここが開きます。
+- **チャット(右のサイドバー、拡張 0.3.1 以降)**: 同じチャットを右のサイドバーに出せます。ビューのタイトルバーの「OmniChat: チャットを右のサイドバーで開く」(コマンドパレットにも)を押すと開きます。右のサイドバーは VS Code の機能で、拡張が右の「secondarySidebar」を登録します。古い VS Code で開けないときは案内が出るので、OmniChat VS のアイコンを右端にドラッグしてください。ヘッダーの「エディタで開く」「右へ移動」ボタンは削除しました(タイトルバーにあります)。3 つの表示は同じ会話・同じ状態を共有します。
 - **設定**: サーバー URL、ペアリング(コードの貼り付け・解除)、ブリッジ名、テーマ(フロンティア(既定)/ シンプル / アストラル。0.2.3 以降)、装飾(auto / on / off)、編集後の自動保存、シェル、信頼の状態。トークンは表示されません(SecretStorage のみ)。
 
 表示言語は VS Code の表示言語に従います(日本語 / English)。チャットを使うにはサーバー 0.5.4 以降が必要です。それより古いサーバーでも、ツールの利用は従来どおり動きます。
 
 ### VS Code 内チャットのフレーム(サーバー 0.5.4 以降)
 
-拡張が `ready` で `capabilities.chat:true` と `capabilities.transcript:true` を送ったときだけ、サーバーは次のフレームを扱います(同じ `/bridge` の WS、1 接続あたり毎秒 30 フレームまで。超過分は破棄して `{"type":"error","code":"rate_limited"}`)。
+拡張が `ready` で `capabilities.chat:true` と `capabilities.transcript:true` を送ったときだけ、サーバーは次のフレームを扱います(同じ `/bridge` の WS、1 接続あたり毎秒 30 フレームまで。超過分は破棄して `{"type":"error","code":"rate_limited"}`)。`capabilities.transcriptDelta:true` も送ると、実行中の本文を差分で受け取れます(下記)。
 
 | 方向 | フレーム | 内容 |
 |---|---|---|
-| 拡張 → サーバー | `prompt` `{requestId, cwd, text(≤100 KB), conversationId?, model?("<providerId>::<modelId>"), approvalMode?, confirmFull?}` | 会話を探すか作り(ブリッジ名の `vscode-bridge` プロバイダーも自動作成)、アプリの `send` と同じ経路で実行。アプリや他の端末にも通常の WS で届きます |
+| 拡張 → サーバー | `prompt` `{requestId, cwd, text(≤100 KB), conversationId?, model?("<providerId>::<modelId>"), approvalMode?, confirmFull?, searchMode?(`off`/`smart`/`always`), interrupt?(true)}` | 会話を探すか作り(ブリッジ名の `vscode-bridge` プロバイダーも自動作成)、アプリの `send` と同じ経路で実行。`searchMode` は会話に保存されます(省略時は今の値のまま、新しい会話は設定の既定)。`interrupt:true` は、その会話で実行中の生成を止め、終わるまで(最大 5 秒)待ってから送ります。不正な `searchMode` は `error {code:"invalid_frame", requestId}`。アプリや他の端末にも通常の WS で届きます |
 | サーバー → 拡張 | `prompt_ack` `{requestId, ok, conversationId}` / `{ok:false, error, message}` | `error`: `workspace_not_open` `busy` `outdated` `untrusted_workspace` `forbidden_model` `quota` `no_model` `confirm_required` `not_found` `invalid_frame` |
-| 拡張 → サーバー | `models_request` / `conversations_request {cwd}` / `conversation_request {conversationId}` | 返信は `models` `{items:[{ref,label,provider}], defaultRef?}`(ツール呼び出し可能な openai-compatible のモデル、200 件まで)、`conversations` `{items:[{id,title,updatedAt,approvalMode,cwd}]}`(そのブリッジの Code 会話、新しい順、30 件まで)、`transcript` `{reset:true, items}`(全履歴) |
-| サーバー → 拡張 | `transcript` `{conversationId, runId?, items}` | 実行中、このブリッジのチャット対応ウィンドウ全部へ。項目は `user` / `assistant`(`status`: streaming/done/error/stopped)/ `tool`(`status`: pending/running/done/error/denied)/ `status`。同じ `id` の再送は全文の更新。毎秒 10 フレームまで |
+| 拡張 → サーバー | `models_request` / `conversations_request {cwd}` / `conversation_request {conversationId}` | 返信は `models` `{items:[{ref,label,provider}], defaultRef?}`(ツール呼び出し可能な openai-compatible のモデル、200 件まで)、`conversations` `{items:[{id,title,updatedAt,approvalMode,searchMode,cwd}]}`(そのブリッジの Code 会話、新しい順、30 件まで。`searchMode` は `off`/`smart`/`always`、未設定は `smart`)、`transcript` `{reset:true, items}`(全履歴) |
+| サーバー → 拡張 | `transcript` `{conversationId, runId?, items}` | 実行中、このブリッジのチャット対応ウィンドウ全部へ。項目は `user` / `assistant`(`status`: streaming/done/error/stopped)/ `tool`(`status`: pending/running/done/error/denied)/ `status`。同じ `id` の再送は全文の更新。毎秒 10 フレームまで。`tool` には `edit_file` / `write_file` の変更内容 `diff` `{path, added, removed, truncated?, lines}` が付きます(`lines` は `+` `-` か空白で始まり、最大 200 行、1 行 300 文字まで。拒否・失敗した呼び出しには付きません)。 |
 | 拡張 → サーバー | `set_approval_mode {conversationId, mode, confirmFull?}` | 返信 `approval_mode {conversationId, mode, ok}`(`full` は `confirmFull:true` が無いと `error:"confirm_required"`) |
 | 拡張 → サーバー | `stop {conversationId}` | アプリの停止と同じ |
+| 拡張 → サーバー | `context_request {requestId, conversationId}` | 返信 `context {requestId, total, limit, fits, estimated, used, reasoning, last?}`(トークン数。`limit` は不明のとき 0。`used` は `{system, history, attachments, tools, input}`、`reasoning` は推論トークン、`last` は直近の完了したアシスタント返信の `{prompt, completion, reasoning}` で、無いか全て 0 のときは省略)。他人の会話や無い会話は `error {code:"not_found", requestId}` |
+| 拡張 → サーバー | `prompt.attachments` `[{name, mime, data(base64)}]` | 4 件まで、1 件 4 MiB・合計 5 MiB まで(展開後)。文書は添付ストアの通常の規則でテキスト化。画像は png/jpeg/webp/gif で、実際のモデルが画像対応(vision)のときだけ(新しい 4 枚まで)。音声は不可。失敗は `prompt_ack` の `error`: `attachment_invalid` `attachment_too_large` `attachment_not_supported`(何も保存しません) |
+| 拡張 → サーバー | `devices_request {requestId}` | 返信 `devices {requestId, items:[{name, kind:"vscode"\|"dsh", online, self, workspaces[]}]}`(接続中のブリッジのみ、50 件まで) |
+| 拡張 → サーバー | `compact_request {requestId, conversationId}` | 返信 `compacted {requestId, conversationId, ok:true, before, after}`(トークン数)。実行中は `error {code:"busy"}`、他人の会話は `not_found` |
+| サーバー → 拡張 | `models` の項目 | `contextLength?`(トークン)と `vision?`(`yes`/`no`/`unknown`)が加わります |
+
+`transcriptDelta:true` の拡張には、実行中(`status: streaming`)の `assistant` を差分で送ります。最初のフレームと、最後のフレーム(`status` が streaming 以外)、`transcript` の全履歴は全文です。差分には `from`(受け取った側の現在の `text` の長さ、UTF-16 単位)が付き、`text` はその後ろに足す部分だけです。`reasoning` が変わったときは `reasoningFrom` 付きの `reasoning` 差分も入ります。`from` が現在の長さと一致しない、または項目が分からないときは、状態を保ったまま `conversation_request` で再同期を要求してください。`from` の無いフレームは従来どおり全文で置き換えます。
 
 承認待ちの間、`tool` 項目は `pending` のままで、従来の `approval_pending` / `approval_settled` / `approval_decision` もそのまま使えます。
+
+### チャットの設定・検索・スラッシュコマンド(拡張 0.4.0 / サーバー 0.5.6-d 以降)
+
+| 方向 | フレーム | 内容 |
+|---|---|---|
+| 拡張 → サーバー | `conversation_settings_request {requestId, conversationId}` | 返信 `conversation_settings {requestId, conversationId, title, systemPrompt, systemMode, effort}`(`effort` は `off`/`low`/`medium`/`high`/`max` か `null` = 既定)。失敗は `error {requestId}`(`not_found`) |
+| 拡張 → サーバー | `conversation_settings_set {requestId, conversationId, systemPrompt?, systemMode?, effort?, title?}` | 省いた項目は今の値のまま。返信 `conversation_settings_ack {requestId, conversationId, ok, settings?, title?}`、失敗は `ok:false` と `error`(`invalid_frame` `not_found`)。空のシステムプロンプトは保存しません。題名は 1〜200 字 |
+| 拡張 → サーバー | `history_search_request {requestId, query, limit?}` | 返信 `history_search {requestId, query, results}`(最大 30 件)。この端末の Code 会話だけ。`results` は `{conversationId, title, messageId?, role?, snippet, at}` |
+
+拡張の動き: 設定は会話を開いたときに取り直し、保存後にも取り直します。検索は新しいものだけを採用します。検索結果を押すと、その会話を開き、一致した項目へスクロールします(読み込み後、項目が無ければ何もしません)。
+
+スラッシュコマンド(拡張 0.4.0 で追加・変更):
+
+| コマンド | 内容 |
+|---|---|
+| `/effort <off\|low\|medium\|high\|max\|default>` | この会話の思考の強さを変えます。引数が無い・不正なら案内を出します |
+| `/rename <題名>` | 会話の題名を変えます(引数が無ければ案内) |
+| `/export` / `/export json` | 会話を Markdown、または JSON で開きます。JSON は `{title, conversationId, exportedAt, items:[{kind, id, text \| tool+summary, status?, at?}]}` で、トークン・鍵・作業フォルダ・端末名は含みません |
+
+Webview → 拡張のメッセージ: `requestSettings` / `saveSettings {systemPrompt, systemMode, effort}` / `setEffort {effort}` / `searchHistory {query}`(200 字まで)/ `openHit {conversationId, messageId?}`。`slash` は `arg`(2000 字まで)を持てます。拡張 → Webview: `scrollToMessage {id}`。
 
 ### テーマ(拡張 0.2.3 以降)
 

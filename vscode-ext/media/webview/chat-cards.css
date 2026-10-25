@@ -392,3 +392,335 @@ body[data-oc-narrow] .cc-tool__meta {
     transition: none !important;
   }
 }
+
+/* ---- tool-run timeline (above the answer) ----------------------------------------------------- */
+
+.cm-row--timeline {
+  align-self: stretch;
+  min-width: 0;
+}
+
+.cc-tl {
+  --cc-tl-gap: 16px;
+  --cc-tl-mark: 7px;
+  margin: 2px 0 4px 4px;
+  padding-left: var(--cc-tl-gap);
+  border-left: 1px solid var(--oc-border);
+  min-width: 0;
+}
+
+.cc-tl__item {
+  position: relative;
+  min-width: 0;
+}
+
+.cc-tl__sum {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--oc-sub);
+  border-radius: var(--oc-r-xs, 4px);
+}
+
+.cc-tl__sum::-webkit-details-marker {
+  display: none;
+}
+
+.cc-tl__sum:hover {
+  color: var(--oc-text);
+}
+
+.cc-tl__sum:focus-visible {
+  outline: 2px solid var(--oc-accent-ink);
+  outline-offset: 2px;
+}
+
+/* the square marker sits on the vertical line */
+.cc-tl__mark {
+  position: absolute;
+  left: calc(-1 * var(--cc-tl-gap) - var(--cc-tl-mark) / 2 - 0.5px);
+  top: calc(0.7em + 3px - var(--cc-tl-mark) / 2);
+  width: var(--cc-tl-mark);
+  height: var(--cc-tl-mark);
+  border-radius: 2px;
+  background: var(--oc-sub);
+  box-sizing: border-box;
+}
+
+.cc-tl__item--done .cc-tl__mark {
+  background: var(--oc-good);
+}
+
+.cc-tl__item--error .cc-tl__mark {
+  background: var(--oc-danger);
+}
+
+.cc-tl__item--denied .cc-tl__mark {
+  background: var(--oc-bg, transparent);
+  border: 1.5px solid var(--oc-warn);
+}
+
+.cc-tl__item--running .cc-tl__mark {
+  background: var(--oc-accent-ink);
+  animation: cc-pulse 1.2s ease-in-out infinite;
+}
+
+.cc-tl__item--running .cc-tl__label {
+  animation: cc-pulse 1.2s ease-in-out infinite;
+}
+
+.cc-tl__item--error .cc-tl__label {
+  color: var(--oc-danger);
+}
+
+.cc-tl__item--denied .cc-tl__label {
+  color: var(--oc-warn);
+}
+
+.cc-tl__label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cc-tl__chip {
+  flex: 0 0 auto;
+}
+
+.cc-tl__dur {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.cc-tl__sum::after {
+  content: "+";
+  flex: 0 0 auto;
+  width: 1ch;
+  text-align: center;
+  opacity: 0.6;
+}
+
+.cc-tl__item[open] > .cc-tl__sum::after {
+  content: "\2212";
+}
+
+.cc-tl__body {
+  margin: 0 0 4px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--oc-border);
+  font-size: 12px;
+  color: var(--oc-sub);
+  min-width: 0;
+}
+
+.cc-tl__code {
+  font-family: var(--oc-font-mono, monospace);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--oc-text);
+}
+
+.cc-tl__tool {
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.cc-tl__meta {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+/* clickable file paths (timeline entries and inline code) */
+.cc-tl__path,
+.oc-md-path {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.cc-tl__path:hover,
+.oc-md-path:hover {
+  color: var(--oc-accent-ink);
+  text-decoration-style: solid;
+}
+
+.cc-tl__path:focus-visible,
+.oc-md-path:focus-visible {
+  outline: 2px solid var(--oc-accent-ink);
+  outline-offset: 1px;
+}
+
+@keyframes cc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ---- reasoning block: closed by default, live "Thinking..." line while it works ---------------- */
+
+.cc-think__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cc-think__dots {
+  display: inline-flex;
+  overflow: hidden;
+  max-width: 0;
+  opacity: 0;
+  transition:
+    max-width var(--oc-dur-2, 200ms) var(--oc-ease, ease),
+    opacity var(--oc-dur-2, 200ms) var(--oc-ease, ease);
+}
+
+.cc-think--live .cc-think__dots {
+  max-width: 40px;
+  opacity: 1;
+}
+
+.cc-think--live .cc-think__label {
+  color: var(--oc-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-tl *,
+  .cc-think__dots {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .cc-tl {
+    border-left-color: CanvasText;
+  }
+
+  .cc-tl__mark {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+}
+
+/* code diff of an edit (timeline entry, expanded) */
+.cc-tl__stat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 6px;
+  font-family: var(--oc-font-mono, monospace);
+  font-size: 11px;
+}
+
+.cc-tl__stat-add {
+  color: var(--oc-diff-add);
+}
+
+.cc-tl__stat-del {
+  color: var(--oc-diff-del);
+}
+
+.cc-diff {
+  margin-top: 4px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--oc-border);
+  border-radius: 4px;
+  font-family: var(--oc-font-mono, monospace);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.cc-diff[hidden] {
+  display: none;
+}
+
+.cc-diff__l {
+  position: relative;
+  padding: 0 8px 0 20px;
+  white-space: pre;
+  color: var(--oc-text);
+}
+
+.cc-diff__l::before {
+  content: attr(data-sign);
+  position: absolute;
+  left: 6px;
+  opacity: 0.7;
+}
+
+.cc-diff__l--add {
+  background: color-mix(in srgb, var(--oc-diff-add) 16%, transparent);
+}
+
+.cc-diff__l--add::before {
+  color: var(--oc-diff-add);
+}
+
+.cc-diff__l--del {
+  background: color-mix(in srgb, var(--oc-diff-del) 16%, transparent);
+}
+
+.cc-diff__l--del::before {
+  color: var(--oc-diff-del);
+}
+
+.cc-diff__more {
+  padding: 2px 8px;
+  color: var(--oc-sub);
+  font-size: 11px;
+}
+
+/* ---- folded runs of one tool ("Read file · 4"): one row, the calls inside when opened ----------- */
+
+.cc-tl__group { position: relative; min-width: 0; }
+.cc-tl__group > .cc-tl__gsum::after {
+  content: "\25B8";
+  margin-left: auto;
+  flex: none;
+  color: var(--oc-sub);
+  transition: transform var(--oc-dur-2, 200ms) var(--oc-ease, ease);
+}
+.cc-tl__group[open] > .cc-tl__gsum::after { transform: rotate(90deg); }
+.cc-tl__group > .cc-tl__gsum::-webkit-details-marker { display: none; }
+.cc-tl__group > .cc-tl__gsum .cc-tl__mark { background: var(--oc-good); }
+.cc-tl__group--active > .cc-tl__gsum .cc-tl__mark { background: var(--oc-accent-ink); }
+.cc-tl__group--failed > .cc-tl__gsum .cc-tl__mark { background: var(--oc-danger); }
+.cc-tl__gbody { padding-left: 12px; border-left: 1px dashed var(--oc-border); margin-left: 2px; }
+.cc-tl__gbody .cc-tl__mark { display: none; }
+
+/* ---- reasoning vs. answer: the thought is a small muted fold, the answer is plain body text ------- */
+
+.cc-think {
+  margin: 0 0 4px;
+  padding: 0;
+  border-left: 0;
+  font-size: 12px;
+}
+.cc-think__summary {
+  display: inline-flex;
+  padding: 2px 0;
+  border: 0;
+  font-weight: 500;
+  color: var(--oc-sub);
+}
+.cc-think__summary:hover { color: var(--oc-text); }
+.cc-think[open] > .cc-think__text {
+  margin: 4px 0 0;
+  padding: 0;
+  border-left: 0;
+  color: var(--oc-sub);
+}
+.cm-md { color: var(--oc-text); }

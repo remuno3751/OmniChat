@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { db, toConversation, toMessage, toProvider } from "./db.js";
 import { toProject, toPreset, getSettings } from "./projects.js";
+import { toFolder } from "./folders.js";
 import { authFromRequest } from "./auth.js";
 import { listSharedProvidersFor } from "./shared-providers.js";
 import { readGeneral } from "./server-general.js";
@@ -18,13 +19,14 @@ export function registerSync(app: FastifyInstance): void {
     const providers: any[] = [...q("providers").map(toProvider), ...listSharedProvidersFor(userId)];
     const projects = q("projects").map(toProject);
     const presets = q("prompt_presets").map(toPreset);
+    const folders = q("chat_folders").map(toFolder);
     const st = getSettings(userId);
     const settings = st.seq > since || since === 0 ? st : undefined; // a full sync always carries the settings, even before the user saved any (the app hides context settings without them)
     const templates = listTemplatesSince(userId, since);
     let seq = since;
-    for (const r of [...conversations, ...messages, ...providers, ...projects, ...presets, ...templates, ...(settings ? [settings] : [])]) {
+    for (const r of [...conversations, ...messages, ...providers, ...projects, ...presets, ...folders, ...templates, ...(settings ? [settings] : [])]) {
       if (r.seq > seq) seq = r.seq;
     }
-    return { seq, conversations, messages, providers, projects, presets, templates, ...(settings ? { settings } : {}), allowOwnProviders: readGeneral().allowOwnProviders };
+    return { seq, conversations, messages, providers, projects, presets, folders, templates, ...(settings ? { settings } : {}), allowOwnProviders: readGeneral().allowOwnProviders };
   });
 }

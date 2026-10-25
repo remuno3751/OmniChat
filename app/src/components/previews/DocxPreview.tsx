@@ -5,6 +5,7 @@ import { useT } from '../../i18n';
 import { useTheme } from '../../theme';
 import { attachSpecs, shapeTexts, specsInOrder } from '../../shapeGeometry';
 import { useSlidePreview } from './useSlidePreview';
+import ChartBlock, { parseChart } from '../ChartBlock';
 
 /*
  * Preview of a docx artifact: a white "paper" page with the typography of the server converter (Word heading
@@ -73,6 +74,7 @@ function PageDivider({ label }: { label: string }) {
 
 function BlockView({ block }: { block: Block }) {
   const tr = useT();
+  const theme = useTheme();
   switch (block.kind) {
     case 'shapes': {
       // Same alternative as the docx output: a "(figure)" line and the texts of the figure, as a list.
@@ -116,12 +118,15 @@ function BlockView({ block }: { block: Block }) {
           <View style={styles.itemBody}><RunText text={block.text} style={styles.para} /></View>
         </View>
       );
-    case 'code':
+    case 'code': {
+      const src = block.lines.join('\n');
+      if (parseChart(src)) return <ChartBlock source={src} t={theme} fallback={null} />;
       return (
         <View style={styles.code}>
-          <Text style={styles.codeText}>{block.lines.length ? block.lines.join('\n') : ' '}</Text>
+          <Text style={styles.codeText}>{block.lines.length ? src : ' '}</Text>
         </View>
       );
+    }
     case 'table': {
       const cols = Math.max(1, ...block.rows.map((r) => r.length));
       return (

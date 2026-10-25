@@ -35,6 +35,9 @@ const CURRENT: &str = env!("CARGO_PKG_VERSION");
 const REMIND_LATER_MS: u64 = 24 * 3600 * 1000;
 const FIRST_CHECK_DELAY_MS: u64 = 20_000;
 const PERIODIC_CHECK_MS: u64 = 6 * 3600 * 1000;
+/// A failed background check is retried after this delay instead of waiting for the next 6 h slot.
+const RETRY_AFTER_FAILURE_MS: u64 = 15 * 60 * 1000;
+const RELEASES_PER_PAGE: u32 = 30;
 const MAX_INSTALLER_BYTES: u64 = 300 * 1024 * 1024;
 const MAX_JSON_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TEXT_BYTES: u64 = 1024 * 1024;
@@ -499,14 +502,77 @@ fn agent(https_only: bool, timeout: Duration) -> ureq::Agent {
         .into()
 }
 
-/// GET with optional Bearer token. Only 200 is accepted; other statuses map to error codes.
-fn send(
+/// Rate-limit related response headers (GitHub: X-RateLimit-*, secondary limits: Retry-After).
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct RateHeaders {
+    pub remaining: Option<u64>,
+    /// Unix seconds when the primary limit resets.
+    pub reset: Option<u64>,
+    /// Seconds to wait (Retry-After).
+    pub retry_after: Option<u64>,
+}
+
+/// Why one HTTP attempt failed. `Transient` may be retried, `Fatal` never is.
+#[derive(Debug, PartialEq)]
+pub enum Failure {
+    Transient(&'static str),
+    Fatal(String),
+}
+
+/// Map a non-200 status to an error. 403 is a rate limit when the quota is exhausted or
+/// Retry-After is present; 429 is always a rate limit. 5xx and network errors are transient.
+pub fn classify_failure(status: u16, rate: RateHeaders, now_secs: u64) -> Failure {
+    let limited = status == 429
+        || (status == 403 && (rate.remaining == Some(0) || rate.retry_after.is_some()));
+    if limited {
+        let reset = rate.reset.or_else(|| rate.retry_after.map(|s| now_secs + s));
+        return Failure::Fatal(match reset {
+            Some(t) => format!("rate-limited:{t}"),
+            None => "rate-limited".to_string(),
+        });
+    }
+    match status {
+        401 => Failure::Fatal("unauthorized".into()),
+        403 => Failure::Fatal("forbidden".into()),
+        404 => Failure::Fatal("not-found".into()),
+        500..=599 => Failure::Transient("bad-response"),
+        _ => Failure::Fatal("bad-response".into()),
+    }
+}
+
+/// Seconds to wait before attempt `attempt + 1` (attempt 1 failed -> 2 s, attempt 2 failed -> 6 s).
+/// None means no more attempts (at most 3 attempts in total).
+pub fn retry_backoff_secs(attempt: u32) -> Option<u64> {
+    match attempt {
+        1 => Some(2),
+        2 => Some(6),
+        _ => None,
+    }
+}
+
+fn rate_headers(h: &ureq::http::HeaderMap) -> RateHeaders {
+    let num = |name: &str| h.get(name).and_then(|v| v.to_str().ok()).and_then(|s| s.trim().parse::<u64>().ok());
+    RateHeaders {
+        remaining: num("x-ratelimit-remaining"),
+        reset: num("x-ratelimit-reset"),
+        retry_after: num("retry-after"),
+    }
+}
+
+/// Successful GET: a fresh body, or 304 Not Modified for a conditional request.
+enum Got {
+    Body(ureq::http::Response<ureq::Body>),
+    NotModified,
+}
+
+fn send_once(
     url: &str,
     accept: &str,
     token: Option<&str>,
+    etag: Option<&str>,
     https_only: bool,
     timeout: Duration,
-) -> Result<ureq::http::Response<ureq::Body>, String> {
+) -> Result<Got, Failure> {
     let mut req = agent(https_only, timeout)
         .get(url)
         .header("Accept", accept)
@@ -514,13 +580,51 @@ fn send(
     if let Some(t) = token {
         req = req.header("Authorization", format!("Bearer {t}"));
     }
-    let resp = req.call().map_err(|_| "network".to_string())?;
-    match resp.status().as_u16() {
-        200 => Ok(resp),
-        401 => Err("unauthorized".into()),
-        403 => Err("forbidden".into()),
-        404 => Err("not-found".into()),
-        _ => Err("bad-response".into()),
+    if let Some(e) = etag {
+        req = req.header("If-None-Match", e);
+    }
+    let resp = req.call().map_err(|_| Failure::Transient("network"))?;
+    let status = resp.status().as_u16();
+    if status == 200 {
+        return Ok(Got::Body(resp));
+    }
+    if status == 304 && etag.is_some() {
+        return Ok(Got::NotModified);
+    }
+    let rate = rate_headers(resp.headers());
+    Err(classify_failure(status, rate, now_ms() / 1000))
+}
+
+/// GET with optional Bearer token and optional If-None-Match. Up to 3 attempts for network
+/// errors and 5xx (backoff 2 s, 6 s); 4xx is never retried.
+fn send(
+    url: &str,
+    accept: &str,
+    token: Option<&str>,
+    etag: Option<&str>,
+    https_only: bool,
+    timeout: Duration,
+) -> Result<Got, String> {
+    let mut attempt = 1u32;
+    loop {
+        match send_once(url, accept, token, etag, https_only, timeout) {
+            Ok(got) => return Ok(got),
+            Err(Failure::Fatal(code)) => return Err(code),
+            Err(Failure::Transient(code)) => match retry_backoff_secs(attempt) {
+                Some(secs) => {
+                    std::thread::sleep(Duration::from_secs(secs));
+                    attempt += 1;
+                }
+                None => return Err(code.to_string()),
+            },
+        }
+    }
+}
+
+fn body_of(got: Got) -> Result<ureq::http::Response<ureq::Body>, String> {
+    match got {
+        Got::Body(r) => Ok(r),
+        Got::NotModified => Err("bad-response".into()),
     }
 }
 
@@ -532,12 +636,53 @@ fn read_text(mut resp: ureq::http::Response<ureq::Body>, max: u64) -> Result<Str
         .map_err(|_| "bad-response".to_string())
 }
 
-/// Release list: `GET {api}/repos/{repo}/releases?per_page=20`.
-fn fetch_releases(base: &str, repo: &str, token: Option<&str>) -> Result<Vec<GhRelease>, String> {
-    let url = format!("{base}/repos/{repo}/releases?per_page=20");
-    let resp = send(&url, "application/vnd.github+json", token, !is_local_host(base), Duration::from_secs(20))?;
-    let text = read_text(resp, MAX_JSON_BYTES)?;
-    serde_json::from_str::<Vec<GhRelease>>(&text).map_err(|_| "bad-response".to_string())
+/// Release list: `GET {api}/repos/{repo}/releases?per_page=30`, conditional on the cached ETag
+/// (stored in update.json as `releasesCache`). A 304 reuses the cached body.
+fn fetch_releases(app: &AppHandle, base: &str, repo: &str, token: Option<&str>) -> Result<Vec<GhRelease>, String> {
+    let url = format!("{base}/repos/{repo}/releases?per_page={RELEASES_PER_PAGE}");
+    let path = data_file(app).ok();
+    let cache = path.as_deref().map(|p| read_obj(p)).and_then(|o| o.get("releasesCache").and_then(Value::as_object).cloned());
+    let cache = cache.filter(|c| c.get("url").and_then(Value::as_str) == Some(url.as_str()));
+    let cached_etag = cache.as_ref().and_then(|c| c.get("etag").and_then(Value::as_str)).map(str::to_string);
+    let cached_body = cache.as_ref().and_then(|c| c.get("body").and_then(Value::as_str)).map(str::to_string);
+    let accept = "application/vnd.github+json";
+    let https_only = !is_local_host(base);
+    let timeout = Duration::from_secs(20);
+
+    let got = send(&url, accept, token, cached_etag.as_deref(), https_only, timeout)?;
+    let (text, etag) = match got {
+        Got::NotModified => (cached_body.ok_or_else(|| "bad-response".to_string())?, cached_etag),
+        Got::Body(resp) => {
+            let etag = resp.headers().get("etag").and_then(|v| v.to_str().ok()).map(str::to_string);
+            (read_text(resp, MAX_JSON_BYTES)?, etag)
+        }
+    };
+    let releases = serde_json::from_str::<Vec<GhRelease>>(&text).map_err(|_| "bad-response".to_string())?;
+    if let (Some(etag), Some(p)) = (etag, path.as_deref()) {
+        // Only a body that parsed is cached; cache errors are ignored (a fresh fetch still works).
+        let mut obj = read_obj(p);
+        obj.insert(
+            "releasesCache".to_string(),
+            serde_json::json!({ "url": url, "etag": etag, "body": text }),
+        );
+        let _ = write_obj(p, &obj);
+    }
+    Ok(releases)
+}
+
+/// Last check outcome in update.json (`lastCheck` epoch ms, `lastError` short code). Success clears the error.
+fn record_check(app: &AppHandle, error: Option<&str>) {
+    let _ = mutate_prefs(app, |obj| {
+        obj.insert("lastCheck".to_string(), Value::from(now_ms()));
+        match error {
+            Some(code) => {
+                obj.insert("lastError".to_string(), Value::String(code.to_string()));
+            }
+            None => {
+                obj.remove("lastError");
+            }
+        }
+    });
 }
 
 /// Download URL for an asset. With a token the API asset url is used (private repos); the token
@@ -557,7 +702,7 @@ fn asset_url(asset: &GhAsset, base: &str, token: Option<&str>) -> Result<(String
 
 fn fetch_asset_text(asset: &GhAsset, base: &str, token: Option<&str>, https_only: bool) -> Result<String, String> {
     let (url, accept) = asset_url(asset, base, token)?;
-    let resp = send(&url, accept, token, https_only, Duration::from_secs(20))?;
+    let resp = body_of(send(&url, accept, token, None, https_only, Duration::from_secs(20))?)?;
     read_text(resp, MAX_TEXT_BYTES)
 }
 
@@ -674,11 +819,18 @@ pub fn spawn_check(app: AppHandle) {
             .unwrap_or(FIRST_CHECK_DELAY_MS);
         std::thread::sleep(Duration::from_millis(delay));
         loop {
-            if let Err(code) = check_once(&app) {
-                // Background check: stay quiet for the user; code never contains secrets.
-                eprintln!("omnichat update check skipped: {code}");
-            }
-            std::thread::sleep(Duration::from_millis(PERIODIC_CHECK_MS));
+            let res = check_once(&app);
+            // Background check: stay quiet for the user; the code never contains secrets.
+            // The outcome is kept in update.json (shown by the update window), and a failure is retried sooner.
+            let wait = match &res {
+                Ok(()) => PERIODIC_CHECK_MS,
+                Err(code) => {
+                    eprintln!("omnichat update check skipped: {code}");
+                    RETRY_AFTER_FAILURE_MS
+                }
+            };
+            record_check(&app, res.as_ref().err().map(String::as_str));
+            std::thread::sleep(Duration::from_millis(wait));
         }
     });
 }
@@ -688,7 +840,7 @@ fn find_offer(app: &AppHandle, prefs: &Prefs) -> Result<Option<Offer>, String> {
     let base = api_base();
     let repo = repo_name()?;
     let token = load_token(app);
-    let releases = fetch_releases(&base, &repo, token.as_deref())?;
+    let releases = fetch_releases(app, &base, &repo, token.as_deref())?;
     let Some(p) = pick_release(&releases, &prefs.channel, CURRENT, current_os()) else {
         return Ok(None);
     };
@@ -789,7 +941,16 @@ pub fn check_now(app: &AppHandle) -> CheckResult {
         })
     })();
     ctx.checking.store(false, AtomicOrdering::SeqCst);
-    r.unwrap_or_else(|code| CheckResult::error(&channel, &code))
+    let out = r.unwrap_or_else(|code| CheckResult::error(&channel, &code));
+    record_check(app, out.error.as_deref());
+    out
+}
+
+/// Last background or manual check error code, if the most recent check failed.
+fn last_error(app: &AppHandle) -> Option<String> {
+    data_file(app)
+        .ok()
+        .and_then(|p| read_obj(&p).get("lastError").and_then(Value::as_str).map(str::to_string))
 }
 
 /// Open (or focus) the update window for the current offer; without one, run a manual check.
@@ -799,7 +960,12 @@ pub fn open_update(app: &AppHandle) -> bool {
         open_window(app);
         true
     } else {
-        check_now(app).status == "available"
+        let r = check_now(app);
+        // Show the failure in the update window (persistent until the next successful check).
+        if r.status == "error" && r.error.as_deref() != Some("busy") {
+            open_window(app);
+        }
+        r.status == "available"
     }
 }
 
@@ -875,7 +1041,11 @@ pub struct UpdateInfo {
 
 #[tauri::command]
 pub fn update_info(app: AppHandle) -> Result<UpdateInfo, String> {
-    let o = current_offer(&app)?;
+    let o = match current_offer(&app) {
+        Ok(o) => o,
+        // No offer because the last check failed: report that error instead of "no-offer".
+        Err(code) => return Err(last_error(&app).unwrap_or(code)),
+    };
     Ok(UpdateInfo {
         can_install: can_install_asset(&o.asset.name),
         channel: get_channel(&app),
@@ -982,7 +1152,7 @@ fn install_windows(app: &AppHandle, o: &Offer) -> Result<(), String> {
     let dir = std::env::temp_dir().join(format!("omnichat-update-{}", o.version));
     fs::create_dir_all(&dir).map_err(|_| "download".to_string())?;
     let dest = dir.join(&o.asset.name);
-    let resp = send(&url, accept, tok, https_only, Duration::from_secs(900))?;
+    let resp = body_of(send(&url, accept, tok, None, https_only, Duration::from_secs(900))?)?;
     download_verified(resp, &dest, o.asset.size, &expected)?;
 
     let exe = std::env::current_exe().map_err(|_| "launch".to_string())?;
@@ -1309,5 +1479,59 @@ mod tests {
     fn truncate_is_char_safe() {
         assert_eq!(truncate_chars("日本語テキスト", 3), "日本語");
         assert_eq!(truncate_chars("abc", 10), "abc");
+    }
+}
+
+#[cfg(test)]
+mod network_policy_tests {
+    use super::*;
+
+    fn none() -> RateHeaders {
+        RateHeaders::default()
+    }
+
+    #[test]
+    fn exhausted_quota_is_rate_limited_with_reset() {
+        let rate = RateHeaders { remaining: Some(0), reset: Some(1_700_000_000), retry_after: None };
+        assert_eq!(classify_failure(403, rate, 1), Failure::Fatal("rate-limited:1700000000".into()));
+    }
+
+    #[test]
+    fn retry_after_is_rate_limited_and_uses_now_plus_wait() {
+        let rate = RateHeaders { retry_after: Some(60), ..none() };
+        assert_eq!(classify_failure(403, rate, 1_000), Failure::Fatal("rate-limited:1060".into()));
+        assert_eq!(classify_failure(429, rate, 1_000), Failure::Fatal("rate-limited:1060".into()));
+    }
+
+    #[test]
+    fn plain_429_without_headers_is_rate_limited() {
+        assert_eq!(classify_failure(429, none(), 0), Failure::Fatal("rate-limited".into()));
+    }
+
+    #[test]
+    fn plain_403_stays_forbidden_when_quota_remains() {
+        let rate = RateHeaders { remaining: Some(42), reset: None, retry_after: None };
+        assert_eq!(classify_failure(403, rate, 0), Failure::Fatal("forbidden".into()));
+        assert_eq!(classify_failure(403, none(), 0), Failure::Fatal("forbidden".into()));
+    }
+
+    #[test]
+    fn not_found_maps_to_not_found_and_never_retries() {
+        assert_eq!(classify_failure(404, none(), 0), Failure::Fatal("not-found".into()));
+        assert_eq!(classify_failure(401, none(), 0), Failure::Fatal("unauthorized".into()));
+        assert_eq!(classify_failure(422, none(), 0), Failure::Fatal("bad-response".into()));
+    }
+
+    #[test]
+    fn server_errors_are_transient() {
+        assert_eq!(classify_failure(502, none(), 0), Failure::Transient("bad-response"));
+        assert_eq!(classify_failure(503, none(), 0), Failure::Transient("bad-response"));
+    }
+
+    #[test]
+    fn backoff_is_two_then_six_seconds_then_stop() {
+        assert_eq!(retry_backoff_secs(1), Some(2));
+        assert_eq!(retry_backoff_secs(2), Some(6));
+        assert_eq!(retry_backoff_secs(3), None);
     }
 }

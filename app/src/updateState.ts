@@ -209,6 +209,19 @@ export function canApkUpdate(latest: string, appVersion: string): boolean {
   }
 }
 
+/**
+ * True when `current` is a pre-release that ranks above the stable/latest `latest` (e.g. installed 0.5.5-beta.2
+ * against latest 0.5.4). Stable versions and invalid input give false (never throws).
+ */
+export function isPrereleaseNewerThan(current: string, latest: string): boolean {
+  try {
+    const pc = parseSemver(current);
+    return pc.pre.length > 0 && compareSemver(current, latest) > 0;
+  } catch {
+    return false;
+  }
+}
+
 export type UpdateErrorKey =
   | 'update.err.network'
   | 'update.err.notFound'

@@ -1,0 +1,59 @@
+/* Chat view state pieces added in v0.5.5: header title marquee and latency badge, search picker,
+   prompt queue, context meter and the interrupt button. Colours come from the theme tokens in base.css. */
+
+/* ---------- Header: latency badge (colour bands as the app: <150 good, <=500 slow, else bad) ---------- */
+.ch-latency {
+  flex: none; padding: 2px 6px; border-radius: var(--oc-r-pill, 999px);
+  font-size: 10.5px; line-height: 14px; color: var(--oc-sub); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ch-latency--good { color: var(--oc-good); }
+.ch-latency--slow { color: var(--oc-warn); }
+.ch-latency--bad { color: var(--oc-danger); }
+.ch-latency--off { color: var(--oc-sub); opacity: 0.7; }
+
+/* ---------- Pickers: search mode ---------- */
+.ch-search { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.ch-search__label { font-size: 11px; color: var(--oc-sub); white-space: nowrap; }
+.ch-seg--search .ch-seg__opt { font-size: 11px; }
+
+/* ---------- Composer: queue chips ---------- */
+.cm-composer-block { display: flex; flex-direction: column; border-top: 1px solid var(--oc-border); background: var(--oc-bg); }
+.cm-composer-block > .cm-composer { border-top: 0; }
+.cm-queue { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 0; }
+.cm-queue[hidden] { display: none; }
+.cm-queue__chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0;
+  padding: 2px 4px 2px 8px; border: var(--oc-bw-base) dashed var(--oc-border-strong); border-radius: var(--oc-r-pill, 999px);
+  font-size: 11px; line-height: 16px; color: var(--oc-text);
+}
+.cm-queue__tag { color: var(--oc-sub); white-space: nowrap; }
+.cm-queue__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-queue__x {
+  flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--oc-sub); font: inherit; line-height: 16px; cursor: pointer;
+}
+.cm-queue__x:hover, .cm-queue__x:focus-visible { color: var(--oc-text); background: var(--oc-panel2); }
+
+/* ---------- Composer: context meter ---------- */
+.cm-meter { display: flex; align-items: center; gap: 8px; padding: 6px 10px 0; font-size: 10.5px; color: var(--oc-sub); }
+.cm-meter[hidden] { display: none; }
+.cm-meter__bar { flex: 1 1 auto; height: 3px; min-width: 40px; border-radius: 2px; background: var(--oc-panel2); overflow: hidden; }
+.cm-meter__fill { height: 100%; width: 0; background: var(--oc-accent); border-radius: 2px; transition: width 0.2s ease; }
+.cm-meter--warn .cm-meter__fill { background: var(--oc-warn); }
+.cm-meter--full .cm-meter__fill { background: var(--oc-danger); }
+.cm-meter--warn .cm-meter__text, .cm-meter--full .cm-meter__text { color: var(--oc-warn); }
+.cm-meter--full .cm-meter__text { color: var(--oc-danger); }
+.cm-meter__text { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  .cm-meter__fill { transition: none; }
+}
+
+/* ---------- Composer: interrupt button ---------- */
+.cm-interrupt {
+  flex: none; align-self: flex-end; height: 30px; padding: 0 10px; border-radius: var(--oc-r-pill, 999px);
+  border: var(--oc-bw-base) solid var(--oc-border-strong); background: var(--oc-bg); color: var(--oc-warn);
+  font: inherit; font-size: 11px; cursor: pointer;
+}
+.cm-interrupt[hidden] { display: none; }
+.cm-interrupt:disabled { opacity: 0.5; cursor: default; }

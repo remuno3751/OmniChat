@@ -12,3 +12,22 @@ export function sanitizeTitle(raw: unknown): string | null {
   if (s.length > 60) s = s.slice(0, 60).trim();
   return s || null;
 }
+
+/** Phrase boundaries a short title may end at: spaces and the usual punctuation (Japanese and Latin). */
+const TITLE_BOUNDARY = /[\s、。，,.!?！？;；:：]/;
+
+/**
+ * The placeholder title of a first user message: its first line, at most `max` characters (code points). A longer line is
+ * clipped at the last word or phrase boundary in its second half, else cut hard; trailing punctuation is dropped. "" for empty text.
+ */
+export function clipTitle(text: unknown, max = 30): string {
+  const line = (typeof text === "string" ? text : "").split(/\r?\n/).map((l) => l.trim()).find((l) => l) ?? "";
+  const chars = Array.from(line);
+  if (chars.length <= max) return line;
+  const head = chars.slice(0, max);
+  let cut = head.length;
+  for (let i = head.length - 1; i >= Math.floor(max / 2); i--) {
+    if (TITLE_BOUNDARY.test(head[i])) { cut = i; break; }
+  }
+  return head.slice(0, cut).join("").replace(/[\s、。，,.!?！？;；:：]+$/, "").trim() || head.join("");
+}

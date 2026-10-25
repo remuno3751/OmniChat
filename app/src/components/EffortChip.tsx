@@ -6,6 +6,7 @@ import { useTheme, useThemeDef } from '../theme';
 import { Check, Hint, Sheet } from '../ui/kit';
 import EffortPicker from './EffortPicker';
 import Icon from './Icon';
+import Tip from './Tip';
 
 interface Props {
   /** one-shot effort for the next message only */
@@ -40,17 +41,19 @@ export default function EffortChip({ oneShot, chat, unsupported, onOneShot, onPi
 
   return (
     <>
-      <Pressable
-        onPress={() => setOpen(true)}
-        accessibilityRole="button"
-        accessibilityLabel={tr('effort.title')}
-        style={{ alignSelf: 'flex-start', borderWidth: 1, borderColor: shown && !unsupported ? t.accent : t.border, borderRadius: th.r(14), paddingHorizontal: 10, paddingVertical: 4, opacity: unsupported ? 0.55 : 1 }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Icon name="filter" size={14} color={shown && !unsupported ? t.accentInk : t.sub} />
-          <Text style={{ color: shown && !unsupported ? t.accentInk : t.sub, fontSize: 12, fontWeight: '600' }}>{label}</Text>
-        </View>
-      </Pressable>
+      <Tip label={tr('effort.title')}>
+        <Pressable
+          onPress={() => setOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={tr('effort.title')}
+          style={{ alignSelf: 'flex-start', borderWidth: 1, borderColor: shown && !unsupported ? t.accent : t.border, borderRadius: th.r(14), paddingHorizontal: 10, paddingVertical: 4, opacity: unsupported ? 0.55 : 1 }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Icon name="filter" size={14} color={shown && !unsupported ? t.accentInk : t.sub} />
+            <Text style={{ color: shown && !unsupported ? t.accentInk : t.sub, fontSize: 12, fontWeight: '600' }}>{label}</Text>
+          </View>
+        </Pressable>
+      </Tip>
       {/* the keep-for-this-chat switch sits in the footer: it stays visible without scrolling, whatever the screen height */}
       <Sheet
         visible={open}

@@ -7,7 +7,7 @@ import { compareSemver } from './updateState';
 /* VS Code bridge (docs/design/VSCODE-BRIDGE.md sections 6 and 8): pure helpers, no React. */
 
 /** Version of the bundled omnichat-vscode extension (vscode-ext/package.json; a test keeps it in step). */
-export const VSCODE_EXT_VERSION = '0.2.6';
+export const VSCODE_EXT_VERSION = '1.0.0';
 export const VSCODE_PROVIDER_NAME = 'VS Code (PC bridge)';
 export const VSCODE_PROVIDER_MODEL = 'vscode';
 
@@ -70,7 +70,6 @@ export function base64UrlDecode(code: string): string | null {
 export function pairingCode(serverUrl: string, token: string, name: string): string {
   return base64UrlEncode(JSON.stringify({ s: serverUrl, t: token, n: name }));
 }
-export const pairingLink = (code: string): string => `vscode://omnichat.omnichat-vscode/pair?code=${encodeURIComponent(code)}`;
 
 /* ---- provider ---- */
 /** True when a live vscode-bridge provider for this PC name exists. */
@@ -111,8 +110,10 @@ export interface VscodeDevice {
   name: string;
   online: boolean;
   version?: string;
-  /** folders to start a chat in: the ones VS Code has open (online), then folders of known chats */
+  /** folders to start a chat in: the ones VS Code has open (online), or the folders of known chats (offline) */
   workspaces: string[];
+  /** online only: folders of older chats that VS Code does not have open now; shown greyed out, not startable */
+  closed: string[];
   /** the vscode-bridge provider for this PC, null when none exists yet */
   providerId: string | null;
 }
@@ -123,13 +124,12 @@ export function vscodeSection(bridges: BridgeInfo[] | null | undefined, provider
   const out: VscodeDevice[] = vscodeBridges(bridges).map((b) => {
     const name = b.name.trim();
     const p = providers.find((x) => x.kind === VSCODE_KIND && !x.deleted && (x.baseUrl ?? '').trim() === name);
-    return {
-      name,
-      online: !!b.online,
-      version: b.version,
-      workspaces: workspaceOptions(name, [b], convs, provMap, 'vscode'),
-      providerId: p?.id ?? null,
-    };
+    const online = !!b.online;
+    const workspaces = workspaceOptions(name, [b], convs, provMap, 'vscode');
+    const closed = online
+      ? workspaceOptions(name, [], convs, provMap, 'vscode').filter((k) => !workspaces.some((o) => normCwd(o) === normCwd(k)))
+      : [];
+    return { name, online, version: b.version, workspaces, closed, providerId: p?.id ?? null };
   });
   return out.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
 }

@@ -279,16 +279,24 @@
   letter-spacing: var(--oc-label-tracking);
 }
 .cm-md .oc-code__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.25);
   background: transparent;
   color: var(--oc-code-text);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 2px 8px;
   border-radius: 4px;
   cursor: pointer;
 }
+/* copy / check glyph pair: the check replaces the copy glyph while .is-copied (or [data-flash]) is set */
+.oc-ico { width: 14px; height: 14px; display: block; fill: currentColor; }
+.oc-ico--check { display: none; }
+.is-copied > .oc-ico--copy { display: none; }
+.is-copied > .oc-ico--check { display: block; color: var(--oc-good); }
+.cm-action--icon { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
 .cm-md .oc-code__copy:hover { border-color: rgba(255, 255, 255, 0.5); }
 .cm-md .oc-code__copy:focus-visible { outline: 2px solid var(--oc-accent-ink); outline-offset: 1px; }
 .cm-md .oc-code__pre {

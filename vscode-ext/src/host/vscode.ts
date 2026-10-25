@@ -35,6 +35,41 @@ function coded(code: string, message: string): Error {
   return Object.assign(new Error(message), { code });
 }
 
+/**
+ * Canonical key for a file path, shared by the host and the tools. Backslashes
+ * become forward slashes. Drive-letter and UNC paths are lowercased, because
+ * Windows compares them case-insensitively (the same rule as `isWithin` in guard/paths.ts).
+ */
+export function fsKey(p: string): string {
+  const s = p.replace(/\\/g, "/");
+  const windowsStyle = /^[A-Za-z]:/.test(s) || s.startsWith("//");
+  return windowsStyle ? s.toLowerCase() : s;
+}
+
+/**
+ * `abs` relative to `root`, comparing with {@link fsKey}. Returns `"."` for the
+ * root itself and `abs` unchanged when it lies outside the root.
+ */
+export function relUnder(root: string, abs: string): string {
+  const r = fsKey(root);
+  const a = fsKey(abs);
+  if (a === r) return ".";
+  const base = r.endsWith("/") ? r : `${r}/`;
+  return a.startsWith(base) ? abs.replace(/\\/g, "/").slice(base.length) : abs;
+}
+
+/** The open buffer for `abs`, matched by {@link fsKey} so separators and drive case do not matter. */
+export function openDocumentFor(
+  map: ReadonlyMap<string, OpenDocument>,
+  abs: string,
+): OpenDocument | undefined {
+  const direct = map.get(abs);
+  if (direct !== undefined) return direct;
+  const want = fsKey(abs);
+  for (const [key, doc] of map) if (fsKey(key) === want) return doc;
+  return undefined;
+}
+
 /** `vscode.FileSystemError` codes for "no such entry". */
 function isNotFound(err: unknown): boolean {
   const code = errCode(err);
@@ -134,6 +169,24 @@ export function createVscodeHost(vscode: VscodeApi, options: VscodeHostOptions =
     return out;
   };
 
+  /**
+   * Best-effort rollback after a failed save: replaces the buffer with the text it
+   * had before the edit, then saves once more. That text was clean (edit_file and
+   * write_file refuse dirty buffers), so the save writes what disk already holds.
+   * The caller re-checks `isDirty` afterwards.
+   */
+  const restoreBuffer = async (doc: VS.TextDocument, original: string): Promise<void> => {
+    try {
+      const we = new vscode.WorkspaceEdit();
+      const range = new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length));
+      we.replace(doc.uri, range, original);
+      await vscode.workspace.applyEdit(we);
+      if (doc.isDirty) await doc.save();
+    } catch {
+      // Ignored: the caller reports the buffer state from `isDirty`.
+    }
+  };
+
   return {
     get roots(): readonly string[] {
       return (vscode.workspace.workspaceFolders ?? [])
@@ -145,7 +198,7 @@ export function createVscodeHost(vscode: VscodeApi, options: VscodeHostOptions =
       const map = new Map<string, OpenDocument>();
       for (const doc of vscode.workspace.textDocuments) {
         if (doc.uri.scheme !== "file") continue;
-        map.set(doc.uri.fsPath, { text: doc.getText(), dirty: doc.isDirty });
+        map.set(fsKey(doc.uri.fsPath), { text: doc.getText(), dirty: doc.isDirty });
       }
       return map;
     },
@@ -184,11 +237,14 @@ export function createVscodeHost(vscode: VscodeApi, options: VscodeHostOptions =
       const existed = await existsOnDisk(uri);
       // `edit.label` ("OmniChat edit") is not applied: @types/vscode has no WorkspaceEdit label.
       const we = new vscode.WorkspaceEdit();
+      // Text before the edit, used to restore the buffer when the save fails.
+      let original: string | undefined;
 
       if (existed) {
         // Replace the whole buffer so the change is one undoable step.
         const doc = await vscode.workspace.openTextDocument(uri);
-        const range = new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length));
+        original = doc.getText();
+        const range = new vscode.Range(doc.positionAt(0), doc.positionAt(original.length));
         we.replace(uri, range, edit.content);
       } else {
         // createDirectory has mkdirp semantics, so missing parents are created.
@@ -198,15 +254,30 @@ export function createVscodeHost(vscode: VscodeApi, options: VscodeHostOptions =
       }
 
       if (!(await vscode.workspace.applyEdit(we))) {
-        throw coded("EIO", "edit rejected");
+        throw coded("EIO", `VS Code rejected the edit to ${edit.path}`);
       }
 
       if (autoSave()) {
         // Saving puts the change on disk; the undo stack keeps the edit either way.
         const doc = await vscode.workspace.openTextDocument(uri);
-        if (!(await doc.save())) throw coded("EIO", "save failed");
+        // save() returns false when the buffer is already clean (for example it was
+        // auto-saved or the text did not change). That is success, not an error.
+        const saved = doc.isDirty ? await doc.save() : true;
+        if (!saved && doc.isDirty) {
+          if (original !== undefined) await restoreBuffer(doc, original);
+          const state = doc.isDirty
+            ? "the editor still has unsaved changes"
+            : "the editor buffer was restored to the saved text";
+          throw coded("EIO", `save failed for ${edit.path}; ${state}`);
+        }
       }
       return { created: !existed };
     },
   };
+}
+
+/** Opens `text` as a new untitled editor buffer of the given language and shows it. */
+export async function openUntitled(api: VscodeApi, text: string, language: string): Promise<void> {
+  const doc = await api.workspace.openTextDocument({ language, content: text });
+  await api.window.showTextDocument(doc, { preview: false });
 }

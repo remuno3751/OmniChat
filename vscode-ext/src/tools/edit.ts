@@ -5,8 +5,10 @@
  * one undoable WorkspaceEdit and save it. Paths are guarded by P1 (workspace),
  * P2 (`.git`) and P3 (secrets), checked lexically and after symlink resolution.
  */
-import type { FileStat, Host } from "../host/types";
+import type { FileEdit, FileStat, Host } from "../host/types";
+import { openDocumentFor, relUnder } from "../host/vscode";
 import { isGitInternal, isSecretPath, normalizePath, resolveInWorkspace } from "../guard/paths";
+import { outsideCandidate, outsideRefusal } from "../guard/outside";
 import { toolError, type ToolContext, type ToolRegistry } from "./index";
 import type { EditFileArgs, WriteFileArgs } from "./schemas";
 import { BINARY_SNIFF_BYTES, READ_FILE_MAX_BYTES } from "./limits";
@@ -28,20 +30,13 @@ function protectedErr(): Error {
   return toolError("protected_path", "path is protected");
 }
 
-/** Path relative to `root` (both normalised). Returns `abs` unchanged when it is outside. */
-function relTo(root: string, abs: string): string {
-  if (abs === root) return ".";
-  const prefix = root.endsWith("/") ? root : `${root}/`;
-  return abs.startsWith(prefix) ? abs.slice(prefix.length) : abs;
-}
-
 function refusesEdit(rel: string): boolean {
   return isSecretPath(rel) || isGitInternal(rel);
 }
 
 /** P2 + P3 on the lexical path and on the symlink-resolved path. */
 async function checkProtected(host: Host, root: string, abs: string): Promise<Guarded> {
-  const rel = relTo(root, abs);
+  const rel = relUnder(root, abs);
   if (refusesEdit(rel)) throw protectedErr();
   let real: string | undefined;
   try {
@@ -55,7 +50,7 @@ async function checkProtected(host: Host, root: string, abs: string): Promise<Gu
   }
   if (real !== undefined) {
     const realRoot = normalizePath(await host.realpath(root).catch(() => root));
-    if (refusesEdit(relTo(realRoot, normalizePath(real)))) throw protectedErr();
+    if (refusesEdit(relUnder(realRoot, normalizePath(real)))) throw protectedErr();
   }
   return { abs, rel };
 }
@@ -67,10 +62,19 @@ async function checkProtected(host: Host, root: string, abs: string): Promise<Gu
 async function guardEdit(ctx: ToolContext, raw: string): Promise<Guarded> {
   const realpath = (p: string) => ctx.host.realpath(p);
   const roots = ABSOLUTE.test(raw) ? ctx.roots : [ctx.root];
+  let onlyOutside = true;
   for (const root of roots) {
     const res = await resolveInWorkspace(root, raw, realpath);
     if (res.ok) return checkProtected(ctx.host, normalizePath(root), res.abs);
     if (res.reason === "invalid_args") throw toolError("invalid_args", res.message);
+    if (res.reason !== "outside_workspace") onlyOutside = false;
+  }
+  if (ctx.allowOutside && onlyOutside) {
+    const abs = outsideCandidate(ctx.root, raw);
+    if (abs !== null) {
+      if ((await outsideRefusal(abs, realpath, true)) !== null) throw protectedErr();
+      return { abs, rel: abs };
+    }
   }
   throw toolError("outside_workspace", "path is outside the workspace");
 }
@@ -78,6 +82,25 @@ async function guardEdit(ctx: ToolContext, raw: string): Promise<Guarded> {
 /** Refusal for a file with unsaved editor changes (overwriting would drop them). */
 function dirtyEditor(rel: string): Error {
   return toolError("dirty_editor", "file has unsaved editor changes", { path: rel });
+}
+
+/**
+ * Runs `host.applyEdit` and turns its failure into a tool error that carries the
+ * real reason. The generic mapper in tools/index.ts hides raw messages.
+ */
+async function hostApply(host: Host, edit: FileEdit): Promise<{ created: boolean }> {
+  try {
+    return await host.applyEdit(edit);
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    if (code === "ENOENT") throw toolError("not_found", "not found");
+    const reason = err instanceof Error ? err.message : String(err);
+    throw toolError(
+      "io_error",
+      `write failed: ${reason}`,
+      typeof code === "string" ? { code } : undefined,
+    );
+  }
 }
 
 /** Stat that returns `undefined` for a missing path. */
@@ -105,14 +128,16 @@ export async function writeFile(args: WriteFileArgs, ctx: ToolContext): Promise<
 
   const existing = await statIfExists(ctx.host, g.abs);
   if (existing?.kind === "dir") throw toolError("invalid_args", "path is a directory");
-  if (existing !== undefined && ctx.host.openDocuments.get(g.abs)?.dirty) throw dirtyEditor(g.rel);
+  if (existing !== undefined && openDocumentFor(ctx.host.openDocuments, g.abs)?.dirty) {
+    throw dirtyEditor(g.rel);
+  }
 
   if (!args.createDirs) {
     const parent = await statIfExists(ctx.host, g.abs.replace(/\/[^/]*$/, "") || "/");
     if (parent === undefined) throw toolError("not_found", `parent directory does not exist: ${g.rel}`);
   }
 
-  const { created } = await ctx.host.applyEdit({
+  const { created } = await hostApply(ctx.host, {
     label: EDIT_LABEL,
     path: g.abs,
     content: args.content,
@@ -129,26 +154,25 @@ export interface EditFileResult {
   replacements: number;
 }
 
-/** Counts non-overlapping occurrences of `needle` in `hay` (needle is non-empty). */
-function countOccurrences(hay: string, needle: string): number {
-  let count = 0;
-  let at = hay.indexOf(needle);
-  while (at !== -1) {
-    count++;
-    at = hay.indexOf(needle, at + needle.length);
-  }
-  return count;
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The dominant line ending: CRLF when `\r\n` outnumbers bare `\n`, LF otherwise.
+ * Only inserted text takes this ending; untouched lines keep their own bytes.
+ */
+function dominantEol(text: string): "\r\n" | "\n" {
+  const crlf = text.split("\r\n").length - 1;
+  const bareLf = text.split("\n").length - 1 - crlf;
+  return crlf > bareLf ? "\r\n" : "\n";
 }
 
 /**
- * A file is CRLF when it has `\r\n` and no bare `\n`. Such a file gets
- * `oldString`/`newString` converted to CRLF before matching. Any other file
- * (LF, or mixed) matches with LF.
+ * Pattern for `oldString` that matches the file whatever its line endings: each
+ * line break in the needle also matches `\r\n`, so mixed CRLF/LF files match.
  */
-function eolOf(text: string): "\r\n" | "\n" {
-  const crlf = countOccurrences(text, "\r\n");
-  const bareLf = countOccurrences(text, "\n") - crlf;
-  return crlf > 0 && bareLf === 0 ? "\r\n" : "\n";
+function eolInsensitive(oldString: string, flags: string): RegExp {
+  const src = oldString.replace(/\r\n/g, "\n").split("\n").map(escapeRe).join("\\r?\\n");
+  return new RegExp(src, flags);
 }
 
 function withEol(s: string, eol: "\r\n" | "\n"): string {
@@ -166,7 +190,7 @@ export async function editFile(args: EditFileArgs, ctx: ToolContext): Promise<Ed
   if (st === undefined) throw toolError("not_found", `not found: ${g.rel}`);
   if (st.kind === "dir") throw toolError("invalid_args", "path is a directory");
 
-  if (ctx.host.openDocuments.get(g.abs)?.dirty) throw dirtyEditor(g.rel);
+  if (openDocumentFor(ctx.host.openDocuments, g.abs)?.dirty) throw dirtyEditor(g.rel);
 
   if (st.size > READ_FILE_MAX_BYTES) throw toolError("too_large", "file is larger than 5 MB");
   const bytes = await ctx.host.readFile(g.abs);
@@ -176,21 +200,19 @@ export async function editFile(args: EditFileArgs, ctx: ToolContext): Promise<Ed
   }
 
   const text = DECODER.decode(bytes);
-  const eol = eolOf(text);
-  const needle = withEol(args.oldString, eol);
-  const replacement = withEol(args.newString, eol);
+  const replacement = withEol(args.newString, dominantEol(text));
 
-  const count = countOccurrences(text, needle);
+  const count = (text.match(eolInsensitive(args.oldString, "g")) ?? []).length;
   if (count === 0) throw toolError("not_found", "oldString not found");
   if (count > 1 && !args.replaceAll) {
     throw toolError("not_unique", "oldString matches more than once", { count });
   }
 
   const content = args.replaceAll
-    ? text.split(needle).join(replacement)
-    : text.replace(needle, () => replacement);
+    ? text.replace(eolInsensitive(args.oldString, "g"), () => replacement)
+    : text.replace(eolInsensitive(args.oldString, ""), () => replacement);
 
-  await ctx.host.applyEdit({ label: EDIT_LABEL, path: g.abs, content });
+  await hostApply(ctx.host, { label: EDIT_LABEL, path: g.abs, content });
   return { path: g.rel, replacements: args.replaceAll ? count : 1 };
 }
 

@@ -202,7 +202,7 @@
     var rail = OC.clear(OC.$('rail'));
     rail.appendChild(h('div', { cls: 'brand' }, [h('div', { cls: 'brand-logo', text: 'O' }), h('span', { text: 'OmniChat Server' })]));
     pages.forEach(function (p) {
-      var b = h('button', { cls: 'rail-item', attrs: { type: 'button', 'data-page': p.id, title: t(p.titleKey) }, on: { click: function () { OC.go(p.id); } } }, [OC.icon(p.icon), h('span', { text: t(p.titleKey) })]);
+      var b = h('button', { cls: 'rail-item', attrs: { type: 'button', 'data-page': p.id, 'aria-label': t(p.titleKey), 'data-tip': t(p.titleKey) }, on: { click: function () { OC.go(p.id); } } }, [OC.icon(p.icon), h('span', { text: t(p.titleKey) })]);
       if (p.id === current) b.setAttribute('aria-current', 'page');
       rail.appendChild(b);
     });

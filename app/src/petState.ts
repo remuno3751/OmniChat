@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from './store';
-import type { Message } from './protocol';
+import { liveActivity } from './petItems';
 import { onNotify } from './v4Events';
 
+/** Stills pet state for each pet mode (pure; see petStills.ts). */
+export { petStateKey } from './petStills';
+
 /** Animation state of the pet. Each name maps to one sprite row (see PET_ROW_FOR_MODE). */
-export type PetMode = 'idle' | 'running' | 'searching' | 'waiting' | 'failed' | 'jumping' | 'waving';
+export type PetMode = 'idle' | 'thinking' | 'running' | 'searching' | 'waiting' | 'failed' | 'jumping' | 'waving';
 
 /**
  * Frame durations (ms) per sprite row, one entry per frame (PROTOCOL-v4 section 9).
@@ -26,6 +29,7 @@ export const PET_ROWS: Record<number, number[]> = {
 /** Sprite row shown for each pet mode. */
 export const PET_ROW_FOR_MODE: Record<PetMode, number> = {
   idle: 0,
+  thinking: 6,
   running: 7,
   searching: 8,
   waiting: 6,
@@ -44,27 +48,10 @@ const FAILED_MS = 4_000;
 type Transient = { mode: 'waiting' | 'failed' | 'jumping' | 'waving'; seq: number } | null;
 
 /**
- * Base activity of the conversation: '' when nothing streams, otherwise 'searching' when the
- * streaming assistant message has an open searching phase, else 'running'.
- * Returns a primitive so the selector does not re-render on every streamed token.
- */
-function liveActivity(msgs: Record<string, Message> | undefined): '' | 'searching' | 'running' {
-  if (!msgs) return '';
-  for (const m of Object.values(msgs)) {
-    if (m.role !== 'assistant' || m.status !== 'streaming') continue;
-    const ph = m.phases || [];
-    for (let i = ph.length - 1; i >= 0; i--) {
-      if (ph[i].end == null) return ph[i].phase === 'searching' ? 'searching' : 'running';
-    }
-    return 'running';
-  }
-  return '';
-}
-
-/**
  * Pet mode for the active conversation.
  *
- * Base (from state): awaiting_approval -> waiting; streaming (searching phase -> searching, else running);
+ * Base (from state): awaiting_approval -> waiting; streaming (open searching phase -> searching, open thinking
+ * phase -> thinking, else running);
  * codeStatus running -> running; codeStatus error -> failed; otherwise idle.
  * Transient (from WS notify frames for this conversation) overrides the base:
  *  - approval -> waiting until codeStatus/streaming changes or 30 s

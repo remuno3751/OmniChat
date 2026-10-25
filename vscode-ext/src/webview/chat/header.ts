@@ -1,5 +1,10 @@
-/** Chat header: OmniChat mark, conversation title, connection chip and the icon buttons (history, new, settings). */
+/**
+ * Chat header: OmniChat mark, conversation title (cut with an ellipsis; the full title is the tooltip), connection
+ * chip, latency badge, and the icon buttons (history, new, this chat's settings). "Open in editor" and "move to the right side
+ * bar" live in the VS Code view title bar, so the header does not repeat them.
+ */
 import { el, logoMark, svg } from "./dom";
+import { setTip } from "./tip";
 import type { ChatViewState, Part, Send } from "./types";
 
 const ICON_CLOCK: Array<[string, Record<string, string>]> = [
@@ -12,6 +17,10 @@ const ICON_GEAR: Array<[string, Record<string, string>]> = [
   ["circle", { cx: "15", cy: "7", r: "2" }],
   ["circle", { cx: "9", cy: "17", r: "2" }],
 ];
+
+/** Latency colour bands (ms), the same as the app's badge. */
+const LAT_GOOD_MS = 150;
+const LAT_SLOW_MS = 500;
 
 function iconButton(icon: SVGSVGElement, onClick: () => void): HTMLButtonElement {
   const b = el("button", "ch-iconbtn");
@@ -27,7 +36,14 @@ function tone(status: ChatViewState["status"]): "good" | "warn" | "danger" {
   return status === "connecting" ? "warn" : "danger";
 }
 
-export function createHeader(send: Send, opts: { onToggleHistory(): void }): Part {
+/** Latency band: off when not connected, otherwise good / slow / bad by the round trip. */
+export function latencyBand(online: boolean, rttMs: number | null): "off" | "good" | "slow" | "bad" {
+  if (!online) return "off";
+  if (rttMs === null) return "good";
+  return rttMs < LAT_GOOD_MS ? "good" : rttMs <= LAT_SLOW_MS ? "slow" : "bad";
+}
+
+export function createHeader(send: Send, opts: { onToggleHistory(): void; onToggleSettings(): void; checkpointBtn?: HTMLElement }): Part {
   const root = el("header", "ch-header");
 
   const brand = el("div", "ch-header__brand");
@@ -40,6 +56,8 @@ export function createHeader(send: Send, opts: { onToggleHistory(): void }): Par
   const chipText = el("span", "ch-status__text");
   chip.append(dot, chipText);
 
+  const latency = el("span", "ch-latency", "-- ms");
+
   const tools = el("div", "ch-header__tools");
   let historyOpen = false;
   const historyBtn = iconButton(svg("0 0 24 24", "ch-icon", ICON_CLOCK), () => {
@@ -49,10 +67,14 @@ export function createHeader(send: Send, opts: { onToggleHistory(): void }): Par
   });
   historyBtn.setAttribute("aria-expanded", "false");
   const newBtn = iconButton(svg("0 0 24 24", "ch-icon", ICON_PLUS), () => send({ type: "newConversation" }));
-  const settingsBtn = iconButton(svg("0 0 24 24", "ch-icon", ICON_GEAR), () => send({ type: "openSettings" }));
+  // The gear opens this chat's settings panel (settingsPanel.ts); the window-level settings stay on the pairing card.
+  const settingsBtn = iconButton(svg("0 0 24 24", "ch-icon", ICON_GEAR), () => opts.onToggleSettings());
+  settingsBtn.classList.add("ch-cs-open");
   tools.append(historyBtn, newBtn, settingsBtn);
+  // The checkpoint button (checkpoints.ts) sits between history and new chat.
+  if (opts.checkpointBtn) tools.insertBefore(opts.checkpointBtn, newBtn);
 
-  root.append(brand, chip, tools);
+  root.append(brand, chip, latency, tools);
 
   function update(state: ChatViewState): void {
     const S = state.strings;
@@ -66,14 +88,19 @@ export function createHeader(send: Send, opts: { onToggleHistory(): void }): Par
     if (version) chip.title = version;
     else chip.removeAttribute("title");
 
+    const band = latencyBand(state.status === "online", state.link.rttMs);
+    latency.textContent = band === "off" || state.link.rttMs === null ? "-- ms" : `${state.link.rttMs} ms`;
+    latency.className = `ch-latency ch-latency--${band}`;
+    latency.title = S.latencyLabel;
+    latency.setAttribute("aria-label", `${S.latencyLabel}: ${latency.textContent}`);
+
     tools.hidden = !state.paired;
     for (const [btn, text] of [
       [historyBtn, S.history],
       [newBtn, S.newConversation],
-      [settingsBtn, S.settings],
+      [settingsBtn, S.csOpen],
     ] as const) {
-      btn.title = text;
-      btn.setAttribute("aria-label", text);
+      setTip(btn, text);
     }
   }
 

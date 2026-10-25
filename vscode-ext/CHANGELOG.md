@@ -1,5 +1,71 @@
 # Changelog
 
+## 1.0.0
+
+- Pairing is now copy and paste only: create the pairing code in the OmniChat app (Settings > VS Code), run **OmniChat: Pair with Server** and paste it. The `vscode://` link ("Open in VS Code") and its URI handler are removed, because VS Code rejected the link as an invalid pairing code on some setups.
+
+## 0.4.0
+
+- Chat settings: the gear in the Chat header opens "Settings for this chat" (system prompt, append or replace the default instructions, thinking effort). Saved per conversation on the server (needs server 0.5.6-d or later).
+- Thinking effort chip in the picker bar (off, low, medium, high, max, or the model default). Also `/effort <off|low|medium|high|max|default>`.
+- `/rename <title>` renames the open conversation.
+- History search: a search box above the conversation list searches all conversations of this bridge (titles and messages), and a hit opens its conversation and scrolls to the message.
+- `/export json` opens the conversation as a JSON document (messages and tool rows; no tokens, keys, folders or device names).
+- Slash commands take an argument now (up to 2000 characters).
+- Checkpoints panel: the "Checkpoints" button in the Chat header lists the states before each agent run (newest first, up to 50), with the time, the request, and the number of changed files. "Restore" asks in a modal dialog first; a cancelled dialog sends nothing. The state just before a restore is kept in a Git backup branch (`refs/omnichat/checkpoints/pre-rewind-…`), and the restore is listed in the transcript as a status line. A second button also removes files created after the checkpoint. Non-Git points and points while a run or unsaved editors block the restore are shown as unavailable, with the reason.
+- Sources: an answer that used web search shows "Sources (N)" under the reply. Links open in the browser only for http and https; a source with user info in its URL, or any other scheme, is dropped without dropping the answer.
+- Edit the last prompt: "Edit" on the last user message puts its text back in the composer. Sending it removes the answer and tool records after that message and sends the edited text again (files are not restored; use a checkpoint). Not available while a run is active.
+- Protocol: `checkpoints_request`, `checkpoint_restore`, `checkpoints` and `checkpoint_restored` frames, and `replaceLast` on `prompt`. Older servers never send them.
+- Strings: the new wording is in Japanese and English (`src/ui/stringsV056e.ts`).
+
+## 0.3.1
+
+- Right side bar: "OmniChat: Open Chat in the right side bar" (also the view title bar button) opens the chat in the right side bar. The extension contributes a secondary side bar container (`secondarySidebar`) with its own view that shares the conversation and state of the Chat view and the editor panel. Where VS Code cannot dock on the right, a message says to drag the icon instead. The old command `workbench.action.moveViewToSecondarySideBar` does not exist in VS Code, so the button did nothing before.
+- Header: "Open in editor" and "Move to the right side bar" are removed from the header (they stay in the view title bar), so the title has the full width.
+- Thinking is its own small row above the answer; the answer bubble holds only the answer text.
+- Composer pickers wrap on narrow panels: the folder and model pills share a row when they fit, and the approval and search segments are more compact.
+
+## 0.3.0
+
+- Layout: the Settings view starts collapsed, so Chat keeps its height (the gear in the Chat header still opens it).
+- Reasoning is a small collapsed fold above the answer; the answer is plain body text. A finished turn that has no answer text opens its reasoning.
+- Long runs of the same tool (3 or more in a row) fold into one line such as "Read file · 4"; open it to see the calls.
+- The chat title is cut with an ellipsis (no marquee); on narrow panels the logo and latency are hidden.
+- New header buttons: open in an editor tab, and move Chat to the right-hand (secondary) side bar. Both are also in the view's title bar, and "OmniChat: Move Chat to the right side bar" is in the command palette.
+- Slash commands: `/pin` (pinned chats sort first in History; kept locally), `/retry`, `/usage`, `/export` (the chat as a Markdown document).
+- Cleanups: a stray control byte in `viewModel.ts`, toasts go only to the view that issued the command, Chat is torn down in `deactivate`.
+- Code answers in the language the user writes in (server prompt).
+
+## 0.2.9
+
+- Attachments: an attach button, drag & drop and paste in the composer. Documents are sent as text; images only to models that can read them (vision). Limits: 4 files, 4 MB each, 5 MB in total.
+- Slash commands: type `/` for a list (Up/Down, Enter or Tab): `/clear`, `/context`, `/model`, `/help`, `/compact`.
+- The model picker is now the same list as the app's: grouped by provider, with the context length and a vision tag, and a search box.
+- The OmniChat logo button opens a device / folder popup. Star a folder (or a device) to pin it; pins are kept in the extension's global state.
+- Hints: hovering a main button for 2 seconds shows a short hint (`data-tip`).
+- Queue: removing a queued chip puts its text back in the input; a "run now" button on the chip interrupts the current run (like Ctrl+Enter).
+- Copy button on your messages; a "run again" button on the last answer re-sends the previous prompt.
+- The scrolling chat title waits 1.5 s at both ends. Command "OmniChat: Open in editor" opens the chat in an editor tab (state shared with the sidebar).
+- Click the context meter for a token breakdown (system, history, attachments, tools, last reply).
+- Server frames (0.5.5-beta.2): `devices_request` / `devices`, `compact_request` / `compacted`, `prompt.attachments`, and `contextLength` / `vision` on model items.
+
+## 0.2.8
+
+- Faster answers: the server sends only the new text while streaming (`transcriptDelta`; the panel asks for a full transcript if a delta does not fit), and the answer is rendered at most once per animation frame.
+- Code changes are shown like Claude Code: every `edit_file` / `write_file` call (also when auto-approved) shows `+N −M` in the tool timeline, and expanding the entry lists the added (green) and removed (red) lines.
+- Fix: false "outside workspace" for paths that are inside the workspace (case differences on macOS, /tmp-style aliases, 8.3 short names, symlinked roots).
+- Full access really is full for outside-workspace paths: when the server allows it, the tools can read, search and edit paths outside the workspace (secret and .git rules still apply).
+
+## 0.2.7
+
+- Chat is more robust and closer to the app: a "Reconnecting… (retry in N s)" banner with the next retry time, a latency badge, a send button that cannot be pressed while offline (the typed text is kept, double sends are dropped), and a queue: a prompt sent while the assistant is answering waits as a chip and runs afterwards; Ctrl+Enter interrupts the current run.
+- Web search mode (Off / Smart / Always) next to the model and approval pickers; it is stored on the conversation. Context usage is shown above the input (token count; the bar when the model limit is known).
+- Tool runs are shown as a timeline above the answer ("Ran glob", collapsible); the reasoning block is collapsed ("Thinking…" while streaming); copy buttons are icons; file paths in code and in the timeline open the file in the editor (only inside the workspace).
+- The Settings button toggles the view; a long chat title scrolls like the app's model list.
+- Fix: the extension dropped the server's `context` frames (they were missing from the codec's list of known frame types).
+- Fix: editing an existing file (for example an .md) could fail: a save() that reports "not saved" for an unchanged or auto-saved buffer is now success, the dirty-buffer check matches on Windows paths, mixed CRLF/LF no longer breaks multi-line matches, and the real error is shown.
+- Fix: Enter no longer ignored for genuine presses while composing.
+
 ## 0.2.6
 
 - Fix: server replies (models, conversations, transcript, prompt_ack) were never handed to the Chat controller, so the model list stayed empty and no answer or history appeared. Verified in a real VS Code against a local server: pair, model list, send, streamed reply, approval card, tool run after approval.

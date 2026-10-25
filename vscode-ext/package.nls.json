@@ -7,5 +7,7 @@
   "omnichat.cmd.showActivity": "OmniChat: Show Activity",
   "omnichat.cmd.openChat": "OmniChat: Open Chat",
   "omnichat.cmd.openSettings": "OmniChat: Open Settings",
-  "omnichat.cmd.newConversation": "OmniChat: New Conversation"
+  "omnichat.cmd.newConversation": "OmniChat: New Conversation",
+  "omnichat.cmd.openChatInEditor": "OmniChat: Open in editor",
+  "omnichat.cmd.moveToSecondarySideBar": "OmniChat: Open Chat in the right side bar"
 }

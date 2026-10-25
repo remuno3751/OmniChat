@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  VSCODE_EXT_VERSION, vsixName, installCommand, base64UrlEncode, base64UrlDecode, pairingCode, pairingLink,
+  VSCODE_EXT_VERSION, vsixName, installCommand, base64UrlEncode, base64UrlDecode, pairingCode,
   hasVscodeProvider, shouldAutoAddProvider, vscodeProviderBody, vscodeEnabled, vscodeSection, compatState, extensionOutdated,
   startTarget, codeBridgeErrorKey, setPendingCodeStart, takePendingCodeStart,
 } from '../vscodeBridge';
@@ -30,10 +30,9 @@ test('base64url round trip (ASCII, Japanese, emoji) without padding', () => {
   assert.equal(base64UrlDecode('a b'), null);
 });
 
-test('pairingCode carries {s,t,n} and the link points at the extension', () => {
+test('pairingCode carries {s,t,n}', () => {
   const code = pairingCode('http://192.168.0.5:8787', 'tok_123', 'desk');
   assert.deepEqual(JSON.parse(base64UrlDecode(code)), { s: 'http://192.168.0.5:8787', t: 'tok_123', n: 'desk' });
-  assert.equal(pairingLink(code), `vscode://omnichat.omnichat-vscode/pair?code=${code}`);
 });
 
 test('provider helpers', () => {
@@ -67,10 +66,25 @@ test('vscodeSection lists each PC by name with state and workspaces, online firs
   const convs = [{ id: 'c1', providerId: 'p1', cwd: 'C:\\old\\proj', updatedAt: 5, deleted: false }];
   const s = vscodeSection(bridges, provs, convs, map);
   assert.deepEqual(s.map((d) => [d.name, d.online]), [['desk', true], ['laptop', false]]);
-  assert.deepEqual(s[0].workspaces, ['C:\\work\\app', 'C:\\work\\lib', 'C:\\old\\proj']);
+  // online: only the folders open in VS Code can be started; the older chat folder is listed greyed out
+  assert.deepEqual(s[0].workspaces, ['C:\\work\\app', 'C:\\work\\lib']);
+  assert.deepEqual(s[0].closed, ['C:\\old\\proj']);
   assert.equal(s[0].providerId, 'p1');
   assert.equal(s[1].providerId, null);
   assert.deepEqual(s[1].workspaces, []);
+  assert.deepEqual(s[1].closed, []);
+});
+
+test('vscodeSection with bridges not loaded (null) shows nothing', () => {
+  assert.deepEqual(vscodeSection(null, [vsp('p1', 'desk')], [], { p1: vsp('p1', 'desk') }), []);
+});
+
+test('vscodeSection offline PC: folders of known chats are listed (not greyed out as closed)', () => {
+  const off = [{ name: 'desk', online: false, kind: 'vscode' }];
+  const convs = [{ id: 'c1', providerId: 'p1', cwd: 'C:\\old\\proj', updatedAt: 5, deleted: false }];
+  const [d] = vscodeSection(off, [vsp('p1', 'desk')], convs, { p1: vsp('p1', 'desk') });
+  assert.deepEqual(d.workspaces, ['C:\\old\\proj']);
+  assert.deepEqual(d.closed, []);
 });
 
 test('startTarget refuses an offline PC', () => {

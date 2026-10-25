@@ -102,3 +102,27 @@ export interface UpdateStatus {
   vsix?: PluginInfo | null;
   isAdmin: boolean;
 }
+
+/** Client poll of the update status while the app stays open. */
+export const UPDATE_POLL_MS = 6 * 3600_000;
+/** Retry delay after a failed status load or check (the server retries its own GitHub check on the same schedule). */
+export const UPDATE_RETRY_AFTER_ERROR_MS = 15 * 60_000;
+
+/**
+ * Next delay of the update status poll: the regular 6 h, or the 15-minute retry after an error.
+ * `failed` is true when the last load or check failed (network error or a server lastError).
+ */
+export function nextUpdatePollMs(failed: boolean): number {
+  return failed ? UPDATE_RETRY_AFTER_ERROR_MS : UPDATE_POLL_MS;
+}
+
+/** Native phones and tablets never install anything themselves: they only link to the release page. */
+export function isNativeUpdatePlatform(os: string): boolean {
+  return os === 'ios' || os === 'android';
+}
+
+/** The server update is applied by the server itself, so any client (phones included) may start it when the server says it can. */
+export function canInstallFromHere(os: string, canSelf: boolean): boolean {
+  void os;
+  return canSelf;
+}

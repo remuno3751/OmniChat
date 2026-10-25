@@ -7,9 +7,12 @@ import { button, el, logoMark } from "./dom";
 import { createApprovals } from "./cards";
 import { createHeader } from "./header";
 import { createHistory } from "./history";
+import { createSettingsPanel } from "./settingsPanel";
+import { createCheckpoints } from "./checkpoints";
 import { createPickers } from "./pickers";
 import { createMessageList } from "./messages";
 import { createComposer } from "./composer";
+import { installTips, setTip } from "./tip";
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 
@@ -75,7 +78,12 @@ function safe(name: string, fn: () => void): void {
 }
 
 function build(rootEl: HTMLElement) {
-  const header = createHeader(send, { onToggleHistory: () => historyPanel?.toggle() });
+  const checkpoints = createCheckpoints(send, rootEl);
+  const header = createHeader(send, {
+    onToggleHistory: () => historyPanel?.toggle(),
+    onToggleSettings: () => settingsPanel?.toggle(),
+    checkpointBtn: checkpoints.button,
+  });
   const banner = el("div", "cm-banner");
   banner.setAttribute("role", "status");
   banner.hidden = true;
@@ -87,13 +95,26 @@ function build(rootEl: HTMLElement) {
   errorBar.hidden = true;
 
   const approvals = createApprovals(send);
-  const messages = createMessageList(send);
+  // The Edit button of the last prompt fills the composer (see editLast.ts).
+  const messages = createMessageList(send, { onEdit: (text) => composer.beginEdit(text) });
   const pickers = createPickers(send);
-  const composer = createComposer(send);
+  const composer = createComposer(send, { onOpenModel: () => pickers.openModel() });
   const pairing = createPairing();
   const historyPanel = createHistory(send);
+  const settingsPanel = createSettingsPanel(send, { toast: (text) => composer.toast(text) });
 
-  rootEl.replaceChildren(header.el, banner, errorBar, approvals.el, messages.el, pickers.el, composer.el, pairing.el, historyPanel.el);
+  rootEl.replaceChildren(
+    header.el,
+    banner,
+    errorBar,
+    approvals.el,
+    messages.el,
+    pickers.el,
+    composer.el,
+    pairing.el,
+    historyPanel.el,
+    settingsPanel.el,
+  );
   rootEl.className = "oc-page";
 
   return {
@@ -108,21 +129,37 @@ function build(rootEl: HTMLElement) {
     composer,
     pairing,
     historyPanel,
+    settingsPanel,
+    checkpoints,
   };
 }
 
 const rootEl = document.getElementById("oc-root");
 let ui: ReturnType<typeof build> | null = null;
 let historyPanel: ReturnType<typeof createHistory> | null = null;
+let settingsPanel: ReturnType<typeof createSettingsPanel> | null = null;
+/** Last state and when it arrived: the reconnect countdown is redrawn from them every second. */
+let lastState: ChatViewState | null = null;
+let lastAt = 0;
+
+function closeCheckpoints(): void {
+  ui?.checkpoints.close();
+}
 
 function render(state: ChatViewState): void {
   const u = ui;
   if (!u) return;
+  lastState = state;
+  lastAt = Date.now();
   const paired = state.paired;
 
   u.pairing.el.hidden = paired;
   for (const part of [u.approvals, u.messages, u.pickers, u.composer]) part.el.hidden = !paired;
-  if (!paired) historyPanel?.toggle(false);
+  if (!paired) {
+    historyPanel?.toggle(false);
+    settingsPanel?.toggle(false);
+    closeCheckpoints();
+  }
 
   if (state.banner) {
     u.banner.hidden = false;
@@ -136,8 +173,7 @@ function render(state: ChatViewState): void {
 
   u.errorBar.hidden = state.errorText === null;
   u.errorText.textContent = state.errorText ?? "";
-  u.dismiss.setAttribute("aria-label", state.strings.close);
-  u.dismiss.title = state.strings.close;
+  setTip(u.dismiss, state.strings.close);
 
   const parts: Array<[string, Part]> = [
     ["header", u.header],
@@ -147,6 +183,8 @@ function render(state: ChatViewState): void {
     ["composer", u.composer],
     ["pairing", u.pairing],
     ["history", u.historyPanel],
+    ["settings", u.settingsPanel],
+    ["checkpoints", u.checkpoints],
   ];
   for (const [name, part] of parts) safe(name, () => part.update(state));
 }
@@ -158,19 +196,37 @@ function start(): void {
   }
   ui = build(rootEl);
   historyPanel = ui.historyPanel;
+  settingsPanel = ui.settingsPanel;
+  installTips(rootEl);
+
+  // The reconnect banner counts down between host updates.
+  setInterval(() => {
+    const u = ui;
+    const st = lastState;
+    if (!u || !st || st.banner?.kind !== "reconnecting" || st.link.reconnect === null) return;
+    const left = st.link.reconnect.retryInMs - (Date.now() - lastAt);
+    u.banner.textContent = st.strings.reconnecting.replace("{sec}", String(Math.max(1, Math.ceil(left / 1000))));
+  }, 1000);
 
   window.addEventListener("message", (event: MessageEvent) => {
-    const msg = event.data as { type?: unknown; state?: ChatViewState; text?: unknown } | null;
+    const msg = event.data as { type?: unknown; state?: ChatViewState; text?: unknown; id?: unknown } | null;
     if (!msg || typeof msg !== "object") return;
     if (msg.type === "state" && msg.state) {
       render(msg.state);
     } else if (msg.type === "notice" && typeof msg.text === "string") {
       ui?.pairing.notice(msg.text);
+    } else if (msg.type === "toast" && typeof msg.text === "string") {
+      ui?.composer.toast(msg.text);
+    } else if (msg.type === "scrollToMessage" && typeof msg.id === "string") {
+      ui?.messages.scrollTo(msg.id);
     }
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") historyPanel?.toggle(false);
+    if (e.key === "Escape") {
+      historyPanel?.toggle(false);
+      settingsPanel?.toggle(false);
+    }
   });
 
   send({ type: "ready" });

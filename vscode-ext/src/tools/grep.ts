@@ -4,7 +4,9 @@
  * secret paths (P3), binaries and oversized files, and stops at the time or visit cap.
  */
 import type { Diagnostic, DiagnosticSeverity, Host } from "../host/types";
+import { openDocumentFor } from "../host/vscode";
 import { isSecretPath, normalizePath, resolveInWorkspace } from "../guard/paths";
+import { outsideCandidate, outsideRefusal } from "../guard/outside";
 import { toolError, type ToolContext, type ToolRegistry } from "./index";
 import type { GetDiagnosticsArgs, GrepArgs } from "./schemas";
 import { globToRegExp } from "./glob-match";
@@ -55,6 +57,7 @@ function clip(line: string): string {
 async function guard(ctx: ToolContext, raw: string): Promise<{ abs: string; rel: string }> {
   const realpath = (p: string) => ctx.host.realpath(p);
   const roots = ABSOLUTE.test(raw) ? ctx.roots : [ctx.root];
+  let onlyOutside = true;
   for (const root of roots) {
     const res = await resolveInWorkspace(root, raw, realpath);
     if (res.ok) {
@@ -68,6 +71,16 @@ async function guard(ctx: ToolContext, raw: string): Promise<{ abs: string; rel:
       return { abs: res.abs, rel };
     }
     if (res.reason === "invalid_args") throw toolError("invalid_args", res.message);
+    if (res.reason !== "outside_workspace") onlyOutside = false;
+  }
+  if (ctx.allowOutside && onlyOutside) {
+    const abs = outsideCandidate(ctx.root, raw);
+    if (abs !== null) {
+      if ((await outsideRefusal(abs, realpath, false)) !== null) {
+        throw toolError("protected_path", "path is protected");
+      }
+      return { abs, rel: abs };
+    }
   }
   throw toolError("outside_workspace", "path is outside the workspace");
 }
@@ -84,7 +97,7 @@ async function statOrNotFound(host: Host, abs: string): Promise<{ kind: string }
  * size cap, or unreadable). A dirty editor buffer is searched in place of disk.
  */
 async function readSearchable(ctx: ToolContext, abs: string): Promise<string | undefined> {
-  const open = ctx.host.openDocuments.get(abs);
+  const open = openDocumentFor(ctx.host.openDocuments, abs);
   if (open?.dirty) {
     if (open.text.length > GREP_MAX_FILE_BYTES || open.text.slice(0, BINARY_SNIFF_BYTES).includes("\0")) {
       return undefined;

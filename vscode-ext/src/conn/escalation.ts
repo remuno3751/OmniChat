@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { checkProtected as defaultCheckProtected, type ProtectedContext, type ProtectedCall, type ProtectedVerdict } from "../guard/protected";
 import type { RealpathFn } from "../guard/paths";
 import { validateArgs } from "../tools/schemas";
+import { isOutsideVerdict } from "../guard/outside";
 import type {
   ApprovalFrame,
   ApprovalReplyFrame,
@@ -166,6 +167,8 @@ export function createEscalation(opts: EscalationOptions): Escalation {
       if (signal.aborted) return cancelled("cancelled");
       const verdict = await verdictOf(call);
       if (!verdict.protected) return ALLOW;
+      // The server allowed outside-workspace access for this call. Secret and .git rules still ask.
+      if (call.approval?.outsideOk === true && isOutsideVerdict(verdict)) return ALLOW;
       if (signal.aborted) return cancelled("cancelled");
       return askUser(call, verdict, signal);
     },

@@ -10,6 +10,7 @@ import { parseBlocks, parseInline } from "@app/components/markdownParse";
 import type { Align, Block, Inline } from "@app/components/markdownParse";
 import { tokenize } from "@app/components/highlight";
 import type { Token } from "@app/components/highlight";
+import { detectPath } from "./paths";
 
 export interface RenderOptions {
   streaming?: boolean;
@@ -23,6 +24,9 @@ export const MAX_MARKDOWN_CHARS = 60_000;
 const CODE_LABEL_MAX = 32;
 const SAFE_SCHEMES = new Set<string>(["http:", "https:", "vscode:"]);
 const ALIGNS = new Set<string>(["left", "center", "right"]);
+/** Copy / check glyphs (Material "content-copy" and "check", the family the OmniChat app uses). */
+const COPY_PATH = "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z";
+const CHECK_PATH = "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z";
 const ESC: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
 /** Escapes the five HTML-significant characters. Safe for text nodes and quoted attribute values. */
@@ -156,7 +160,10 @@ function renderCode(rawLang: string, body: string, ctx: Ctx): string {
   return (
     `<div class="oc-code"><div class="oc-code__bar">` +
     `<span class="oc-code__lang">${escapeHtml(label)}</span>` +
-    `<button type="button" class="oc-code__copy" data-oc-copy>${escapeHtml(ctx.copyLabel)}</button>` +
+    `<button type="button" class="oc-code__copy" data-oc-copy aria-label="${escapeHtml(ctx.copyLabel)}" title="${escapeHtml(ctx.copyLabel)}">` +
+    `<svg class="oc-ico oc-ico--copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${COPY_PATH}"/></svg>` +
+    `<svg class="oc-ico oc-ico--check" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${CHECK_PATH}"/></svg>` +
+    `</button>` +
     `</div><pre class="oc-code__pre"><code>${inner}</code></pre></div>`
   );
 }
@@ -188,9 +195,16 @@ function inlineHtml(items: Inline[]): string {
     }
     if (!it || typeof it !== "object") continue;
     switch (it.type) {
-      case "code":
-        out += `<code class="oc-md-code">${escapeHtml(it.text)}</code>`;
+      case "code": {
+        const ref = detectPath(it.text);
+        if (ref === null) {
+          out += `<code class="oc-md-code">${escapeHtml(it.text)}</code>`;
+        } else {
+          const line = ref.line === undefined ? "" : ` data-oc-line="${ref.line}"`;
+          out += `<code class="oc-md-code oc-md-path" data-oc-path="${escapeHtml(ref.path)}"${line} role="link" tabindex="0">${escapeHtml(it.text)}</code>`;
+        }
         break;
+      }
       case "bold":
         out += `<strong>${inlineHtml(it.children)}</strong>`;
         break;

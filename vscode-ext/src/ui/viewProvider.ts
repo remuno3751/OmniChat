@@ -45,36 +45,46 @@ export interface ViewHandle {
   readonly viewId: string;
 }
 
+/** The page options a view or panel shares (what the HTML shell and its stylesheets are built from). */
+export type PageOptions = Pick<
+  ViewProviderOptions,
+  "vscode" | "extensionUri" | "title" | "script" | "styles" | "skin" | "getTheme" | "getDecorations"
+>;
+
+/** The HTML of a chat page for `webview`: the shared shell, the page script and stylesheets. Used by the sidebar views and the editor panel. */
+export function buildPageHtml(webview: VS.Webview, opts: PageOptions): string {
+  const { vscode } = opts;
+  const nonce = makeNonce();
+  const asUri = (...parts: string[]): string =>
+    webview.asWebviewUri(vscode.Uri.joinPath(opts.extensionUri, ...parts)).toString();
+  const body = [
+    '<main id="oc-root" class="oc-page"></main>',
+    `<script nonce="${nonce}" src="${escapeHtml(asUri("media", "webview", "theme-runtime.js"))}"></script>`,
+  ].join("");
+  return buildWebviewHtml({
+    title: opts.title,
+    nonce,
+    cspSource: webview.cspSource,
+    theme: opts.getTheme(),
+    decorations: opts.getDecorations(),
+    scriptUri: asUri("media", "webview", opts.script),
+    styleUris: [
+      asUri("media", "webview", "base.css"),
+      ...opts.styles.map((s) => asUri("media", "webview", s)),
+      asUri("media", "generated", "tokens.css"),
+      ...skinStyles(opts.skin ?? "activity").map((s) => asUri("media", "webview", s)),
+    ],
+    body,
+    fontUri: (name) => asUri("media", "fonts", name),
+  });
+}
+
 export function createViewProvider(viewId: string, opts: ViewProviderOptions): ViewHandle {
   const { vscode } = opts;
   let view: VS.WebviewView | undefined;
   let ready = false;
 
-  const html = (webview: VS.Webview): string => {
-    const nonce = makeNonce();
-    const asUri = (...parts: string[]): string =>
-      webview.asWebviewUri(vscode.Uri.joinPath(opts.extensionUri, ...parts)).toString();
-    const body = [
-      '<main id="oc-root" class="oc-page"></main>',
-      `<script nonce="${nonce}" src="${escapeHtml(asUri("media", "webview", "theme-runtime.js"))}"></script>`,
-    ].join("");
-    return buildWebviewHtml({
-      title: opts.title,
-      nonce,
-      cspSource: webview.cspSource,
-      theme: opts.getTheme(),
-      decorations: opts.getDecorations(),
-      scriptUri: asUri("media", "webview", opts.script),
-      styleUris: [
-        asUri("media", "webview", "base.css"),
-        ...opts.styles.map((s) => asUri("media", "webview", s)),
-        asUri("media", "generated", "tokens.css"),
-        ...skinStyles(opts.skin ?? "activity").map((s) => asUri("media", "webview", s)),
-      ],
-      body,
-      fontUri: (name) => asUri("media", "fonts", name),
-    });
-  };
+  const html = (webview: VS.Webview): string => buildPageHtml(webview, opts);
 
   let subscriptions: VS.Disposable[] = [];
   let pendingRefresh = false;

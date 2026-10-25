@@ -57,6 +57,7 @@ export interface UpdateDeps {
 }
 
 const TICK_MS = 10 * 60_000; // the scheduler wakes up this often and checks whether a check is due
+const RETRY_AFTER_ERROR_MS = 15 * 60_000; // a failed automatic check is retried after this, not after checkHours
 const HOUR_MS = 3_600_000;
 const VERIFY_WINDOW_MS = 60_000; // must match the window the boot watchdog uses (boot.ts)
 const SUM_MAX_BYTES = 1024 * 1024;
@@ -424,17 +425,23 @@ export class UpdateService {
     this.timer.unref();
   }
 
-  /** Checks when the interval since the last check has passed (checkHours 0 = off; settings are re-read every tick). */
+  /**
+   * Checks when the interval since the last check has passed (checkHours 0 = off; settings are re-read every tick).
+   * After a failed check the next attempt is due after RETRY_AFTER_ERROR_MS; lastError stays in the status until a check succeeds.
+   */
   private async tick(): Promise<void> {
+    let nextMs = TICK_MS;
     try {
       const s = getUpdateSettings();
       const rt = getRuntime();
-      const due = s.checkHours > 0 && (rt.lastCheckedAt === null || this.deps.now() - rt.lastCheckedAt >= s.checkHours * HOUR_MS);
+      const interval = rt.lastError ? RETRY_AFTER_ERROR_MS : s.checkHours * HOUR_MS;
+      const due = s.checkHours > 0 && (rt.lastCheckedAt === null || this.deps.now() - rt.lastCheckedAt >= interval);
       if (due && this.phase === "idle") await this.checkNow();
+      if (s.checkHours > 0 && getRuntime().lastError) nextMs = RETRY_AFTER_ERROR_MS;
     } catch {
       // the scheduler never takes the server down
     } finally {
-      this.schedule(TICK_MS);
+      this.schedule(nextMs);
     }
   }
 

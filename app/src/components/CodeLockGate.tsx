@@ -6,6 +6,7 @@ import { APP_SESSION_START, afterFailure, getUnlockedAt, lockoutRemainingMs, mar
 import { startBackgroundLock } from '../appLock';
 import { hashPin, isValidPin, newSalt, verifyPin, PIN_MAX, PIN_MIN } from '../pinHash';
 import { osAuthenticate, useLockMethod } from '../codeLockAuth';
+import { desktopBioAvailable, desktopBioVerify } from '../desktopBio';
 import type { LockMethod } from '../codeLockAuth';
 import { confirmDialog } from '../ui/confirm';
 import { useTheme } from '../theme';
@@ -154,6 +155,24 @@ export function LockPrompt({ method, mode, onDone, onLogout, osPromptKey = 'code
     return () => clearInterval(id);
   }, [remain > 0]);
 
+  // Desktop biometrics sit on top of the PIN: tried first when enabled, the PIN fields stay below as the fallback.
+  const [bioOn, setBioOn] = useState(false);
+  const runBio = async () => {
+    if (busy) return;
+    setBusy(true);
+    const ok = await desktopBioVerify(tr(osPromptKey));
+    setBusy(false);
+    if (ok) onDone();
+    else setErr(tr('codelock.bioFailed'));
+  };
+  useEffect(() => {
+    if (mode !== 'unlock' || method !== 'pin' || !lock.biometric || lock.pinHash === null) return;
+    let alive = true;
+    void desktopBioAvailable().then((r) => { if (alive && r.available) { setBioOn(true); void runBio(); } });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const runOs = async () => {
     if (busy) return;
     setBusy(true);
@@ -265,6 +284,7 @@ export function LockPrompt({ method, mode, onDone, onLogout, osPromptKey = 'code
         primary
         disabled={busy || waiting || pin.length < PIN_MIN}
       />
+      {mode === 'unlock' && bioOn && <Btn style={styles.wide} label={tr('codelock.bioRetry')} onPress={() => { setErr(null); void runBio(); }} disabled={busy} small />}
       {mode === 'unlock' && method === 'os' && <Btn style={styles.wide} label={tr('codelock.osRetry')} onPress={() => { setErr(null); setUsePin(false); void runOs(); }} small />}
       {logoutBtn}
     </View>

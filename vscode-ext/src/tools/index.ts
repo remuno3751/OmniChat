@@ -64,6 +64,8 @@ export interface ToolContext {
   signal: AbortSignal;
   /** The run's working directory (absolute). */
   cwd: string;
+  /** The server allowed outside-workspace access for this call (`approval.outsideOk`). */
+  allowOutside?: boolean;
 }
 
 /** A tool implementation. Args are already validated and defaulted. */

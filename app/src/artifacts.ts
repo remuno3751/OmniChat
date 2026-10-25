@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import { t as tr } from './i18n';
+import { ARTIFACT_LINE_RE, artifactCloseIndex } from './components/markdownParse';
 
 export type ArtifactType = 'markdown' | 'html' | 'docx' | 'pptx' | 'xlsx' | 'email';
 
@@ -30,19 +31,53 @@ export function lastArtifact(text: string): Artifact | null {
   for (let i = 0; i < lines.length; i++) {
     const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(lines[i]);
     if (!m) continue;
-    const info = parseArtifactInfo(m[2]);
+    let info = parseArtifactInfo(m[2]);
     const body: string[] = [];
     let j = i + 1;
     let closed = false;
-    for (; j < lines.length; j++) {
-      const c = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(lines[j]);
-      if (c && c[1][0] === m[1][0] && c[1].length >= m[1].length) { closed = true; break; }
-      body.push(lines[j]);
+    // the slip the chat parser handles too: ```excel with the artifact line as its first line
+    if (!info && ARTIFACT_LINE_RE.test(lines[j] ?? '')) { info = parseArtifactInfo(lines[j].trim()); j++; }
+    if (info) {
+      const from = j;
+      const e = artifactCloseIndex(lines, from, m[1]);
+      closed = e >= 0;
+      j = closed ? e : lines.length;
+      body.push(...lines.slice(from, j));
+    } else {
+      for (; j < lines.length; j++) {
+        const c = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(lines[j]);
+        if (c && c[1][0] === m[1][0] && c[1].length >= m[1].length) { closed = true; break; }
+      }
     }
     if (info && closed) found = { ...info, content: body.join('\n') };
     i = j;
   }
   return found;
+}
+
+/** True when the artifact has no body text (the model announced a document but wrote nothing). */
+export function isEmptyArtifact(content: string): boolean {
+  return content.trim() === '';
+}
+
+/**
+ * Slides counted in a pptx body that is still streaming: lines starting with `# ` or `## `, ignoring lines inside
+ * nested code fences (a ```shapes block may contain `#` lines).
+ */
+export function countPartialSlides(body: string): number {
+  let n = 0;
+  let fence: string | null = null;
+  for (const line of body.replace(/\r\n?/g, '\n').split('\n')) {
+    if (fence) {
+      const c = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (c && c[1][0] === fence[0] && c[1].length >= fence.length) fence = null;
+      continue;
+    }
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (f) { fence = f[1]; continue; }
+    if (/^#{1,2} /.test(line)) n++;
+  }
+  return n;
 }
 
 export interface ArtifactCtx { open: (a: Artifact) => void }

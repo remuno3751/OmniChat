@@ -23,6 +23,11 @@ const isWinStyle = (p: string): boolean => /^[A-Za-z]:|^[\\/]{2}/.test(p);
 
 export interface ProtectedMatch { protected: boolean; ids: string[]; reasons: string[] }
 
+/** The only protections that "full" mode waives: reaching outside the workspace (P1, or a path/cwd outside in a command). */
+export function isOutsideHit(id: string, reason: string): boolean {
+  return id === "P1-outside" || (id === "C-path" && reason.startsWith("path outside"));
+}
+
 /** Spec 4.3: P1-P3, C-git, C-rm, C-path, C-sys, unparseable. Lexical only. */
 export function matchProtected(tool: string, args: Record<string, unknown>, roots: string[]): ProtectedMatch {
   const v = checkProtected(
@@ -80,6 +85,8 @@ export interface Decision {
   reasons: string[];
   /** false for protected items: the dialog must not offer "always allow". */
   alwaysAllowed?: false;
+  /** true when the call may reach outside the workspace (full mode, or the only protection was "outside"). */
+  outsideOk?: boolean;
 }
 
 function ruleMatches(r: PolicyRule, allow: boolean, tool: string, command: string | undefined, path: string | undefined): boolean {
@@ -112,7 +119,12 @@ export function decide(input: DecideInput): Decision {
   const deny = pool(denyHits)[0];
   const reasons = p.reasons.map((r, i) => `${p.ids[i]}: ${r}`);
   if (deny) return { action: "deny", by: `rule:${deny.id}`, protected: p.protected, reasons: [`deny rule ${deny.id}`, ...reasons] };
-  if (p.protected) return { action: "ask", by: "protected", protected: true, reasons, alwaysAllowed: false };
+  if (p.protected) {
+    const outsideOnly = isOutsideHit(p.ids[0] ?? "", p.reasons[0] ?? "");
+    // Full access really is full for the workspace boundary; secrets, .git, rm and the other protections still ask.
+    if (outsideOnly && mode === "full") return { action: "allow", by: "mode:full", protected: false, reasons: ["full mode (outside the workspace)"], outsideOk: true };
+    return { action: "ask", by: "protected", protected: true, reasons, alwaysAllowed: false, ...(outsideOnly ? { outsideOk: true } : {}) };
+  }
   const allow = pool(allowHits)[0];
   if (allow) return { action: "allow", by: `rule:${allow.id}`, protected: false, reasons: [`allow rule ${allow.id}`] };
   if (modeAllows(toolClass(tool), mode, args)) return { action: "allow", by: `mode:${mode}`, protected: false, reasons: [`${mode} mode`] };

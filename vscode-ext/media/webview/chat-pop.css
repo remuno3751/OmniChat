@@ -1,0 +1,68 @@
+/* Model and device / folder popovers (opened above the picker bar). */
+.ch-pill {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 28px; margin: 0; padding: 0 10px;
+  border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-pill);
+  background: var(--oc-input); color: var(--oc-text); font: inherit; font-size: 12px; cursor: pointer;
+}
+.ch-pill:hover:not(:disabled) { border-color: var(--oc-text); }
+.ch-pill:disabled { opacity: 0.6; cursor: not-allowed; }
+.ch-pill__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-pill__logo { width: 16px; height: 16px; flex: none; --oc-logo-cut: var(--oc-input); }
+.ch-folder-btn { flex: 0 1 auto; max-width: 45%; }
+.ch-model-btn { flex: 0 1 auto; }
+.ch-model-btn::after { content: ""; flex: none; width: 5px; height: 5px; border-right: 1.5px solid var(--oc-sub); border-bottom: 1.5px solid var(--oc-sub); transform: translateY(-2px) rotate(45deg); }
+body[data-oc-narrow] .ch-folder-btn, body[data-oc-narrow] .ch-model-btn { flex: 1 1 140px; max-width: 100%; }
+
+.cm-pop {
+  position: fixed; z-index: 50; display: flex; flex-direction: column; box-sizing: border-box;
+  width: min(340px, calc(100vw - 16px)); overflow: hidden;
+  background: var(--oc-panel); color: var(--oc-text); font-size: 12px;
+  border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-md, 8px);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+}
+.cm-pop[hidden] { display: none; }
+.cm-pop--device { overflow-y: auto; }
+.cm-pop__search {
+  flex: none; margin: 8px; padding: 6px 10px; font: inherit; font-size: 12px; color: var(--oc-text);
+  background: var(--oc-input); border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-sm, 6px);
+}
+.cm-pop__list { flex: 1 1 auto; overflow-y: auto; padding: 0 4px 6px; }
+.cm-pop__group {
+  position: sticky; top: 0; z-index: 1; padding: 8px 8px 4px; background: var(--oc-panel);
+  font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--oc-sub);
+}
+.cm-pop--device .cm-pop__group { position: static; }
+.cm-pop__line { display: flex; align-items: center; gap: 2px; padding: 0 4px; }
+.cm-pop__row {
+  display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; width: 100%; padding: 6px 8px; margin: 0;
+  background: transparent; color: inherit; font: inherit; text-align: left; border: 0; border-radius: var(--oc-r-sm, 6px); cursor: pointer;
+}
+.cm-pop__row:hover:not(:disabled), .cm-pop__row:focus-visible { background: var(--oc-panel2); outline: none; }
+.cm-pop__row:disabled { opacity: 0.55; cursor: default; }
+.cm-pop__row--on { box-shadow: inset 2px 0 0 var(--oc-accent); background: var(--oc-panel2); }
+.cm-pop__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-pop__tag {
+  flex: none; padding: 1px 6px; border-radius: var(--oc-r-pill); font-size: 10px; line-height: 14px;
+  background: var(--oc-accent); color: var(--oc-accent-text);
+}
+.cm-pop__tag--dim { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--oc-panel2); color: var(--oc-sub); }
+.cm-pop__empty, .cm-pop__note { padding: 8px 10px; color: var(--oc-sub); }
+.cm-pop__note { font-size: 11px; }
+.cm-pop__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--oc-border-strong); }
+.cm-pop__dot--on { background: var(--oc-good); }
+.cm-pop__star { flex: none; display: inline-flex; padding: 4px; background: transparent; border: 0; border-radius: var(--oc-r-sm, 6px); color: var(--oc-sub); cursor: pointer; }
+.cm-pop__star:hover, .cm-pop__star:focus-visible { color: var(--oc-text); background: var(--oc-panel2); outline: none; }
+.cm-pop__star--on { color: var(--oc-warn); }
+.cm-star { width: 14px; height: 14px; }
+@media (forced-colors: active) {
+  .cm-pop { border-color: CanvasText; }
+  .cm-pop__row--on { outline: 1px solid Highlight; }
+}
+
+/* Token breakdown panel (opened from the context meter). */
+.cm-meter--btn { cursor: pointer; }
+.cm-meter--btn:hover .cm-meter__text, .cm-meter--btn:focus-visible .cm-meter__text { text-decoration: underline; }
+.cm-pop--tokens { width: min(280px, calc(100vw - 16px)); padding-bottom: 6px; }
+.cm-tok__table { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 2px 10px 6px; }
+.cm-tok__k { color: var(--oc-sub); }
+.cm-tok__v { text-align: right; font-variant-numeric: tabular-nums; }

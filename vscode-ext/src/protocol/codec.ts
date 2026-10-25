@@ -1,5 +1,6 @@
 import { isValidChatSFrame } from "./chat-frames";
 import type { Frame, FrameType } from "./frames";
+import { sanitizeTranscriptSources } from "./chat-frames-v056e";
 
 /** Maximum frame size in UTF-8 bytes (docs/design/VSCODE-BRIDGE.md §2). */
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
@@ -39,7 +40,27 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set<FrameType>([
   "conversations",
   "transcript",
   "approval_mode",
+  // v0.5.5
+  "context_request",
+  "context",
   "error",
+  // v0.5.5-beta.2
+  "devices_request",
+  "devices",
+  "compact_request",
+  "compacted",
+  // v0.5.6-d
+  "conversation_settings_request",
+  "conversation_settings_set",
+  "history_search_request",
+  "conversation_settings",
+  "conversation_settings_ack",
+  "history_search",
+  // v0.5.6-E
+  "checkpoints_request",
+  "checkpoint_restore",
+  "checkpoints",
+  "checkpoint_restored",
 ]);
 
 /** Serialize a frame to its JSON text form. */
@@ -72,5 +93,15 @@ export function decode(text: string): Frame | null {
 
   // Chat frames from the server are checked field by field; a malformed one is dropped like an unknown one.
   if (!isValidChatSFrame(value as Record<string, unknown>)) return null;
+  if (type === "transcript") sanitizeTranscriptSources(value as Record<string, unknown>);
+  if (type === "tool_call" && !hasValidOutsideOk(value as Record<string, unknown>)) return null;
   return value as Frame;
+}
+
+/** `approval.outsideOk`, when present, must be a boolean. Other approval fields are not checked here. */
+function hasValidOutsideOk(frame: Record<string, unknown>): boolean {
+  const approval = frame.approval;
+  if (typeof approval !== "object" || approval === null) return true;
+  const outsideOk = (approval as { outsideOk?: unknown }).outsideOk;
+  return outsideOk === undefined || typeof outsideOk === "boolean";
 }

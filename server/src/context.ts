@@ -12,7 +12,8 @@ import { authScope, detectAdapter, originOf } from "./adapters/index.js";
 import { apiKeyOf } from "./model-admin.js";
 import { recordQuotaUsage } from "./quota.js";
 import { backendCount, estimateTokens, MSG_OVERHEAD } from "./tokens.js";
-import { buildWire, resolveVision, storedAttachments, IMAGE_TOKENS, type WireItem } from "./attachments-chat.js";
+import { isVscodeBridgeKind } from "./agent-kinds.js";
+import { buildWire, realModelOf, resolveVision, storedAttachments, IMAGE_TOKENS, type WireItem } from "./attachments-chat.js";
 import type { AttachmentRecord } from "./attachments.js";
 
 /* Context window accounting (PROTOCOL-v3-phase2.md section 2): usage numbers, limit discovery and overflow policy. */
@@ -177,12 +178,15 @@ export async function measureContext(o: MeasureOpts): Promise<Measured> {
     built.history.push({ id: "pending", role: "user", content: o.pendingUser });
     built.messages.push({ role: "user", content: o.pendingUser });
   }
-  // attachments: text notes and image parts of the user messages that carry some (strings stay strings)
+  // attachments: text notes and image parts of the user messages that carry some (strings stay strings).
+  // A vscode-bridge conversation's images are read by its real model ("<providerId>::<model>").
+  const reader = isVscodeBridgeKind(prov?.kind) ? realModelOf(userId, model) : { prov, model };
   const wire = await buildWire(
     built.history,
     (id) => (id === "pending" ? o.pendingAttachments ?? [] : storedAttachments(id)),
-    () => resolveVision(userId, prov, model),
+    () => resolveVision(userId, reader.prov, reader.model),
     prov?.kind ?? "openai-compatible",
+    reader.prov?.kind ?? "openai-compatible",
   );
   if (wire.size) {
     const offset = built.messages.length - built.history.length;

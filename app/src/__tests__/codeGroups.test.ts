@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { normCwd, cwdLabel, deviceOf, devicesOf, groupByWorkspace, groupByDevice, workspaceKey } from '../codeGroups';
+import { normCwd, cwdLabel, deviceOf, devicesOf, groupByWorkspace, groupByDevice, workspaceKey, splitHiddenDeviceChats } from '../codeGroups';
 
 const providers = {
   p1: { id: 'p1', kind: 'dsh-bridge', baseUrl: 'desk' },
@@ -66,4 +66,19 @@ test('groupByDevice: devices by recency, no-device last, workspaces inside', () 
   assert.deepEqual(g.map((x) => x.device), ['laptop', 'desk', null]);
   assert.deepEqual(g[0].groups.map((x) => x.label), ['b', 'c']);
   assert.equal(g[0].groups[0].key, workspaceKey('laptop', '/b'));
+});
+
+test('splitHiddenDeviceChats: hidden device names (the revoke "hide" list) move their chats out of the Code list', () => {
+  const convs = [conv('/a', 10, 'p1'), conv('/b', 30, 'p2'), conv('/z', 99, 'o')];
+  // "VS Code (desk)" and "DSH plugin (laptop )" name bridges desk and "laptop "
+  const none = splitHiddenDeviceChats(convs, providers, []);
+  assert.equal(none.shown.length, 3);
+  assert.equal(none.hidden.length, 0);
+  const one = splitHiddenDeviceChats(convs, providers, ['VS Code (desk)']);
+  assert.deepEqual(one.hidden.map((c) => c.id), [convs[0].id]);
+  assert.deepEqual(one.shown.map((c) => c.id), [convs[1].id, convs[2].id]);
+  // a name that is no bridge device, and a bridge with no conversations, hide nothing
+  assert.equal(splitHiddenDeviceChats(convs, providers, ['iPhone', 'VS Code (other)']).hidden.length, 0);
+  // a provider that is not a bridge has no device: never hidden
+  assert.equal(splitHiddenDeviceChats([conv('/z', 1, 'o')], providers, ['VS Code (http://x)']).hidden.length, 0);
 });

@@ -64,55 +64,305 @@
     return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
   }
 
+  // src/webview/render/paths.ts
+  var MAX_LEN = 260;
+  var KNOWN_EXT = new Set(
+    "ts tsx js jsx mjs cjs json jsonc md mdx css scss less html htm vue svelte py rs go java kt cs c cc cpp h hpp rb php sh bash ps1 bat cmd yml yaml toml ini env txt xml svg sql lock gradle swift dart lua".split(" ")
+  );
+  var PRODUCT_NAMES = /* @__PURE__ */ new Set(["node.js", "next.js", "vue.js", "react.js", "express.js", "d3.js", "three.js", "nuxt.js", "ember.js", "backbone.js"]);
+  var SEGMENT = /^[\w.@+~()[\]-]+$/;
+  function extOf(name) {
+    const dot = name.lastIndexOf(".");
+    return dot <= 0 || dot === name.length - 1 ? "" : name.slice(dot + 1).toLowerCase();
+  }
+  function hasLetterExt(name) {
+    const ext = extOf(name);
+    return /^[a-z][a-z0-9]{0,9}$/.test(ext);
+  }
+  function detectPath(text) {
+    if (typeof text !== "string") return null;
+    let s = text.trim();
+    if (s === "" || s.length > MAX_LEN || /\s/.test(s)) return null;
+    let line;
+    const m = /^(.*?):(\d{1,6})(?::\d{1,6})?$/.exec(s);
+    if (m && m[1] !== "" && !/^[A-Za-z]$/.test(m[1])) {
+      s = m[1];
+      line = Number(m[2]);
+      if (line < 1) return null;
+    }
+    if (/^[A-Za-z][A-Za-z0-9+.-]+:/.test(s) || s.includes("://") || /^www\./i.test(s)) return null;
+    if (/[<>"|?*]/.test(s) || s.includes("//") || /\\\\/.test(s)) return null;
+    const win = /^[A-Za-z]:[\\/]/.test(s);
+    const body = win ? s.slice(3) : s;
+    const segments = body.split(/[\\/]/);
+    const absolute = win || s.startsWith("/");
+    const parts = absolute && !win ? segments.slice(1) : segments;
+    if (parts.length === 0 || parts.some((p) => p === "" || !SEGMENT.test(p))) return null;
+    const last = parts[parts.length - 1];
+    if (last === "." || last === "..") return null;
+    if (parts.length === 1 && !absolute) {
+      if (!KNOWN_EXT.has(extOf(last)) || PRODUCT_NAMES.has(last.toLowerCase()) || /^\d/.test(last)) return null;
+      return line === void 0 ? { path: s } : { path: s, line };
+    }
+    if (parts.length === 1 && absolute && !win) {
+      if (!hasLetterExt(last)) return null;
+    } else if (!hasLetterExt(last) && !s.startsWith("./") && !s.startsWith("../") && !win) {
+      return null;
+    }
+    if (/^\d+(\.\d+)+$/.test(last)) return null;
+    return line === void 0 ? { path: s } : { path: s, line };
+  }
+
+  // src/webview/render/thinking.ts
+  function createThinkingModel() {
+    let touched = false;
+    return {
+      userToggled() {
+        touched = true;
+      },
+      update({ streaming, hasText }) {
+        return { live: streaming && !hasText, forceOpen: touched ? null : !streaming && !hasText };
+      }
+    };
+  }
+
+  // src/webview/render/timeline.ts
+  function keyOf(item, index) {
+    return `${item.kind}:${item.id ?? `#${index}`}`;
+  }
+  function groupTimeline(items) {
+    const out = [];
+    let turn = [];
+    let tools = [];
+    let anchor = "start";
+    const flush = () => {
+      if (tools.length > 0) out.push({ type: "timeline", key: `timeline:${anchor}`, tools });
+      out.push(...turn);
+      turn = [];
+      tools = [];
+    };
+    items.forEach((item, i) => {
+      const key = keyOf(item, i);
+      if (item.kind === "user") {
+        flush();
+        out.push({ type: "item", key, item });
+        anchor = key;
+      } else if (item.kind === "tool") {
+        tools.push(item);
+      } else {
+        turn.push({ type: "item", key, item });
+      }
+    });
+    flush();
+    return out;
+  }
+  var GROUP_MIN = 3;
+  function foldRuns(tools) {
+    const out = [];
+    let i = 0;
+    while (i < tools.length) {
+      let j = i + 1;
+      while (j < tools.length && tools[j].tool === tools[i].tool) j++;
+      if (j - i >= GROUP_MIN) out.push({ group: true, key: `group:${tools[i].id}`, tools: tools.slice(i, j) });
+      else for (let k = i; k < j; k++) out.push({ group: false, tool: tools[k] });
+      i = j;
+    }
+    return out;
+  }
+
   // src/webview/chat/cards.ts
   var seq = 0;
-  function createToolCard(item, state) {
-    const root = el("div", "cc-tool");
-    const head = el("div", "cc-tool__head");
-    const mark = el("span", "cc-tool__mark");
-    mark.setAttribute("aria-hidden", "true");
-    const text = el("div", "cc-tool__text");
-    const name = el("span", "cc-tool__name");
-    const summary = el("span", "cc-tool__summary");
-    text.append(name, summary);
-    const meta = el("div", "cc-tool__meta");
-    const duration = el("span", "cc-tool__duration");
-    const chip = el("span", "cc-chip");
-    meta.append(duration, chip);
-    head.append(mark, text, meta);
-    const decided = el("div", "cc-tool__decided");
-    root.append(head, decided);
-    const update = (next, s) => {
-      const label = s.toolLabels[next.id] ?? next.tool;
-      root.className = `cc-tool cc-tool--${next.status}`;
-      root.setAttribute("role", "group");
-      root.setAttribute("aria-label", label);
-      name.textContent = next.tool;
-      summary.textContent = next.summary;
-      summary.hidden = next.summary === "";
-      duration.textContent = next.durationMs === void 0 ? "" : formatDuration(next.durationMs);
-      duration.hidden = next.durationMs === void 0;
-      chip.textContent = s.strings.tool[next.status];
-      decided.textContent = next.decidedBy ?? "";
-      decided.hidden = !next.decidedBy;
+  function toolText(tool, status, S) {
+    const known = Object.prototype.hasOwnProperty.call(S.toolDone, tool) ? tool : null;
+    if (status === "pending" || status === "denied") return tool;
+    if (status === "running") return known ? S.toolRunning[known] : S.toolRunningOther.replace("{tool}", tool);
+    return known ? S.toolDone[known] : S.toolDoneOther.replace("{tool}", tool);
+  }
+  var FILE_TOOLS = /* @__PURE__ */ new Set(["read_file", "write_file", "edit_file"]);
+  function fillSummary(node, tool, summary, title) {
+    node.replaceChildren();
+    let linkText = summary;
+    let ref = detectPath(summary);
+    if (!ref && FILE_TOOLS.has(tool)) {
+      linkText = summary.trimStart().split(/\s+/, 1)[0];
+      ref = detectPath(linkText);
+    }
+    if (!ref) {
+      node.textContent = summary;
+      return;
+    }
+    const at = summary.indexOf(linkText);
+    if (at > 0) node.appendChild(document.createTextNode(summary.slice(0, at)));
+    const link = el("span", "cc-tl__path", linkText);
+    link.dataset.ocPath = ref.path;
+    if (ref.line !== void 0) link.dataset.ocLine = String(ref.line);
+    link.setAttribute("role", "link");
+    link.tabIndex = 0;
+    link.title = title;
+    node.appendChild(link);
+    const rest = summary.slice(at + linkText.length);
+    if (rest !== "") node.appendChild(document.createTextNode(rest));
+  }
+  var diffSig = (item) => {
+    const d = diffOf(item);
+    return d ? `${d.added}/${d.removed}/${d.lines.length}/${d.truncated ? 1 : 0}` : "";
+  };
+  var diffOf = (item) => item.diff;
+  function fillDiff(box, d, truncatedText) {
+    box.replaceChildren();
+    box.hidden = !d || d.lines.length === 0;
+    if (!d) return;
+    for (const line of d.lines) {
+      const c = line.charAt(0);
+      const row = el("div", c === "+" ? "cc-diff__l cc-diff__l--add" : c === "-" ? "cc-diff__l cc-diff__l--del" : "cc-diff__l");
+      row.textContent = line.slice(1) || " ";
+      row.dataset.sign = c === "+" || c === "-" ? c : " ";
+      box.appendChild(row);
+    }
+    if (d.truncated) box.appendChild(el("div", "cc-diff__more", truncatedText));
+  }
+  function createTimeline() {
+    const root = el("div", "cc-tl");
+    root.setAttribute("role", "list");
+    const entries = /* @__PURE__ */ new Map();
+    const build2 = () => {
+      const d = el("details", "cc-tl__item");
+      d.setAttribute("role", "listitem");
+      const sum = el("summary", "cc-tl__sum");
+      const mark = el("span", "cc-tl__mark");
+      mark.setAttribute("aria-hidden", "true");
+      const label = el("span", "cc-tl__label");
+      const chip = el("span", "cc-chip cc-tl__chip");
+      const stat = el("span", "cc-tl__stat");
+      const statAdd = el("span", "cc-tl__stat-add");
+      const statDel = el("span", "cc-tl__stat-del");
+      stat.append(statAdd, statDel);
+      const dur = el("span", "cc-tl__dur");
+      sum.append(mark, label, stat, chip, dur);
+      const body = el("div", "cc-tl__body");
+      const code = el("div", "cc-tl__code");
+      const name = el("span", "cc-tl__tool");
+      const text = el("span", "cc-tl__summary");
+      code.append(name, text);
+      const meta = el("div", "cc-tl__meta");
+      const diffBox = el("div", "cc-diff");
+      body.append(code, diffBox, meta);
+      d.append(sum, body);
+      const entry = {
+        el: d,
+        sig: "",
+        sigLang: "",
+        refresh(item, S) {
+          d.className = `cc-tl__item cc-tl__item--${item.status}`;
+          label.textContent = toolText(item.tool, item.status, S);
+          const showChip = item.status !== "done" && item.status !== "running";
+          chip.textContent = showChip ? S.tool[item.status] : "";
+          chip.hidden = !showChip;
+          dur.textContent = item.durationMs === void 0 ? "" : formatDuration(item.durationMs);
+          dur.hidden = item.durationMs === void 0;
+          name.textContent = item.tool;
+          fillSummary(text, item.tool, item.summary, S.openFile);
+          const diff = diffOf(item);
+          stat.hidden = !diff;
+          statAdd.textContent = diff ? `+${diff.added}` : "";
+          statDel.textContent = diff ? `\u2212${diff.removed}` : "";
+          fillDiff(diffBox, diff, S.diffTruncated);
+          text.hidden = item.summary === "";
+          const parts = [S.tool[item.status]];
+          if (item.durationMs !== void 0) parts.push(`${S.toolDuration} ${formatDuration(item.durationMs)}`);
+          if (item.decidedBy) parts.push(item.decidedBy);
+          meta.textContent = parts.join("  \xB7  ");
+        }
+      };
+      return entry;
     };
-    update(item, state);
+    const groups = /* @__PURE__ */ new Map();
+    const buildGroup = () => {
+      const d = el("details", "cc-tl__group");
+      d.setAttribute("role", "listitem");
+      const sum = el("summary", "cc-tl__sum cc-tl__gsum");
+      const mark = el("span", "cc-tl__mark");
+      mark.setAttribute("aria-hidden", "true");
+      const label = el("span", "cc-tl__label");
+      sum.append(mark, label);
+      const body = el("div", "cc-tl__gbody");
+      d.append(sum, body);
+      return { el: d, label, body };
+    };
+    const place2 = (parent, nodes) => {
+      nodes.forEach((n, i) => {
+        if (parent.children[i] !== n) parent.insertBefore(n, parent.children[i] ?? null);
+      });
+      while (parent.children.length > nodes.length) parent.lastElementChild?.remove();
+    };
+    const update = (tools, state) => {
+      const S = state.strings;
+      const live = new Set(tools.map((t) => t.id));
+      for (const id of [...entries.keys()]) if (!live.has(id)) entries.delete(id);
+      const entryOf = (item) => {
+        let entry = entries.get(item.id);
+        if (!entry) {
+          entry = build2();
+          entries.set(item.id, entry);
+        }
+        const sig = `${item.tool}|${item.summary}|${item.status}|${item.durationMs ?? ""}|${item.decidedBy ?? ""}|${diffSig(item)}`;
+        if (sig !== entry.sig || S.copy !== entry.sigLang) {
+          entry.sig = sig;
+          entry.sigLang = S.copy;
+          entry.refresh(item, S);
+        }
+        return entry;
+      };
+      const top = [];
+      const seen = /* @__PURE__ */ new Set();
+      for (const slot of foldRuns(tools)) {
+        if (!slot.group) {
+          top.push(entryOf(slot.tool).el);
+          continue;
+        }
+        seen.add(slot.key);
+        let g = groups.get(slot.key);
+        if (!g) {
+          g = buildGroup();
+          groups.set(slot.key, g);
+        }
+        const first = slot.tools[0];
+        g.label.textContent = S.toolGroup.replace("{label}", toolText(first.tool, "done", S)).replace("{n}", String(slot.tools.length));
+        const open = slot.tools.some((t) => t.status === "running" || t.status === "pending");
+        const failed = slot.tools.some((t) => t.status === "error" || t.status === "denied");
+        g.el.className = `cc-tl__group${open ? " cc-tl__group--active" : ""}${failed ? " cc-tl__group--failed" : ""}`;
+        place2(g.body, slot.tools.map((t) => entryOf(t).el));
+        top.push(g.el);
+      }
+      for (const key of [...groups.keys()]) if (!seen.has(key)) groups.delete(key);
+      place2(root, top);
+    };
     return { el: root, update };
   }
   function createThinking() {
     const details = el("details", "cc-think");
     const summary = el("summary", "cc-think__summary");
+    const label = el("span", "cc-think__label");
+    const dots = el("span", "cc-think__dots");
+    const typing = el("span", "cm-typing");
+    typing.setAttribute("aria-hidden", "true");
+    for (let i = 0; i < 3; i++) typing.appendChild(el("span"));
+    dots.appendChild(typing);
+    summary.append(label, dots);
     const text = el("div", "cc-think__text");
     details.append(summary, text);
-    let initialized = false;
-    const update = (reasoning, streaming, state) => {
-      summary.textContent = state.strings.reasoning;
-      text.textContent = reasoning === "" && streaming ? state.strings.thinking : reasoning;
-      details.hidden = reasoning === "" && !streaming;
-      if (!initialized) {
-        initialized = true;
-        details.open = streaming;
+    const model = createThinkingModel();
+    summary.addEventListener("click", () => model.userToggled());
+    let lastReasoning = null;
+    const update = (reasoning, streaming, hasText, state) => {
+      const view = model.update({ streaming, hasText });
+      details.classList.toggle("cc-think--live", view.live);
+      label.textContent = view.live ? state.strings.thinking : state.strings.thought;
+      if (reasoning !== lastReasoning) {
+        lastReasoning = reasoning;
+        text.textContent = reasoning;
       }
+      if (view.forceOpen !== null && details.open !== view.forceOpen) details.open = view.forceOpen;
     };
     return { el: details, update };
   }
@@ -211,6 +461,83 @@
     return { el: section, update };
   }
 
+  // src/webview/chat/tip.ts
+  var SHOW_DELAY_MS = 2e3;
+  var GAP_PX = 6;
+  var tipEl = null;
+  var timer = null;
+  var current = null;
+  function setTip(target, text) {
+    target.setAttribute("data-tip", text);
+    target.setAttribute("aria-label", text);
+    target.removeAttribute("title");
+  }
+  function hide() {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    current = null;
+    if (tipEl) tipEl.hidden = true;
+  }
+  function place(target) {
+    if (!tipEl) return;
+    const rect = target.getBoundingClientRect();
+    const w = tipEl.offsetWidth;
+    const h = tipEl.offsetHeight;
+    const maxLeft = Math.max(0, window.innerWidth - w - 4);
+    const left = Math.min(Math.max(4, rect.left + rect.width / 2 - w / 2), maxLeft);
+    const below = rect.bottom + GAP_PX;
+    const top = below + h <= window.innerHeight ? below : Math.max(4, rect.top - h - GAP_PX);
+    tipEl.style.setProperty("left", `${Math.round(left)}px`);
+    tipEl.style.setProperty("top", `${Math.round(top)}px`);
+  }
+  function schedule(target, keyboard) {
+    if (current === target) return;
+    hide();
+    current = target;
+    timer = window.setTimeout(() => {
+      timer = null;
+      if (current !== target || !target.isConnected) return hide();
+      if (keyboard && !target.matches(":focus-visible")) return hide();
+      const text = target.getAttribute("data-tip");
+      if (!text || !tipEl) return hide();
+      tipEl.textContent = text;
+      tipEl.hidden = false;
+      place(target);
+    }, SHOW_DELAY_MS);
+  }
+  function tipTarget(node, root) {
+    if (!(node instanceof Element)) return null;
+    const found = node.closest("[data-tip]");
+    return found && root.contains(found) ? found : null;
+  }
+  function installTips(root) {
+    if (tipEl) return;
+    const doc = root.ownerDocument;
+    tipEl = el("div", "cm-tip");
+    tipEl.setAttribute("role", "tooltip");
+    tipEl.hidden = true;
+    root.appendChild(tipEl);
+    root.addEventListener("mouseover", (e) => {
+      const target = tipTarget(e.target, root);
+      if (target) schedule(target, false);
+    });
+    root.addEventListener("mouseout", (e) => {
+      if (current && !current.contains(e.relatedTarget)) hide();
+    });
+    root.addEventListener("focusin", (e) => {
+      const target = tipTarget(e.target, root);
+      if (target) schedule(target, true);
+    });
+    root.addEventListener("focusout", () => hide());
+    root.addEventListener("pointerdown", () => hide());
+    root.addEventListener("scroll", () => hide(), true);
+    doc.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") hide();
+    });
+  }
+
   // src/webview/chat/header.ts
   var ICON_CLOCK = [
     ["circle", { cx: "12", cy: "12", r: "9" }],
@@ -222,6 +549,8 @@
     ["circle", { cx: "15", cy: "7", r: "2" }],
     ["circle", { cx: "9", cy: "17", r: "2" }]
   ];
+  var LAT_GOOD_MS = 150;
+  var LAT_SLOW_MS = 500;
   function iconButton(icon, onClick) {
     const b = el("button", "ch-iconbtn");
     b.type = "button";
@@ -233,6 +562,11 @@
     if (status === "online") return "good";
     return status === "connecting" ? "warn" : "danger";
   }
+  function latencyBand(online, rttMs) {
+    if (!online) return "off";
+    if (rttMs === null) return "good";
+    return rttMs < LAT_GOOD_MS ? "good" : rttMs <= LAT_SLOW_MS ? "slow" : "bad";
+  }
   function createHeader(send2, opts) {
     const root = el("header", "ch-header");
     const brand = el("div", "ch-header__brand");
@@ -243,6 +577,7 @@
     const dot = el("span", "ch-status__dot");
     const chipText = el("span", "ch-status__text");
     chip.append(dot, chipText);
+    const latency = el("span", "ch-latency", "-- ms");
     const tools = el("div", "ch-header__tools");
     let historyOpen = false;
     const historyBtn = iconButton(svg("0 0 24 24", "ch-icon", ICON_CLOCK), () => {
@@ -252,9 +587,11 @@
     });
     historyBtn.setAttribute("aria-expanded", "false");
     const newBtn = iconButton(svg("0 0 24 24", "ch-icon", ICON_PLUS), () => send2({ type: "newConversation" }));
-    const settingsBtn = iconButton(svg("0 0 24 24", "ch-icon", ICON_GEAR), () => send2({ type: "openSettings" }));
+    const settingsBtn = iconButton(svg("0 0 24 24", "ch-icon", ICON_GEAR), () => opts.onToggleSettings());
+    settingsBtn.classList.add("ch-cs-open");
     tools.append(historyBtn, newBtn, settingsBtn);
-    root.append(brand, chip, tools);
+    if (opts.checkpointBtn) tools.insertBefore(opts.checkpointBtn, newBtn);
+    root.append(brand, chip, latency, tools);
     function update(state) {
       const S = state.strings;
       title.textContent = state.title;
@@ -265,17 +602,163 @@
       const version = state.snapshot.serverVersion;
       if (version) chip.title = version;
       else chip.removeAttribute("title");
+      const band = latencyBand(state.status === "online", state.link.rttMs);
+      latency.textContent = band === "off" || state.link.rttMs === null ? "-- ms" : `${state.link.rttMs} ms`;
+      latency.className = `ch-latency ch-latency--${band}`;
+      latency.title = S.latencyLabel;
+      latency.setAttribute("aria-label", `${S.latencyLabel}: ${latency.textContent}`);
       tools.hidden = !state.paired;
       for (const [btn, text] of [
         [historyBtn, S.history],
         [newBtn, S.newConversation],
-        [settingsBtn, S.settings]
+        [settingsBtn, S.csOpen]
       ]) {
-        btn.title = text;
-        btn.setAttribute("aria-label", text);
+        setTip(btn, text);
       }
     }
     return { el: root, update };
+  }
+
+  // src/webview/chat/types.ts
+  var NO_SETTINGS = { state: "idle", value: null };
+  var NO_SEARCH = { query: "", state: "idle", hits: [] };
+  function settingsOf(state) {
+    return state.settings ?? NO_SETTINGS;
+  }
+  function searchOf(state) {
+    return state.search ?? NO_SEARCH;
+  }
+  function sendExtra(send2, msg) {
+    send2(msg);
+  }
+  var DEFAULT_ATTACH = {
+    maxFiles: 4,
+    maxFileBytes: 4 * 1024 * 1024,
+    maxTotalBytes: 5 * 1024 * 1024,
+    imageMimes: ["image/png", "image/jpeg", "image/webp", "image/gif"],
+    visionOk: null
+  };
+  function extrasOf(state) {
+    const x = state.extras;
+    return { slash: x?.slash ?? [], attach: x?.attach ?? DEFAULT_ATTACH };
+  }
+
+  // src/webview/chat/historySearch.ts
+  var DEBOUNCE_MS = 250;
+  var MAX_QUERY_CHARS = 200;
+  var MATCH_START = "";
+  var MATCH_END = "";
+  function splitSnippet(snippet) {
+    const out = [];
+    let match = false;
+    let buf = "";
+    for (const ch of snippet) {
+      if (ch !== MATCH_START && ch !== MATCH_END) {
+        buf += ch;
+        continue;
+      }
+      if (buf !== "") out.push({ text: buf, match });
+      buf = "";
+      match = ch === MATCH_START;
+    }
+    if (buf !== "") out.push({ text: buf, match });
+    return out;
+  }
+  function cleanQuery(raw) {
+    return raw.trim().slice(0, MAX_QUERY_CHARS);
+  }
+  function snippetNode(text) {
+    const span = el("span", "ch-hit__snippet");
+    for (const part of splitSnippet(text)) {
+      if (part.match) span.appendChild(el("mark", "", part.text));
+      else span.appendChild(document.createTextNode(part.text));
+    }
+    return span;
+  }
+  function hitRow(hit, S, send2, onOpenHit) {
+    const row = el("li", "ch-hit");
+    const btn = el("button", "ch-hit__btn");
+    btn.type = "button";
+    const top = el("div", "ch-hit__top");
+    const title = el("span", "ch-hit__title", hit.title.trim() === "" ? S.untitled : hit.title);
+    title.title = hit.title;
+    const tag = el("span", "ch-hit__tag", hit.messageId !== void 0 ? S.searchMessageHit : S.searchTitleHit);
+    top.append(title, tag);
+    btn.appendChild(top);
+    if (hit.snippet !== "") btn.appendChild(snippetNode(hit.snippet));
+    btn.addEventListener("click", () => {
+      const messageId = hit.messageId !== void 0 ? { messageId: hit.messageId } : {};
+      sendExtra(send2, { type: "openHit", conversationId: hit.conversationId, ...messageId });
+      onOpenHit();
+    });
+    row.appendChild(btn);
+    return row;
+  }
+  function createHistorySearch(send2, opts) {
+    const input = el("input", "ch-history__search");
+    input.type = "search";
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("spellcheck", "false");
+    const note = el("p", "ch-history__note");
+    const list = el("ul", "ch-history__list");
+    list.hidden = true;
+    note.hidden = true;
+    let timer2 = null;
+    let signature = "";
+    function cancel() {
+      if (timer2 !== null) window.clearTimeout(timer2);
+      timer2 = null;
+    }
+    input.addEventListener("input", () => {
+      cancel();
+      const query = cleanQuery(input.value);
+      opts.onChange();
+      if (query === "") return;
+      timer2 = window.setTimeout(() => {
+        timer2 = null;
+        sendExtra(send2, { type: "searchHistory", query });
+      }, DEBOUNCE_MS);
+    });
+    function renderHits(state, hits, query) {
+      const sig = `${state.lang}\0${query}\0${JSON.stringify(hits)}`;
+      if (sig === signature) return;
+      signature = sig;
+      list.replaceChildren(...hits.map((h) => hitRow(h, state.strings, send2, opts.onOpenHit)));
+    }
+    function update(state) {
+      const S = state.strings;
+      input.placeholder = S.searchPlaceholder;
+      input.setAttribute("aria-label", S.searchPlaceholder);
+      const query = cleanQuery(input.value);
+      if (query === "") {
+        note.hidden = true;
+        list.hidden = true;
+        signature = "";
+        list.replaceChildren();
+        return false;
+      }
+      const view = searchOf(state);
+      const answered = view.query === query;
+      note.hidden = false;
+      list.hidden = true;
+      if (answered && view.state === "error") {
+        note.textContent = S.searchFailed;
+      } else if (!answered || view.state !== "ready") {
+        note.textContent = S.searchSearching;
+      } else if (view.hits.length === 0) {
+        note.textContent = S.searchNone;
+      } else {
+        note.hidden = true;
+        list.hidden = false;
+        renderHits(state, view.hits, query);
+      }
+      return true;
+    }
+    function clear() {
+      cancel();
+      input.value = "";
+    }
+    return { input, note, list, update, clear };
   }
 
   // src/webview/chat/history.ts
@@ -294,6 +777,13 @@
   function createHistory(send2) {
     const root = el("section", "ch-history");
     root.hidden = true;
+    let last = null;
+    const search = createHistorySearch(send2, {
+      onOpenHit: () => toggle(false),
+      onChange: () => {
+        if (last) update(last);
+      }
+    });
     const head = el("div", "ch-history__head");
     const heading = el("h2", "ch-history__title");
     const refreshBtn = iconButton2(svg("0 0 24 24", "ch-icon", ICON_REFRESH), () => send2({ type: "refreshHistory" }));
@@ -301,7 +791,7 @@
     head.append(heading, refreshBtn, closeBtn);
     const note = el("p", "ch-history__note");
     const list = el("ul", "ch-history__list");
-    root.append(head, note, list);
+    root.append(head, search.input, search.note, search.list, note, list);
     function toggle(next) {
       const open = next ?? root.hidden;
       if (open === !root.hidden) return;
@@ -309,6 +799,8 @@
       if (open) {
         send2({ type: "refreshHistory" });
         closeBtn.focus();
+      } else {
+        search.clear();
       }
     }
     let signature = "";
@@ -326,6 +818,7 @@
         name.title = c.title;
         const meta = el("span", "ch-history__meta");
         meta.append(el("span", "ch-history__time", c.relative), el("span", `ch-chip ch-chip--${c.approvalMode}`, c.approvalLabel));
+        if (c.pinned) item.append(el("span", "ch-history__pin", "\u2605"));
         item.append(name, meta);
         item.addEventListener("click", () => {
           send2({ type: "openConversation", id: c.id });
@@ -336,16 +829,18 @@
       }
     }
     function update(state) {
+      last = state;
       const S = state.strings;
       heading.textContent = S.recentTitle;
       refreshBtn.title = S.refresh;
       refreshBtn.setAttribute("aria-label", S.refresh);
       closeBtn.title = S.close;
       closeBtn.setAttribute("aria-label", S.close);
+      const searching = search.update(state);
       renderList2(state);
       const empty = state.recent.length === 0;
-      list.hidden = empty;
-      note.hidden = !empty;
+      list.hidden = empty || searching;
+      note.hidden = searching || !empty;
       if (empty) {
         note.textContent = state.snapshot.conversationsState === "loading" ? S.loadingConversation : S.noHistory;
       }
@@ -353,35 +848,644 @@
     return { el: root, update, toggle };
   }
 
-  // src/webview/chat/pickers.ts
-  var MODES = ["manual", "auto", "full"];
-  var signatures = /* @__PURE__ */ new WeakMap();
-  function syncSelect(sel, options, value) {
-    const sig = JSON.stringify(options);
-    if (signatures.get(sel) !== sig) {
-      signatures.set(sel, sig);
-      sel.replaceChildren(
-        ...options.map((o) => {
-          const op = el("option", void 0, o.label);
-          op.value = o.value;
-          if (o.title) op.title = o.title;
-          if (o.disabled) op.disabled = true;
-          return op;
-        })
-      );
+  // src/protocol/chat-frames-v056d.ts
+  var EFFORT_LEVELS = ["off", "low", "medium", "high", "max"];
+  var MAX_SYSTEM_PROMPT = 2e4;
+
+  // src/webview/chat/pop.ts
+  var MARGIN = 8;
+  function createPop(trigger, cls, onOpen, opts = {}) {
+    const panel = el("div", `cm-pop ${cls}`);
+    panel.hidden = true;
+    panel.setAttribute("role", "dialog");
+    let opened = false;
+    function place2() {
+      const r = trigger.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth;
+      const width = Math.min(panel.offsetWidth || 280, vw - MARGIN * 2);
+      panel.style.setProperty("left", `${Math.max(MARGIN, Math.min(r.left, vw - width - MARGIN))}px`);
+      if (opts.below) {
+        const room = window.innerHeight - r.bottom - MARGIN - 6;
+        panel.style.setProperty("top", `${r.bottom + 6}px`);
+        panel.style.setProperty("bottom", "auto");
+        panel.style.setProperty("max-height", `${Math.max(120, Math.min(room, opts.maxHeight ?? room))}px`);
+        return;
+      }
+      panel.style.setProperty("bottom", `${window.innerHeight - r.top + 6}px`);
+      panel.style.setProperty("max-height", `${Math.max(120, r.top - MARGIN - 6)}px`);
     }
-    if (document.activeElement !== sel && sel.value !== value) sel.value = value;
+    function onDown(e) {
+      const t = e.target;
+      if (t && (panel.contains(t) || trigger.contains(t))) return;
+      close();
+    }
+    function onKey(e) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close();
+        trigger.focus();
+      }
+    }
+    function open() {
+      if (opened) return;
+      opened = true;
+      if (!panel.isConnected) (opts.container ?? document.body).appendChild(panel);
+      panel.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      onOpen();
+      place2();
+      document.addEventListener("pointerdown", onDown, true);
+      document.addEventListener("keydown", onKey, true);
+      window.addEventListener("resize", close);
+    }
+    function close() {
+      if (!opened) return;
+      opened = false;
+      panel.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("resize", close);
+    }
+    trigger.setAttribute("aria-haspopup", "dialog");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.addEventListener("click", () => opened ? close() : open());
+    return { panel, open, close, isOpen: () => opened };
   }
+  function rowNavigation(root, e) {
+    const rows = Array.from(root.querySelectorAll(".cm-pop__row:not([disabled])"));
+    if (rows.length === 0) return;
+    const i = rows.indexOf(document.activeElement);
+    let next = -1;
+    if (e.key === "ArrowDown") next = i < 0 ? 0 : Math.min(rows.length - 1, i + 1);
+    else if (e.key === "ArrowUp") next = i <= 0 ? 0 : i - 1;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = rows.length - 1;
+    if (next < 0) return;
+    e.preventDefault();
+    rows[next].focus();
+  }
+
+  // src/webview/chat/effortChip.ts
+  function effortLabel(level, S) {
+    switch (level) {
+      case "off":
+        return S.csEffortOff;
+      case "low":
+        return S.csEffortLow;
+      case "medium":
+        return S.csEffortMedium;
+      case "high":
+        return S.csEffortHigh;
+      case "max":
+        return S.csEffortMax;
+      default:
+        return S.csEffortDefault;
+    }
+  }
+  var EFFORT_CHOICES = [null, ...EFFORT_LEVELS];
+  function createEffortChip(send2) {
+    const btn = el("button", "ch-pill ch-effort-btn");
+    btn.type = "button";
+    const label = el("span", "ch-pill__text");
+    btn.appendChild(label);
+    const pop = createPop(btn, "cm-pop--effort", () => render2());
+    const list = el("div", "cm-pop__list");
+    list.setAttribute("role", "listbox");
+    pop.panel.append(list);
+    let last = null;
+    function choose(level) {
+      sendExtra(send2, { type: "setEffort", effort: level });
+      pop.close();
+      btn.focus();
+    }
+    function render2() {
+      if (!last) return;
+      const S = last.strings;
+      const current2 = settingsOf(last).value?.effort ?? null;
+      const rows = EFFORT_CHOICES.map((level) => {
+        const selected = level === current2;
+        const b = el("button", "cm-pop__row");
+        b.type = "button";
+        b.setAttribute("role", "option");
+        b.setAttribute("aria-selected", String(selected));
+        b.classList.toggle("cm-pop__row--on", selected);
+        b.appendChild(el("span", "cm-pop__name", effortLabel(level, S)));
+        b.addEventListener("click", () => choose(level));
+        return b;
+      });
+      list.replaceChildren(...rows);
+    }
+    pop.panel.addEventListener("keydown", (e) => rowNavigation(pop.panel, e));
+    return {
+      el: btn,
+      update(state) {
+        last = state;
+        const S = state.strings;
+        const effort = settingsOf(state).value?.effort ?? null;
+        label.textContent = effortLabel(effort, S);
+        btn.classList.toggle("ch-effort-btn--set", effort !== null);
+        setTip(btn, S.effortChipTip);
+        btn.disabled = !state.chatEnabled || state.snapshot.conversationId === null;
+        btn.setAttribute("aria-haspopup", "dialog");
+        if (pop.isOpen()) render2();
+      }
+    };
+  }
+
+  // src/webview/chat/settingsPanel.ts
+  var ICON_CLOSE2 = [["path", { d: "M6 6l12 12M18 6L6 18" }]];
+  var MODES = ["append", "replace"];
+  function draftOf(value) {
+    return { systemPrompt: value?.systemPrompt ?? "", systemMode: value?.systemMode ?? "append", effort: value?.effort ?? null };
+  }
+  function createSettingsPanel(send2, opts) {
+    const root = el("section", "ch-cs");
+    root.hidden = true;
+    root.setAttribute("role", "dialog");
+    const head = el("div", "ch-cs__head");
+    const title = el("h2", "ch-cs__title");
+    title.id = "ch-cs-title";
+    root.setAttribute("aria-labelledby", title.id);
+    const closeBtn = el("button", "ch-iconbtn");
+    closeBtn.type = "button";
+    closeBtn.appendChild(svg("0 0 24 24", "ch-icon", ICON_CLOSE2));
+    closeBtn.addEventListener("click", () => toggle(false));
+    head.append(title, closeBtn);
+    const body = el("div", "ch-cs__body");
+    const promptField = el("div", "ch-cs__field");
+    const promptLabel = el("label", "ch-cs__label");
+    const text = el("textarea", "ch-cs__text");
+    text.id = "ch-cs-prompt";
+    promptLabel.htmlFor = text.id;
+    text.maxLength = MAX_SYSTEM_PROMPT;
+    text.spellcheck = false;
+    const hint = el("p", "ch-cs__hint");
+    promptField.append(promptLabel, text, hint);
+    const modes = el("div", "ch-cs__modes");
+    modes.setAttribute("role", "radiogroup");
+    const modeInputs = /* @__PURE__ */ new Map();
+    for (const mode of MODES) {
+      const lab = el("label", "ch-cs__radio");
+      const input = el("input");
+      input.type = "radio";
+      input.name = "ch-cs-mode";
+      const span = el("span");
+      lab.append(input, span);
+      modes.appendChild(lab);
+      modeInputs.set(mode, { input, text: span });
+      input.addEventListener("change", () => {
+        if (input.checked) draft.systemMode = mode;
+      });
+    }
+    const effortField = el("div", "ch-cs__field");
+    const effortLabelEl = el("div", "ch-cs__label");
+    effortLabelEl.id = "ch-cs-effort-label";
+    const efforts = el("div", "ch-cs__efforts");
+    efforts.setAttribute("role", "group");
+    efforts.setAttribute("aria-labelledby", effortLabelEl.id);
+    const effortBtns = EFFORT_CHOICES.map((choice) => {
+      const b = el("button", "ch-cs__eff");
+      b.type = "button";
+      b.addEventListener("click", () => {
+        draft.effort = choice;
+        renderDraft();
+      });
+      efforts.appendChild(b);
+      return { choice, btn: b };
+    });
+    effortField.append(effortLabelEl, efforts);
+    body.append(promptField, modes, effortField);
+    const controls = [
+      text,
+      ...Array.from(modeInputs.values(), (m) => m.input),
+      ...effortBtns.map((x) => x.btn)
+    ];
+    const foot = el("div", "ch-cs__foot");
+    const cancelBtn = button("", "ch-cs__btn", () => toggle(false));
+    const saveBtn = button("", "ch-cs__btn ch-cs__btn--primary", () => save());
+    foot.append(cancelBtn, saveBtn);
+    root.append(head, body, foot);
+    let last = null;
+    let draft = draftOf(null);
+    let loadedSig = "";
+    const sigOf = (state) => `${settingsOf(state).state}\0${JSON.stringify(settingsOf(state).value)}\0${state.snapshot.conversationId ?? ""}`;
+    function renderDraft() {
+      if (text.value !== draft.systemPrompt) text.value = draft.systemPrompt;
+      for (const [mode, { input }] of modeInputs) input.checked = mode === draft.systemMode;
+      for (const { choice, btn } of effortBtns) {
+        const on = choice === draft.effort;
+        btn.classList.toggle("ch-cs__eff--on", on);
+        btn.setAttribute("aria-pressed", String(on));
+      }
+    }
+    function save() {
+      if (saveBtn.disabled) return;
+      sendExtra(send2, {
+        type: "saveSettings",
+        systemPrompt: draft.systemPrompt,
+        systemMode: draft.systemMode,
+        effort: draft.effort
+      });
+      toggle(false);
+    }
+    function toggle(next) {
+      const open = next ?? root.hidden;
+      if (open === !root.hidden) return;
+      if (!open) {
+        root.hidden = true;
+        return;
+      }
+      if (!last) return;
+      if (last.snapshot.conversationId === null) {
+        opts.toast(last.strings.csNeedConversation);
+        return;
+      }
+      draft = draftOf(settingsOf(last).value);
+      loadedSig = sigOf(last);
+      root.hidden = false;
+      renderDraft();
+      sendExtra(send2, { type: "requestSettings" });
+      text.focus();
+    }
+    text.addEventListener("input", () => {
+      draft.systemPrompt = text.value;
+    });
+    return {
+      el: root,
+      toggle,
+      update(state) {
+        last = state;
+        const S = state.strings;
+        const view = settingsOf(state);
+        const loading = view.state === "loading";
+        const failed = view.state === "error";
+        title.textContent = S.csTitle;
+        setTip(closeBtn, S.close);
+        promptLabel.textContent = S.csSystemPrompt;
+        hint.textContent = loading ? S.csLoading : failed ? S.csFailed : S.csSystemHint;
+        text.placeholder = S.csSystemHint;
+        for (const mode of MODES) {
+          const m = modeInputs.get(mode);
+          if (m) m.text.textContent = mode === "append" ? S.csModeAppend : S.csModeReplace;
+        }
+        effortLabelEl.textContent = S.csEffort;
+        for (const { choice, btn } of effortBtns) btn.textContent = effortLabel(choice, S);
+        cancelBtn.textContent = S.csCancel;
+        saveBtn.textContent = S.csSave;
+        saveBtn.disabled = loading || view.value === null;
+        for (const c of controls) c.disabled = loading;
+        const sig = sigOf(state);
+        if (sig === loadedSig) return;
+        loadedSig = sig;
+        if (root.hidden) return;
+        if (state.snapshot.conversationId === null) toggle(false);
+        else {
+          draft = draftOf(view.value);
+          renderDraft();
+        }
+      }
+    };
+  }
+
+  // src/webview/chat/checkpointModel.ts
+  var CP_MAX_ROWS = 50;
+  function pad2(n) {
+    return n < 10 ? `0${n}` : String(n);
+  }
+  function formatCpTime(ts, now) {
+    const d = new Date(ts);
+    const n = new Date(now);
+    const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    const today = d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+    return today ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+  }
+  function buildCheckpointRow(item, ctx, S) {
+    const restoring = ctx.restoring === item.id;
+    const busy = ctx.busy;
+    let restoreTip = null;
+    if (!item.restorable) restoreTip = S.cpUnavailable;
+    else if (busy) restoreTip = S.cpBusy;
+    return {
+      id: item.id,
+      time: formatCpTime(item.createdAt, ctx.now),
+      dirty: item.dirty,
+      prompt: item.prompt,
+      files: item.files > 0 ? S.cpFiles.replace("{n}", String(item.files)) : S.cpNoChange,
+      restorable: item.restorable,
+      restoreLabel: restoring ? S.cpRestoring : S.cpRestore,
+      restoring,
+      restoreOff: !item.restorable || busy || ctx.restoring !== null,
+      restoreTip
+    };
+  }
+  function buildCheckpointRows(items, ctx, S) {
+    return items.slice(0, CP_MAX_ROWS).map((item) => buildCheckpointRow(item, ctx, S));
+  }
+
+  // src/webview/chat/v056eTypes.ts
+  var EMPTY_VIEW = { checkpoints: { state: "idle", items: [], restoring: null, error: null } };
+  function viewOf(state) {
+    return state.v056e ?? EMPTY_VIEW;
+  }
+  function stringsOf(state) {
+    return state.strings;
+  }
+  function sendV056e(send2, msg) {
+    send2(msg);
+  }
+
+  // src/webview/chat/checkpoints.ts
+  var PANEL_MAX_PX = 320;
+  var ICON_RESTORE = [
+    ["path", { d: "M4 12a8 8 0 1 0 2.4-5.7" }],
+    ["path", { d: "M4 4v4.5h4.5" }]
+  ];
+  function renderRow(row, S, send2) {
+    const li = el("li", "cm-cp__row");
+    li.classList.toggle("cm-cp__row--dim", !row.restorable);
+    li.classList.toggle("is-restoring", row.restoring);
+    const when = el("span", "cm-cp__when");
+    when.append(el("span", "cm-cp__time", row.time));
+    if (row.dirty) when.append(el("span", "cm-cp__dirty", S.cpDirty));
+    const prompt = el("span", "cm-cp__prompt", row.prompt);
+    if (row.prompt !== "") setTip(prompt, row.prompt);
+    const files = el("span", "cm-cp__files", row.files);
+    const restore = button(row.restoreLabel, "cm-cp__restore", () => {
+      if (restore.getAttribute("aria-disabled") !== "true") sendV056e(send2, { type: "restoreCheckpoint", checkpointId: row.id });
+    });
+    restore.setAttribute("aria-disabled", String(row.restoreOff));
+    if (row.restoreTip !== null) setTip(restore, row.restoreTip);
+    else restore.removeAttribute("data-tip");
+    li.append(when, prompt, files, restore);
+    return li;
+  }
+  function createCheckpoints(send2, container) {
+    const trigger = el("button", "ch-iconbtn");
+    trigger.type = "button";
+    trigger.appendChild(svg("0 0 24 24", "ch-icon", ICON_RESTORE));
+    const pop = createPop(trigger, "cm-pop--cp", () => sendV056e(send2, { type: "requestCheckpoints" }), {
+      below: true,
+      maxHeight: PANEL_MAX_PX,
+      container
+    });
+    const head = el("div", "cm-cp__head");
+    const title = el("h2", "cm-cp__title");
+    const hint = el("p", "cm-cp__hint");
+    head.append(title, hint);
+    const statusText = el("p", "cm-cp__status");
+    const reload = button("", "cm-btn cm-cp__reload", () => sendV056e(send2, { type: "requestCheckpoints" }));
+    const list = el("ul", "cm-cp__list");
+    list.setAttribute("role", "list");
+    pop.panel.append(head, statusText, reload, list);
+    let signature = "";
+    function renderBody(state, S) {
+      const view = viewOf(state).checkpoints;
+      const busy = state.snapshot.running || state.snapshot.sending;
+      const sig = `${state.lang}\0${busy ? 1 : 0}\0${JSON.stringify(view)}`;
+      if (sig === signature) return;
+      signature = sig;
+      const rows = view.state === "ready" ? buildCheckpointRows(view.items, { now: Date.now(), busy, restoring: view.restoring }, S) : [];
+      const showList = view.state === "ready" && rows.length > 0;
+      list.replaceChildren(...rows.map((row) => renderRow(row, S, send2)));
+      list.hidden = !showList;
+      const error = view.state === "error";
+      statusText.hidden = showList;
+      statusText.textContent = error ? S.cpError : view.state === "ready" ? S.cpEmpty : S.cpLoading;
+      reload.hidden = !error;
+      reload.textContent = S.cpReload;
+    }
+    let conversation = void 0;
+    return {
+      button: trigger,
+      el: pop.panel,
+      update(state) {
+        const S = stringsOf(state);
+        setTip(trigger, S.cpButtonTip);
+        title.textContent = S.cpTitle;
+        hint.textContent = S.cpHint;
+        const id = state.snapshot.conversationId;
+        if (id !== conversation) {
+          conversation = id;
+          if (pop.isOpen()) sendV056e(send2, { type: "requestCheckpoints" });
+        }
+        renderBody(state, S);
+      },
+      close: pop.close
+    };
+  }
+
+  // src/webview/chat/devicePop.ts
   function basename(path) {
     const parts = path.split(/[\\/]/).filter((p) => p !== "");
     return parts[parts.length - 1] ?? path;
   }
+  function pinnedFirst(items, key, pinned) {
+    const rank = (t) => {
+      const i = pinned.indexOf(key(t));
+      return i < 0 ? pinned.length : i;
+    };
+    return items.map((t, i) => ({ t, i })).sort((a, b) => rank(a.t) - rank(b.t) || a.i - b.i).map((x) => x.t);
+  }
+  function starIcon(on) {
+    return svg("0 0 24 24", "cm-star", [
+      ["path", { d: "M12 3.5l2.7 5.6 6.1.8-4.5 4.2 1.1 6-5.4-3-5.4 3 1.1-6L3.2 9.9l6.1-.8z", fill: on ? "currentColor" : "none", stroke: "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }]
+    ]);
+  }
+  function createDevicePicker(send2) {
+    const btn = el("button", "ch-pill ch-folder-btn");
+    btn.type = "button";
+    const label = el("span", "ch-pill__text");
+    btn.append(logoMark("oc-logo ch-pill__logo"), label);
+    const pop = createPop(btn, "cm-pop--device", () => {
+      send2({ type: "requestDevices" });
+      render2();
+      pop.panel.querySelector(".cm-pop__row:not([disabled])")?.focus();
+    });
+    let last = null;
+    function star(state, kind, key, on) {
+      const s = el("button", "cm-pop__star");
+      s.type = "button";
+      const tip = on ? state.strings.folderUnpin : state.strings.folderPin;
+      s.setAttribute("aria-label", tip);
+      s.setAttribute("aria-pressed", String(on));
+      s.dataset.tip = tip;
+      s.classList.toggle("cm-pop__star--on", on);
+      s.appendChild(starIcon(on));
+      s.addEventListener("click", (e) => {
+        e.stopPropagation();
+        send2({ type: "toggleFavorite", kind, key });
+      });
+      return s;
+    }
+    function folderRow(state, path, isOpen, pinned) {
+      const wrap = el("div", "cm-pop__line");
+      const b = el("button", "cm-pop__row");
+      b.type = "button";
+      b.title = path;
+      b.disabled = !isOpen;
+      const current2 = isOpen && path === state.snapshot.cwd;
+      b.classList.toggle("cm-pop__row--on", current2);
+      b.append(el("span", "cm-pop__name", basename(path)), el("span", "cm-pop__tag cm-pop__tag--dim", isOpen ? path : state.strings.folderNotOpen));
+      b.addEventListener("click", () => {
+        send2({ type: "setCwd", cwd: path });
+        pop.close();
+        btn.focus();
+      });
+      wrap.append(b, star(state, "folder", path, pinned));
+      return wrap;
+    }
+    function render2() {
+      if (!last) return;
+      const state = last;
+      const S = state.strings;
+      const snap = state.snapshot;
+      const fav = state.extras.favorites;
+      const out = [];
+      out.push(el("div", "cm-pop__group", S.deviceThis));
+      const open = pinnedFirst(snap.cwds, (c) => c, fav.folders);
+      for (const c of open) out.push(folderRow(state, c, true, fav.folders.includes(c)));
+      const pinnedClosed = fav.folders.filter((f) => !snap.cwds.includes(f));
+      if (pinnedClosed.length > 0) {
+        out.push(el("div", "cm-pop__group", S.folderPinned));
+        for (const f of pinnedClosed) out.push(folderRow(state, f, false, true));
+      }
+      if (open.length === 0 && pinnedClosed.length === 0) out.push(el("div", "cm-pop__empty", S.folderNone));
+      out.push(el("div", "cm-pop__group", S.deviceOthers));
+      const dev = state.extras.devices;
+      if (dev.state === "loading") out.push(el("div", "cm-pop__empty", S.deviceLoading));
+      else if (dev.state === "error") out.push(el("div", "cm-pop__empty", S.deviceError));
+      else {
+        const others = pinnedFirst(dev.items.filter((d) => !d.self), (d) => d.name, fav.devices);
+        for (const d of others) {
+          const wrap = el("div", "cm-pop__line");
+          const b = el("button", "cm-pop__row");
+          b.type = "button";
+          b.disabled = true;
+          b.title = d.workspaces.join("\n");
+          const dot = el("span", `cm-pop__dot${d.online ? " cm-pop__dot--on" : ""}`);
+          b.append(dot, el("span", "cm-pop__name", d.name), el("span", "cm-pop__tag cm-pop__tag--dim", d.kind === "vscode" ? "VS Code" : "DSH"));
+          wrap.append(b, star(state, "device", d.name, fav.devices.includes(d.name)));
+          out.push(wrap);
+        }
+        out.push(el("div", "cm-pop__note", S.deviceOtherHint));
+      }
+      pop.panel.replaceChildren(...out);
+    }
+    pop.panel.addEventListener("keydown", (e) => rowNavigation(pop.panel, e));
+    return {
+      el: btn,
+      update(state) {
+        last = state;
+        label.textContent = state.snapshot.cwd ? basename(state.snapshot.cwd) : state.strings.deviceLabel;
+        btn.setAttribute("aria-label", state.strings.deviceLabel);
+        btn.dataset.tip = state.snapshot.cwd ?? state.strings.deviceLabel;
+        btn.disabled = !state.chatEnabled;
+        if (pop.isOpen()) render2();
+      }
+    };
+  }
+
+  // src/webview/chat/modelPop.ts
+  function groupModels(models, query) {
+    const q = query.trim().toLowerCase();
+    const out = [];
+    for (const m of models) {
+      if (q !== "" && !m.label.toLowerCase().includes(q) && !m.provider.toLowerCase().includes(q)) continue;
+      let g = out.find((x) => x.provider === m.provider);
+      if (!g) out.push(g = { provider: m.provider, items: [] });
+      g.items.push(m);
+    }
+    return out;
+  }
+  function ctxK(n) {
+    return String(n >= 1e3 ? Math.round(n / 1024) : n);
+  }
+  function createModelPicker(send2) {
+    const btn = el("button", "ch-pill ch-model-btn");
+    btn.type = "button";
+    const label = el("span", "ch-pill__text");
+    btn.appendChild(label);
+    const pop = createPop(btn, "cm-pop--model", () => {
+      search.value = "";
+      render2();
+      search.focus();
+    });
+    const search = el("input", "cm-pop__search");
+    search.type = "search";
+    search.setAttribute("autocomplete", "off");
+    const list = el("div", "cm-pop__list");
+    list.setAttribute("role", "listbox");
+    pop.panel.append(search, list);
+    let last = null;
+    function choose(ref) {
+      send2({ type: "setModel", ref });
+      pop.close();
+      btn.focus();
+    }
+    function row(m, state, selected) {
+      const S = state.strings;
+      const b = el("button", "cm-pop__row");
+      b.type = "button";
+      b.setAttribute("role", "option");
+      b.setAttribute("aria-selected", String(selected));
+      b.classList.toggle("cm-pop__row--on", selected);
+      const name = el("span", "cm-pop__name", m ? m.label : S.defaultModel);
+      b.appendChild(name);
+      if (m) {
+        if (m.vision === "yes") b.appendChild(el("span", "cm-pop__tag", S.modelVision));
+        if (m.contextLength && m.contextLength > 0) b.appendChild(el("span", "cm-pop__tag cm-pop__tag--dim", S.modelCtx.replace("{n}", ctxK(m.contextLength))));
+      } else if (state.snapshot.defaultModel) {
+        b.appendChild(el("span", "cm-pop__tag cm-pop__tag--dim", state.snapshot.defaultModel));
+      }
+      b.addEventListener("click", () => choose(m ? m.ref : null));
+      return b;
+    }
+    function render2() {
+      if (!last) return;
+      const state = last;
+      const snap = state.snapshot;
+      search.placeholder = state.strings.modelSearch;
+      search.setAttribute("aria-label", state.strings.modelSearch);
+      const current2 = snap.model ?? (snap.defaultModel !== null ? null : snap.effectiveModel);
+      const rows = [];
+      if (snap.defaultModel !== null && search.value.trim() === "") rows.push(row(null, state, current2 === null));
+      for (const g of groupModels(snap.models, search.value)) {
+        rows.push(el("div", "cm-pop__group", g.provider || "\u2014"));
+        for (const m of g.items) rows.push(row(m, state, m.ref === current2));
+      }
+      if (rows.length === 0) rows.push(el("div", "cm-pop__empty", state.strings.modelNone));
+      list.replaceChildren(...rows);
+    }
+    search.addEventListener("input", render2);
+    pop.panel.addEventListener("keydown", (e) => {
+      if (e.target === search && e.key !== "ArrowDown" && e.key !== "Escape") return;
+      rowNavigation(pop.panel, e);
+    });
+    return {
+      el: btn,
+      open: pop.open,
+      update(state) {
+        last = state;
+        const snap = state.snapshot;
+        const cur = snap.models.find((m) => m.ref === (snap.model ?? snap.effectiveModel));
+        label.textContent = cur ? cur.label : snap.defaultModel ?? state.strings.selectModel;
+        btn.setAttribute("aria-label", state.strings.modelLabel);
+        btn.dataset.tip = state.strings.modelLabel;
+        btn.disabled = snap.models.length === 0 || !state.chatEnabled;
+        if (pop.isOpen()) render2();
+      }
+    };
+  }
+
+  // src/webview/chat/pickers.ts
+  var MODES2 = ["manual", "auto", "full"];
+  var SEARCH_MODES = ["off", "smart", "always"];
   function createPickers(send2) {
     const root = el("div", "ch-pickers");
-    const folder = el("select", "ch-select ch-folder");
-    folder.addEventListener("change", () => send2({ type: "setCwd", cwd: folder.value }));
-    const model = el("select", "ch-select ch-model");
-    model.addEventListener("change", () => send2({ type: "setModel", ref: model.value === "" ? null : model.value }));
+    const device = createDevicePicker(send2);
+    const model = createModelPicker(send2);
+    const effort = createEffortChip(send2);
     const seg = el("div", "ch-seg");
     seg.setAttribute("role", "radiogroup");
     const segOpts = /* @__PURE__ */ new Map();
@@ -389,7 +1493,7 @@
     function choose(mode) {
       if (mode !== currentMode) send2({ type: "setApprovalMode", mode });
     }
-    for (const mode of MODES) {
+    for (const mode of MODES2) {
       const b = el("button", "ch-seg__opt");
       b.type = "button";
       b.setAttribute("role", "radio");
@@ -401,36 +1505,37 @@
       const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
       if (step === 0) return;
       e.preventDefault();
-      const next = MODES[(MODES.indexOf(currentMode) + step + MODES.length) % MODES.length];
+      const next = MODES2[(MODES2.indexOf(currentMode) + step + MODES2.length) % MODES2.length];
       segOpts.get(next)?.focus();
       choose(next);
     });
-    root.append(folder, model, seg);
+    const searchWrap = el("div", "ch-search");
+    const searchLabel = el("span", "ch-search__label");
+    const searchSeg = el("div", "ch-seg ch-seg--search");
+    searchSeg.setAttribute("role", "radiogroup");
+    const searchOpts = /* @__PURE__ */ new Map();
+    let currentSearch = "smart";
+    for (const mode of SEARCH_MODES) {
+      const b = el("button", "ch-seg__opt");
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.addEventListener("click", () => {
+        if (mode !== currentSearch) send2({ type: "setSearchMode", mode });
+      });
+      searchOpts.set(mode, b);
+      searchSeg.appendChild(b);
+    }
+    searchWrap.append(searchLabel, searchSeg);
+    root.append(device.el, model.el, effort.el, seg, searchWrap);
     function update(state) {
       const S = state.strings;
       const snap = state.snapshot;
-      folder.hidden = snap.cwds.length < 2;
-      folder.title = S.folder;
-      folder.setAttribute("aria-label", S.folder);
-      folder.disabled = !state.chatEnabled;
-      syncSelect(
-        folder,
-        snap.cwds.map((c) => ({ value: c, label: basename(c), title: c })),
-        snap.cwd ?? ""
-      );
-      const noModels = snap.models.length === 0;
-      const modelOptions = noModels ? [{ value: "", label: snap.defaultModel ?? S.selectModel, disabled: true }] : [
-        ...snap.defaultModel !== null ? [{ value: "", label: S.defaultModel }] : [],
-        ...snap.models.map((m) => ({ value: m.ref, label: m.provider ? `${m.label} (${m.provider})` : m.label }))
-      ];
-      model.title = S.modelLabel;
-      model.setAttribute("aria-label", S.modelLabel);
-      model.disabled = noModels || !state.chatEnabled;
-      const modelValue = noModels ? "" : snap.model ?? (snap.defaultModel !== null ? "" : snap.effectiveModel ?? "");
-      syncSelect(model, modelOptions, modelValue);
+      device.update(state);
+      model.update(state);
+      effort.update(state);
       currentMode = snap.approvalMode;
       seg.setAttribute("aria-label", S.modeLabel);
-      for (const mode of MODES) {
+      for (const mode of MODES2) {
         const b = segOpts.get(mode);
         if (!b) continue;
         const on = mode === currentMode;
@@ -443,11 +1548,38 @@
         b.disabled = !state.chatEnabled;
       }
       seg.classList.toggle("ch-seg--disabled", !state.chatEnabled);
+      currentSearch = snap.searchMode ?? "smart";
+      searchLabel.textContent = S.searchLabel;
+      searchSeg.setAttribute("aria-label", S.searchLabel);
+      for (const mode of SEARCH_MODES) {
+        const b = searchOpts.get(mode);
+        if (!b) continue;
+        const on = mode === currentSearch;
+        b.textContent = mode === "off" ? S.searchOff : mode === "always" ? S.searchAlways : S.searchSmart;
+        b.title = S.searchHint;
+        b.setAttribute("aria-checked", String(on));
+        b.tabIndex = on ? 0 : -1;
+        b.disabled = !state.chatEnabled;
+      }
+      searchSeg.classList.toggle("ch-seg--disabled", !state.chatEnabled);
     }
-    return { el: root, update };
+    return { el: root, update, openModel: model.open };
   }
 
   // ../app/src/components/markdownParse.ts
+  var ARTIFACT_LINE_RE = /^\s*artifact\s+type\s*=/i;
+  function artifactCloseIndex(lines, from, fence) {
+    let nested = false;
+    for (let j = from; j < lines.length; j++) {
+      const c = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(lines[j]);
+      if (!c || c[1][0] !== fence[0] || c[1].length < fence.length) continue;
+      if (c[2].trim() === "") {
+        if (nested) nested = false;
+        else return j;
+      } else if (!nested && c[1].length === fence.length) nested = true;
+    }
+    return -1;
+  }
   var FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
   var CLOSE_FENCE_RE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
   var HEADING_RE = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
@@ -504,11 +1636,23 @@
       m = FENCE_RE.exec(line);
       if (m && !(m[1][0] === "`" && m[2].includes("`"))) {
         const fence = m[1];
-        const lang = (m[2].trim().split(/\s+/)[0] || "").toLowerCase();
+        let lang = (m[2].trim().split(/\s+/)[0] || "").toLowerCase();
+        let info = m[2].trim();
         const body = [];
         let j2 = i + 1;
         let closed = false;
-        for (; j2 < lines.length; j2++) {
+        if (lang !== "artifact" && ARTIFACT_LINE_RE.test(lines[j2] ?? "")) {
+          lang = "artifact";
+          info = lines[j2].trim();
+          j2++;
+        }
+        if (lang === "artifact") {
+          const from = j2;
+          const e = artifactCloseIndex(lines, from, fence);
+          closed = e >= 0;
+          j2 = closed ? e : lines.length;
+          body.push(...lines.slice(from, j2));
+        } else for (; j2 < lines.length; j2++) {
           const c = CLOSE_FENCE_RE.exec(lines[j2]);
           if (c && c[1][0] === fence[0] && c[1].length >= fence.length) {
             closed = true;
@@ -516,8 +1660,8 @@
           }
           body.push(lines[j2]);
         }
-        if (!closed && streaming) out.push({ k: "raw", text: lines.slice(i).join("\n") });
-        else out.push({ k: "code", lang, info: m[2].trim(), body: body.join("\n") });
+        if (!closed && streaming && lang !== "artifact") out.push({ k: "raw", text: lines.slice(i).join("\n") });
+        else out.push(closed ? { k: "code", lang, info, body: body.join("\n") } : { k: "code", lang, info, body: body.join("\n"), open: true });
         i = closed ? j2 + 1 : lines.length;
         continue;
       }
@@ -1066,6 +2210,8 @@
   var CODE_LABEL_MAX = 32;
   var SAFE_SCHEMES = /* @__PURE__ */ new Set(["http:", "https:", "vscode:"]);
   var ALIGNS = /* @__PURE__ */ new Set(["left", "center", "right"]);
+  var COPY_PATH = "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z";
+  var CHECK_PATH = "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z";
   var ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ESC[c]);
@@ -1174,7 +2320,7 @@
     } else {
       inner = tokensHtml(safeTokenize(src, rawLang));
     }
-    return `<div class="oc-code"><div class="oc-code__bar"><span class="oc-code__lang">${escapeHtml(label)}</span><button type="button" class="oc-code__copy" data-oc-copy>${escapeHtml(ctx.copyLabel)}</button></div><pre class="oc-code__pre"><code>${inner}</code></pre></div>`;
+    return `<div class="oc-code"><div class="oc-code__bar"><span class="oc-code__lang">${escapeHtml(label)}</span><button type="button" class="oc-code__copy" data-oc-copy aria-label="${escapeHtml(ctx.copyLabel)}" title="${escapeHtml(ctx.copyLabel)}"><svg class="oc-ico oc-ico--copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${COPY_PATH}"/></svg><svg class="oc-ico oc-ico--check" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${CHECK_PATH}"/></svg></button></div><pre class="oc-code__pre"><code>${inner}</code></pre></div>`;
   }
   function safeTokenize(src, lang) {
     try {
@@ -1200,9 +2346,16 @@
       }
       if (!it || typeof it !== "object") continue;
       switch (it.type) {
-        case "code":
-          out += `<code class="oc-md-code">${escapeHtml(it.text)}</code>`;
+        case "code": {
+          const ref = detectPath(it.text);
+          if (ref === null) {
+            out += `<code class="oc-md-code">${escapeHtml(it.text)}</code>`;
+          } else {
+            const line = ref.line === void 0 ? "" : ` data-oc-line="${ref.line}"`;
+            out += `<code class="oc-md-code oc-md-path" data-oc-path="${escapeHtml(ref.path)}"${line} role="link" tabindex="0">${escapeHtml(it.text)}</code>`;
+          }
           break;
+        }
         case "bold":
           out += `<strong>${inlineHtml(it.children)}</strong>`;
           break;
@@ -1255,67 +2408,286 @@
     return escapeHtml(String(text ?? "").replace(/\r\n?/g, "\n")).replace(/\n/g, "<br>");
   }
 
-  // src/webview/chat/messages.ts
-  var NEAR_BOTTOM_PX = 60;
-  var COPY_FEEDBACK_MS = 1500;
-  function keyOf(item, index) {
-    return `${item.kind}:${item.id ?? `#${index}`}`;
+  // src/webview/chat/messageActions.ts
+  function sendAction(send2, msg) {
+    send2(msg);
   }
-  function createUserRow() {
-    const row = el("div", "cm-row cm-row--user");
-    const bubble = el("div", "cm-msg cm-msg--user");
-    row.appendChild(bubble);
-    let text = null;
+  function appendDraft(existing, text) {
+    if (existing.trim() === "") return text;
+    return `${existing}
+${text}`;
+  }
+  function lastAssistant(items) {
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].kind === "assistant") return items[i];
+    }
+    return null;
+  }
+  var FINISHED = /* @__PURE__ */ new Set(["done", "error", "stopped"]);
+  function canRegenerate(items, itemId, busy) {
+    if (busy) return false;
+    const last = lastAssistant(items);
+    if (!last || last.id !== itemId) return false;
+    return FINISHED.has(last.status ?? "");
+  }
+
+  // src/webview/chat/editLast.ts
+  function lastUserItemId(items) {
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].kind === "user") return items[i].id ?? null;
+    }
+    return null;
+  }
+  function canEditItem(items, itemId, busy) {
+    if (busy || itemId === "") return false;
+    return lastUserItemId(items) === itemId;
+  }
+  function createEditLast(onCancel) {
+    const root = el("div", "cm-edit-banner");
+    root.setAttribute("role", "status");
+    root.hidden = true;
+    const text = el("span", "cm-edit-banner__text");
+    const cancel = button("", "cm-edit-banner__cancel", () => {
+      end();
+      onCancel();
+    });
+    root.append(text, cancel);
+    let on = false;
+    function begin() {
+      on = true;
+      root.hidden = false;
+    }
+    function end() {
+      if (!on) return;
+      on = false;
+      root.hidden = true;
+    }
     return {
-      el: row,
-      update(item) {
-        if (item.kind !== "user" || item.text === text) return;
-        text = item.text;
-        bubble.innerHTML = plainToHtml(item.text);
+      el: root,
+      active: () => on,
+      begin,
+      end,
+      update(S) {
+        text.textContent = S.editBannerText;
+        cancel.textContent = S.editCancel;
       }
     };
   }
-  function createAssistantRow(send2) {
+
+  // src/webview/chat/sources.ts
+  var SOURCES_MAX = 8;
+  function isHttpUrl(url) {
+    try {
+      const u = new URL(url);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+  function sourcesOf(item) {
+    const raw = item?.sources;
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (const s of raw) {
+      if (out.length >= SOURCES_MAX) break;
+      if (typeof s !== "object" || s === null) continue;
+      const { title, url, host } = s;
+      if (typeof url !== "string" || !isHttpUrl(url) || typeof host !== "string") continue;
+      const name = typeof title === "string" && title.trim() !== "" ? title : url;
+      out.push({ title: name, url, host });
+    }
+    return out;
+  }
+  function sourceRow(source, S, send2) {
+    const li = el("li", "cm-sources__row");
+    const link = button("", "cm-sources__item", () => {
+      const url = link.dataset.url ?? "";
+      if (isHttpUrl(url)) sendV056e(send2, { type: "openExternal", url });
+    });
+    link.dataset.url = source.url;
+    link.append(el("span", "cm-sources__title", source.title), el("span", "cm-sources__host", source.host));
+    setTip(link, source.url);
+    link.setAttribute("aria-label", `${S.srcOpen}: ${source.title}`);
+    li.appendChild(link);
+    return li;
+  }
+  function createSources(send2) {
+    const root = el("details", "cm-sources");
+    root.hidden = true;
+    const summary = el("summary", "cm-sources__summary");
+    const list = el("ol", "cm-sources__list");
+    root.append(summary, list);
+    let signature = "";
+    return {
+      el: root,
+      update(sources, streaming, state) {
+        root.hidden = streaming || sources.length === 0;
+        if (root.hidden) return;
+        const S = stringsOf(state);
+        summary.textContent = S.srcTitle(sources.length);
+        const sig = `${state.lang}\0${JSON.stringify(sources)}`;
+        if (sig === signature) return;
+        signature = sig;
+        list.replaceChildren(...sources.map((s) => sourceRow(s, S, send2)));
+      }
+    };
+  }
+
+  // src/webview/chat/messages.ts
+  var NEAR_BOTTOM_PX = 60;
+  var COPY_FEEDBACK_MS = 1500;
+  var FLASH_MS = 2e3;
+  var COPY_D = "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z";
+  var CHECK_D = "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z";
+  var REGENERATE_D = "M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z";
+  var EDIT_D = "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z";
+  function copyIconButton(cls, onClick) {
+    const b = el("button", cls);
+    b.type = "button";
+    b.append(
+      svg("0 0 24 24", "oc-ico oc-ico--copy", [["path", { fill: "currentColor", d: COPY_D }]]),
+      svg("0 0 24 24", "oc-ico oc-ico--check", [["path", { fill: "currentColor", d: CHECK_D }]])
+    );
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function glyphButton(cls, d, onClick) {
+    const b = el("button", cls);
+    b.type = "button";
+    b.appendChild(svg("0 0 24 24", "oc-ico", [["path", { fill: "currentColor", d }]]));
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function setCopyLabel(btn, label) {
+    btn.setAttribute("aria-label", label);
+    btn.title = label;
+  }
+  var windowFrames = {
+    request: (cb) => window.requestAnimationFrame(() => cb()),
+    cancel: (handle) => window.cancelAnimationFrame(handle)
+  };
+  function createFrameCoalescer(paint, frames = windowFrames) {
+    let handle = null;
+    return {
+      request() {
+        if (handle !== null) return;
+        handle = frames.request(() => {
+          handle = null;
+          paint();
+        });
+      },
+      flush() {
+        if (handle !== null) {
+          frames.cancel(handle);
+          handle = null;
+        }
+        paint();
+      }
+    };
+  }
+  function createUserRow(send2, onCopied, onEdit) {
+    const row = el("div", "cm-row cm-row--user");
+    const bubble = el("div", "cm-msg cm-msg--user");
+    const actions = el("div", "cm-actions");
+    let text = null;
+    let itemId = "";
+    const copyBtn = copyIconButton("cm-action cm-action--icon", () => {
+      if (text === null || text === "") return;
+      send2({ type: "copy", text });
+      onCopied(copyBtn);
+    });
+    const editBtn = glyphButton("cm-action cm-action--icon", EDIT_D, () => {
+      if (text) onEdit(text);
+    });
+    editBtn.hidden = true;
+    actions.append(editBtn, copyBtn);
+    row.append(bubble, actions);
+    return {
+      el: row,
+      update(entry, state) {
+        const item = entry.type === "item" ? entry.item : null;
+        if (!item || item.kind !== "user") return;
+        if (item.text !== text) {
+          text = item.text;
+          bubble.innerHTML = plainToHtml(item.text);
+        }
+        itemId = item.id;
+        copyBtn.hidden = item.text === "";
+        if (copyBtn.dataset.flash !== "1") setCopyLabel(copyBtn, state.strings.copyMessage);
+        const busy = state.snapshot.running || state.snapshot.sending;
+        editBtn.hidden = item.text === "" || !canEditItem(state.snapshot.items, itemId, busy);
+        const label = stringsOf(state).editLabel;
+        setTip(editBtn, label);
+      }
+    };
+  }
+  function createAssistantRow(send2, onCopied) {
     const row = el("div", "cm-row cm-row--assistant");
     const bubble = el("div", "cm-msg cm-msg--assistant");
     const md = el("div", "cm-md");
     const status = el("div", "cm-status");
     bubble.append(md, status);
     const actions = el("div", "cm-actions");
-    const copyBtn = button("", "cm-action", () => {
-      if (copyText !== "") send2({ type: "copy", text: copyText });
+    const copyBtn = copyIconButton("cm-action cm-action--icon", () => {
+      if (copyText === "") return;
+      send2({ type: "copy", text: copyText });
+      onCopied(copyBtn);
     });
-    actions.appendChild(copyBtn);
-    row.append(bubble, actions);
+    const regenBtn = glyphButton("cm-action cm-action--icon", REGENERATE_D, () => {
+      if (itemId !== "") sendAction(send2, { type: "regenerate", id: itemId });
+    });
+    regenBtn.hidden = true;
+    actions.append(copyBtn, regenBtn);
+    const sources = createSources(send2);
+    row.append(bubble, sources.el, actions);
     let thinking = null;
     let copyText = "";
-    let renderedKey = null;
+    let itemId = "";
     let statusKey = null;
+    let mdText = "";
+    let mdStreaming = false;
+    let mdLabel = "";
+    let renderedKey = null;
+    const paintMarkdown = () => {
+      const key = `${mdStreaming ? "1" : "0"}${mdText}`;
+      if (key === renderedKey) return;
+      md.innerHTML = renderMarkdown(mdText, { streaming: mdStreaming, copyLabel: mdLabel });
+      renderedKey = key;
+    };
+    const mdFrame = createFrameCoalescer(paintMarkdown);
     return {
       el: row,
-      update(item, state) {
-        if (item.kind !== "assistant") return;
+      update(entry, state) {
+        const item = entry.type === "item" ? entry.item : null;
+        if (!item || item.kind !== "assistant") return;
         const S = state.strings;
         const streaming = item.status === "streaming";
+        itemId = item.id;
         if (item.reasoning) {
           if (!thinking) {
             thinking = createThinking();
-            bubble.insertBefore(thinking.el, md);
+            row.insertBefore(thinking.el, bubble);
           }
           thinking.el.hidden = false;
-          thinking.update(item.reasoning, streaming, state);
+          thinking.update(item.reasoning, streaming, item.text !== "", state);
         } else if (thinking) {
           thinking.el.hidden = true;
         }
-        const mdKey = `${streaming ? "1" : "0"}${item.text}`;
-        if (mdKey !== renderedKey) {
-          md.innerHTML = renderMarkdown(item.text, { streaming, copyLabel: S.copy });
-          renderedKey = mdKey;
+        bubble.hidden = !!item.reasoning && item.text === "" && (streaming || item.status === "done");
+        mdText = item.text;
+        mdStreaming = streaming;
+        mdLabel = S.copy;
+        if (streaming) {
+          if (`1${item.text}` !== renderedKey) mdFrame.request();
+        } else {
+          mdFrame.flush();
         }
-        if (item.status !== statusKey) {
-          statusKey = item.status;
+        const thinkingLive = streaming && !!item.reasoning && item.text === "";
+        const nextStatusKey = `${item.status}${thinkingLive ? "~" : ""}`;
+        if (nextStatusKey !== statusKey) {
+          statusKey = nextStatusKey;
           status.className = `cm-status cm-status--${item.status}`;
-          status.hidden = item.status === "done";
+          status.hidden = item.status === "done" || thinkingLive;
           if (item.status === "streaming") {
             const dots = el("span", "cm-typing");
             dots.setAttribute("role", "img");
@@ -1328,22 +2700,23 @@
         }
         copyText = item.text;
         copyBtn.hidden = streaming || item.text === "";
-        if (copyBtn.dataset.flash !== "1") copyBtn.textContent = S.copy;
+        if (copyBtn.dataset.flash !== "1") setCopyLabel(copyBtn, S.copy);
+        sources.update(sourcesOf(item), streaming, state);
+        const busy = state.snapshot.running || state.snapshot.sending;
+        regenBtn.hidden = !canRegenerate(state.snapshot.items, item.id, busy);
+        setTip(regenBtn, S.regenerateTip);
+        regenBtn.setAttribute("aria-label", S.regenerate);
       }
     };
   }
-  function createToolRow() {
-    const row = el("div", "cm-row cm-row--tool");
-    let card = null;
+  function createTimelineRow() {
+    const row = el("div", "cm-row cm-row--timeline");
+    const timeline = createTimeline();
+    row.appendChild(timeline.el);
     return {
       el: row,
-      update(item, state) {
-        if (item.kind !== "tool") return;
-        if (!card) {
-          card = createToolCard(item, state);
-          row.appendChild(card.el);
-        }
-        card.update(item, state);
+      update(entry, state) {
+        if (entry.type === "timeline") timeline.update(entry.tools, state);
       }
     };
   }
@@ -1354,26 +2727,27 @@
     let text = null;
     return {
       el: row,
-      update(item) {
-        if (item.kind !== "status" || item.text === text) return;
+      update(entry) {
+        const item = entry.type === "item" ? entry.item : null;
+        if (!item || item.kind !== "status" || item.text === text) return;
         text = item.text;
         line.textContent = item.text;
       }
     };
   }
-  function createRow(item, send2) {
-    switch (item.kind) {
+  function createRow(entry, send2, onCopied, onEdit) {
+    if (entry.type === "timeline") return createTimelineRow();
+    switch (entry.item.kind) {
       case "user":
-        return createUserRow();
+        return createUserRow(send2, onCopied, onEdit);
       case "assistant":
-        return createAssistantRow(send2);
-      case "tool":
-        return createToolRow();
+        return createAssistantRow(send2, onCopied);
       default:
         return createStatusRow();
     }
   }
-  function createMessageList(send2) {
+  function createMessageList(send2, opts = {}) {
+    const onEdit = (text) => opts.onEdit?.(text);
     const list = el("div", "cm-list");
     list.setAttribute("role", "log");
     list.setAttribute("aria-live", "polite");
@@ -1385,28 +2759,74 @@
     let strings = null;
     let lastConversationId = void 0;
     const copyTimers = /* @__PURE__ */ new WeakMap();
-    list.addEventListener("click", (e) => {
-      const target = e.target;
-      const btn = target && typeof target.closest === "function" ? target.closest("[data-oc-copy]") : null;
-      if (!btn || !list.contains(btn)) return;
-      const code = btn.closest(".oc-code")?.querySelector("code")?.textContent ?? "";
-      if (code === "") return;
-      send2({ type: "copy", text: code });
-      flash(btn);
-    });
     function flash(btn) {
       if (!strings) return;
       const label = strings.copied;
       btn.dataset.flash = "1";
-      btn.textContent = label;
+      btn.classList.add("is-copied");
+      setCopyLabel(btn, label);
       const prev = copyTimers.get(btn);
       if (prev !== void 0) window.clearTimeout(prev);
-      const timer = window.setTimeout(() => {
+      const timer2 = window.setTimeout(() => {
         delete btn.dataset.flash;
-        btn.textContent = strings ? strings.copy : label;
+        btn.classList.remove("is-copied");
+        setCopyLabel(btn, strings ? strings.copy : label);
         copyTimers.delete(btn);
       }, COPY_FEEDBACK_MS);
-      copyTimers.set(btn, timer);
+      copyTimers.set(btn, timer2);
+    }
+    function openPath(node) {
+      if (!node || !list.contains(node)) return;
+      const path = node.dataset.ocPath;
+      if (!path) return;
+      const line = Number(node.dataset.ocLine);
+      const msg = { type: "openFile", path };
+      if (Number.isInteger(line) && line > 0) msg.line = line;
+      send2(msg);
+    }
+    list.addEventListener("click", (e) => {
+      const target = e.target;
+      if (!target || typeof target.closest !== "function") return;
+      const btn = target.closest("[data-oc-copy]");
+      if (btn && list.contains(btn)) {
+        const code = btn.closest(".oc-code")?.querySelector("code")?.textContent ?? "";
+        if (code === "") return;
+        send2({ type: "copy", text: code });
+        flash(btn);
+        return;
+      }
+      openPath(target.closest("[data-oc-path]"));
+    });
+    list.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const target = e.target;
+      if (!target || typeof target.closest !== "function") return;
+      const node = target.closest("[data-oc-path]");
+      if (!node) return;
+      e.preventDefault();
+      openPath(node);
+    });
+    let flashed = null;
+    let flashTimer = null;
+    function clearFlash() {
+      if (flashTimer !== null) window.clearTimeout(flashTimer);
+      flashTimer = null;
+      flashed?.classList.remove("ch-msg--flash");
+      flashed = null;
+    }
+    function scrollTo(id) {
+      const row = rows.get(`user:${id}`) ?? rows.get(`assistant:${id}`);
+      if (!row) return;
+      clearFlash();
+      const target = row.el.querySelector(".cm-msg") ?? row.el;
+      target.scrollIntoView({ block: "center" });
+      void target.offsetWidth;
+      target.classList.add("ch-msg--flash");
+      flashed = target;
+      flashTimer = window.setTimeout(clearFlash, FLASH_MS);
+      target.addEventListener("animationend", () => {
+        if (flashed === target) clearFlash();
+      }, { once: true });
     }
     function renderEmpty(state) {
       const S = state.strings;
@@ -1416,6 +2836,7 @@
     }
     return {
       el: list,
+      scrollTo,
       update(state) {
         strings = state.strings;
         const items = state.snapshot.items;
@@ -1432,7 +2853,8 @@
         emptyEl.remove();
         const near = list.scrollHeight - list.scrollTop - list.clientHeight < NEAR_BOTTOM_PX;
         const hadRows = rows.size > 0;
-        const keys = items.map((item, i) => keyOf(item, i));
+        const entries = groupTimeline(items);
+        const keys = entries.map((e) => e.key);
         const live = new Set(keys);
         for (const [key, row] of rows) {
           if (!live.has(key)) {
@@ -1441,20 +2863,19 @@
           }
         }
         let appendedUser = false;
-        items.forEach((item, i) => {
-          const key = keys[i];
-          let row = rows.get(key);
+        for (const entry of entries) {
+          let row = rows.get(entry.key);
           if (!row) {
-            row = createRow(item, send2);
-            rows.set(key, row);
-            if (item.kind === "user") appendedUser = true;
+            row = createRow(entry, send2, flash, onEdit);
+            rows.set(entry.key, row);
+            if (entry.type === "item" && entry.item.kind === "user") appendedUser = true;
           }
           try {
-            row.update(item, state);
+            row.update(entry, state);
           } catch (err) {
             console.error("[omnichat] transcript row failed", err);
           }
-        });
+        }
         let cursor = list.firstElementChild;
         for (const key of keys) {
           const row = rows.get(key);
@@ -1467,40 +2888,507 @@
     };
   }
 
+  // src/webview/chat/tokens.ts
+  function table(rows) {
+    const t = el("div", "cm-tok__table");
+    for (const r of rows) t.append(el("span", "cm-tok__k", r.label), el("span", "cm-tok__v", r.tokens));
+    return t;
+  }
+  function attachTokens(meter) {
+    meter.tabIndex = 0;
+    meter.setAttribute("role", "button");
+    const pop = createPop(meter, "cm-pop--tokens", () => render2());
+    meter.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        meter.click();
+      }
+    });
+    let last = null;
+    function render2() {
+      const b = last?.context?.breakdown;
+      if (!last || !b) {
+        pop.panel.replaceChildren(el("div", "cm-pop__empty", last ? last.strings.slashContextUnknown : ""));
+        return;
+      }
+      pop.panel.replaceChildren(
+        el("div", "cm-pop__group", b.title),
+        table(b.rows),
+        ...b.lastRows.length > 0 ? [el("div", "cm-pop__group", last.strings.tokLast), table(b.lastRows)] : [],
+        el("div", "cm-pop__note", b.cacheNote)
+      );
+    }
+    return (state) => {
+      last = state;
+      const b = state.context?.breakdown;
+      meter.classList.toggle("cm-meter--btn", b !== void 0);
+      if (b) setTip(meter, b.title);
+      if (pop.isOpen()) render2();
+    };
+  }
+
+  // src/webview/chat/attachLogic.ts
+  var MIB = 1024 * 1024;
+  function isImageMime(mime) {
+    return mime.startsWith("image/");
+  }
+  function checkAttachment(file, totals, limits) {
+    if (file.mime.startsWith("audio/") || file.mime.startsWith("video/")) return "badType";
+    if (isImageMime(file.mime)) {
+      if (!limits.imageMimes.includes(file.mime)) return "badType";
+      if (limits.visionOk === false) return "noVision";
+    }
+    if (file.size > limits.maxFileBytes) return "tooBig";
+    if (totals.count + 1 > limits.maxFiles) return "tooMany";
+    if (totals.totalBytes + file.size > limits.maxTotalBytes) return "totalBig";
+    return null;
+  }
+  function formatSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+    if (bytes < 1024) return `${Math.round(bytes)} B`;
+    if (bytes < MIB) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / MIB).toFixed(1)} MB`;
+  }
+  function limitMb(bytes) {
+    const mb = Math.round(bytes / MIB * 10) / 10;
+    return String(mb);
+  }
+  function fillTemplate(template, vars) {
+    return template.replace(/\{(\w+)\}/g, (whole, key) => key in vars ? String(vars[key]) : whole);
+  }
+
+  // src/webview/chat/attach.ts
+  var ICON_CLIP = [
+    [
+      "path",
+      {
+        d: "M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48",
+        fill: "none",
+        stroke: "currentColor",
+        "stroke-width": "2",
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round"
+      }
+    ]
+  ];
+  function hasFiles(e) {
+    return Array.from(e.dataTransfer?.types ?? []).includes("Files");
+  }
+  function createAttach(opts) {
+    const button2 = el("button", "cm-attach");
+    button2.type = "button";
+    button2.appendChild(svg("0 0 24 24", "cm-attach__icon", ICON_CLIP));
+    const fileInput = el("input");
+    fileInput.type = "file";
+    fileInput.multiple = true;
+    fileInput.hidden = true;
+    const chips = el("div", "cm-attachments");
+    chips.setAttribute("role", "list");
+    chips.hidden = true;
+    const overlay = el("div", "cm-drop");
+    overlay.setAttribute("aria-hidden", "true");
+    let items = [];
+    let strings = null;
+    let limits = DEFAULT_ATTACH;
+    function totals() {
+      return { count: items.length, totalBytes: items.reduce((n, i) => n + i.size, 0) };
+    }
+    function problemText(problem, name) {
+      const S = strings;
+      if (!S) return "";
+      switch (problem) {
+        case "badType":
+          return fillTemplate(S.attachBadType, { name });
+        case "tooBig":
+          return fillTemplate(S.attachTooBig, { name, mb: limitMb(limits.maxFileBytes) });
+        case "totalBig":
+          return fillTemplate(S.attachTotalBig, { mb: limitMb(limits.maxTotalBytes) });
+        case "tooMany":
+          return fillTemplate(S.attachTooMany, { n: limits.maxFiles });
+        case "noVision":
+          return S.attachNoVision;
+      }
+    }
+    function removeItem(item) {
+      items = items.filter((i) => i !== item);
+      item.el.remove();
+      chips.hidden = items.length === 0;
+      opts.onChange();
+    }
+    function makeChip(file) {
+      const item = { el: el("span", "cm-attach__chip"), name: file.name, size: file.size, mime: file.type || "application/octet-stream", data: null, remove: el("button", "cm-attach__x", "\xD7") };
+      item.el.setAttribute("role", "listitem");
+      item.remove.type = "button";
+      item.remove.addEventListener("click", () => removeItem(item));
+      if (isImageMime(item.mime)) {
+        const thumb = el("img", "cm-attach__thumb");
+        thumb.alt = "";
+        item.el.appendChild(thumb);
+      } else {
+        item.el.appendChild(svg("0 0 24 24", "cm-attach__icon", ICON_CLIP));
+      }
+      item.el.append(el("span", "cm-attach__name", file.name), el("span", "cm-attach__size", formatSize(file.size)), item.remove);
+      return item;
+    }
+    function readFile(file, item) {
+      const reader = new FileReader();
+      const fail = () => {
+        if (strings) opts.toast(strings.errAttachInvalid);
+        removeItem(item);
+      };
+      reader.onload = () => {
+        const url = typeof reader.result === "string" ? reader.result : "";
+        const comma = url.indexOf(",");
+        if (comma < 0) return fail();
+        item.data = url.slice(comma + 1);
+        const thumb = item.el.querySelector("img.cm-attach__thumb");
+        if (thumb) thumb.src = url;
+        opts.onChange();
+      };
+      reader.onerror = fail;
+      reader.readAsDataURL(file);
+    }
+    function addFiles(files) {
+      let warned = false;
+      for (const file of files) {
+        const problem = checkAttachment({ name: file.name, mime: file.type, size: file.size }, totals(), limits);
+        if (problem) {
+          if (!warned) opts.toast(problemText(problem, file.name));
+          warned = true;
+          continue;
+        }
+        const item = makeChip(file);
+        items.push(item);
+        chips.appendChild(item.el);
+        chips.hidden = false;
+        readFile(file, item);
+      }
+      if (files.length > 0) opts.onChange();
+    }
+    button2.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      const picked = Array.from(fileInput.files ?? []);
+      fileInput.value = "";
+      addFiles(picked);
+    });
+    opts.input.addEventListener("paste", (e) => {
+      const files = Array.from(e.clipboardData?.files ?? []);
+      if (files.length === 0) return;
+      e.preventDefault();
+      addFiles(files);
+    });
+    const zone = opts.zone;
+    zone.addEventListener("dragenter", (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      zone.classList.add("cm-composer--drop");
+    });
+    zone.addEventListener("dragover", (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    });
+    zone.addEventListener("dragleave", (e) => {
+      if (!zone.contains(e.relatedTarget)) zone.classList.remove("cm-composer--drop");
+    });
+    zone.addEventListener("drop", (e) => {
+      zone.classList.remove("cm-composer--drop");
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      addFiles(Array.from(e.dataTransfer?.files ?? []));
+    });
+    return {
+      button: button2,
+      fileInput,
+      chips,
+      overlay,
+      update(state) {
+        const S = state.strings;
+        strings = S;
+        limits = extrasOf(state).attach;
+        button2.disabled = state.snapshot.chatSupport === "unsupported";
+        setTip(button2, S.attachBtn);
+        overlay.textContent = S.attachDrop;
+        for (const item of items) setTip(item.remove, S.attachRemove);
+      },
+      takeAttachments() {
+        return items.flatMap((i) => i.data === null ? [] : [{ name: i.name, mime: i.mime, data: i.data }]);
+      },
+      busy() {
+        return items.some((i) => i.data === null);
+      },
+      clear() {
+        for (const item of items) item.el.remove();
+        items = [];
+        chips.hidden = true;
+      }
+    };
+  }
+
+  // src/webview/chat/slashLogic.ts
+  function slashQuery(value) {
+    if (!value.startsWith("/")) return null;
+    const query = value.slice(1);
+    return /\s/.test(query) ? null : query;
+  }
+  function filterSlash(entries, query) {
+    const q = query.toLowerCase();
+    return entries.filter((e) => e.name.startsWith(q));
+  }
+  function slashAction(name) {
+    if (name === "model") return { kind: "model" };
+    if (name === "help") return { kind: "help" };
+    return { kind: "host", name };
+  }
+  var ARG_COMMANDS = ["effort", "rename"];
+  var MAX_SLASH_ARG = 2e3;
+  var ARG_LINE = /^\/(effort|rename|export)(?:\s+([\s\S]*))?$/;
+  function argCommand(text) {
+    const m = ARG_LINE.exec(text.trim());
+    if (!m) return null;
+    const name = m[1];
+    const arg = (m[2] ?? "").trim();
+    if (name === "export") return arg.toLowerCase() === "json" ? { name, arg: "json" } : null;
+    return { name, arg: arg.slice(0, MAX_SLASH_ARG) };
+  }
+  function helpText(entries) {
+    return entries.map((e) => `/${e.name} - ${e.desc}`).join("\n");
+  }
+
+  // src/webview/chat/slash.ts
+  function createSlash(opts) {
+    const input = opts.input;
+    const root = el("div", "cm-slash");
+    root.id = "cm-slash";
+    root.setAttribute("role", "listbox");
+    root.hidden = true;
+    const list = el("div", "cm-slash__list");
+    list.setAttribute("role", "presentation");
+    root.appendChild(list);
+    let entries = [];
+    let entriesSig = "";
+    let matches = [];
+    let active = 0;
+    let dismissed = null;
+    function close() {
+      root.hidden = true;
+      input.removeAttribute("aria-activedescendant");
+      input.setAttribute("aria-expanded", "false");
+    }
+    function setActive(index) {
+      active = index;
+      const rows = list.children;
+      for (let i = 0; i < rows.length; i++) {
+        const selected = i === active;
+        rows[i].setAttribute("aria-selected", String(selected));
+        if (selected) input.setAttribute("aria-activedescendant", rows[i].id);
+      }
+    }
+    function render2() {
+      list.replaceChildren(
+        ...matches.map((entry, i) => {
+          const row = el("div", "cm-slash__item");
+          row.id = `cm-slash-opt-${i}`;
+          row.setAttribute("role", "option");
+          row.append(el("span", "cm-slash__name", `/${entry.name}`), el("span", "cm-slash__desc", entry.desc));
+          row.addEventListener("mousedown", (e) => e.preventDefault());
+          row.addEventListener("mouseenter", () => setActive(i));
+          row.addEventListener("click", () => execute(entry));
+          return row;
+        })
+      );
+      setActive(Math.min(active, matches.length - 1));
+    }
+    function refresh() {
+      const value = input.value;
+      if (dismissed !== null && value !== dismissed) dismissed = null;
+      const query = slashQuery(value);
+      if (query === null || dismissed !== null) return close();
+      const found = filterSlash(entries, query);
+      if (found.length === 0) return close();
+      const changed = found.length !== matches.length || found.some((e, i) => e.name !== matches[i]?.name);
+      matches = found;
+      if (changed) {
+        active = 0;
+        render2();
+      }
+      root.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      input.setAttribute("aria-controls", root.id);
+    }
+    function execute(entry) {
+      if (ARG_COMMANDS.includes(entry.name)) return complete(entry, " ");
+      close();
+      dismissed = null;
+      input.value = "";
+      const action = slashAction(entry.name);
+      if (action.kind === "host") sendExtra(opts.send, { type: "slash", name: action.name });
+      else if (action.kind === "model") opts.onOpenModel?.();
+      else opts.toast(helpText(entries));
+      opts.onDone();
+    }
+    function complete(entry, suffix = "") {
+      input.value = `/${entry.name}${suffix}`;
+      refresh();
+      opts.onDone();
+    }
+    return {
+      el: root,
+      setEntries(next) {
+        const sig = JSON.stringify(next);
+        if (sig === entriesSig) return;
+        entriesSig = sig;
+        entries = next;
+        refresh();
+      },
+      refresh,
+      onKeydown(e) {
+        if (root.hidden || matches.length === 0) return false;
+        const plain = !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
+        switch (e.key) {
+          case "ArrowDown":
+            e.preventDefault();
+            setActive((active + 1) % matches.length);
+            return true;
+          case "ArrowUp":
+            e.preventDefault();
+            setActive((active - 1 + matches.length) % matches.length);
+            return true;
+          case "Escape":
+            e.preventDefault();
+            dismissed = input.value;
+            close();
+            return true;
+          case "Tab":
+            if (!plain) return false;
+            e.preventDefault();
+            complete(matches[active]);
+            return true;
+          case "Enter":
+            if (!plain) return false;
+            e.preventDefault();
+            execute(matches[active]);
+            return true;
+          default:
+            return false;
+        }
+      }
+    };
+  }
+
+  // src/webview/chat/toast.ts
+  var SHOW_MS = 4e3;
+  function createToast() {
+    const root = el("div", "cm-toast");
+    root.setAttribute("role", "status");
+    root.setAttribute("aria-live", "polite");
+    root.hidden = true;
+    let timer2 = null;
+    function hide2() {
+      if (timer2 !== null) clearTimeout(timer2);
+      timer2 = null;
+      root.hidden = true;
+      root.textContent = "";
+    }
+    return {
+      el: root,
+      show(text) {
+        if (timer2 !== null) clearTimeout(timer2);
+        root.textContent = text;
+        root.hidden = false;
+        timer2 = window.setTimeout(hide2, SHOW_MS);
+      }
+    };
+  }
+
   // src/webview/chat/composer.ts
   var MAX_ROWS = 8;
-  function createComposer(send2) {
+  var CHIP_CHARS = 60;
+  function isComposingKey(e) {
+    return e.isComposing || e.keyCode === 229 && (e.isComposing || e.key === "Process");
+  }
+  function createComposer(send2, opts = {}) {
+    const block = el("div", "cm-composer-block");
+    const queueRow = el("div", "cm-queue");
+    queueRow.setAttribute("role", "list");
+    queueRow.hidden = true;
+    const meter = el("div", "cm-meter");
+    const meterBar = el("div", "cm-meter__bar");
+    const meterFill = el("div", "cm-meter__fill");
+    meterBar.appendChild(meterFill);
+    const meterText = el("span", "cm-meter__text");
+    meter.append(meterBar, meterText);
+    meter.hidden = true;
+    const updateTokens = attachTokens(meter);
     const root = el("div", "cm-composer");
     const input = el("textarea", "cm-input");
     input.rows = 1;
     input.setAttribute("autocomplete", "off");
     input.setAttribute("spellcheck", "true");
+    const interruptBtn = el("button", "cm-interrupt");
+    interruptBtn.type = "button";
+    interruptBtn.hidden = true;
     const sendBtn = el("button", "cm-send");
     sendBtn.type = "button";
-    root.append(input, sendBtn);
+    const toast = createToast();
+    const attach = createAttach({ input, zone: root, toast: toast.show, onChange: () => refreshButton() });
+    const slash = createSlash({
+      input,
+      send: send2,
+      toast: toast.show,
+      onOpenModel: () => opts.onOpenModel?.(),
+      onDone: () => afterEdit()
+    });
+    const edit = createEditLast(() => {
+      input.value = "";
+      afterEdit();
+    });
+    root.append(slash.el, toast.el, attach.button, input, interruptBtn, sendBtn, attach.overlay);
+    block.append(queueRow, meter, attach.chips, edit.el, root, attach.fileInput);
     let last = null;
+    let lastConversation = void 0;
     let isStop = null;
     let pendingText = null;
     let errorAtSubmit = null;
+    let inFlight = false;
+    let queued = 0;
+    let queueSig = "";
     function resize() {
       input.rows = Math.max(1, Math.min(MAX_ROWS, input.value.split("\n").length));
     }
-    function submit() {
-      if (!last || !last.chatEnabled || last.snapshot.sending) return;
+    function afterEdit() {
+      resize();
+      refreshButton();
+      send2({ type: "draftChanged" });
+    }
+    function submit(interrupt) {
+      if (!last || !last.chatEnabled || inFlight || attach.busy()) return;
       const text = input.value;
       if (text.trim() === "") return;
-      send2({ type: "send", text });
+      const cmd = argCommand(text);
+      if (cmd) {
+        sendExtra(send2, cmd.arg === "" ? { type: "slash", name: cmd.name } : { type: "slash", name: cmd.name, arg: cmd.arg });
+        input.value = "";
+        afterEdit();
+        slash.refresh();
+        return;
+      }
+      const editing = edit.active();
+      const attachments = editing ? [] : attach.takeAttachments();
+      const extra = attachments.length > 0 ? { attachments } : {};
+      const replace = editing ? { replaceLast: true } : {};
+      sendExtra(send2, interrupt ? { type: "sendInterrupt", text, ...extra, ...replace } : { type: "send", text, ...extra, ...replace });
+      inFlight = true;
       pendingText = text;
       errorAtSubmit = last.errorText;
-      input.value = "";
-      resize();
       refreshButton();
     }
     function refreshButton() {
       const S = last ? last.strings : null;
       const running = last ? last.snapshot.running : false;
-      const sending = last ? last.snapshot.sending : false;
-      const stop = running && !sending;
+      const busy = last ? last.snapshot.sending || running : false;
+      const draft = input.value.trim() !== "";
+      const stop = running && !draft;
       if (stop !== isStop) {
         isStop = stop;
         sendBtn.className = stop ? "cm-send cm-send--stop" : "cm-send";
@@ -1510,43 +3398,135 @@
       if (S) {
         const label = stop ? S.stop : S.send;
         sendBtn.setAttribute("aria-label", label);
-        sendBtn.title = label;
+        setTip(sendBtn, edit.active() && last ? stringsOf(last).editSendTip : label);
+        interruptBtn.textContent = S.interrupt;
+        setTip(interruptBtn, S.interruptHint);
+        interruptBtn.setAttribute("aria-label", S.interruptHint);
       }
-      if (sending) sendBtn.setAttribute("aria-busy", "true");
+      interruptBtn.hidden = !(busy && draft);
+      if (busy) sendBtn.setAttribute("aria-busy", "true");
       else sendBtn.removeAttribute("aria-busy");
       const chatEnabled = last ? last.chatEnabled : false;
-      sendBtn.disabled = !chatEnabled || sending || !stop && input.value.trim() === "";
+      const reconnecting = last ? last.link.reconnect !== null : false;
+      if (S && !chatEnabled && last && last.snapshot.chatSupport !== "unsupported") {
+        const why = reconnecting ? S.sendReconnecting : S.sendOffline;
+        setTip(sendBtn, why);
+      }
+      sendBtn.disabled = !chatEnabled || inFlight || !stop && !draft;
       sendBtn.classList.toggle("cm-send--off", sendBtn.disabled);
+      interruptBtn.disabled = !chatEnabled || inFlight;
+    }
+    function takeBack(item) {
+      if (input.disabled) return;
+      send2({ type: "cancelQueued", id: item.id });
+      input.value = appendDraft(input.value, item.text);
+      afterEdit();
+      input.focus();
+    }
+    function renderQueue(state) {
+      const items = state.snapshot.queue;
+      const sig = JSON.stringify(items) + state.strings.queued + state.strings.queueRun;
+      if (sig === queueSig) return;
+      queueSig = sig;
+      const S = state.strings;
+      queueRow.replaceChildren(
+        ...items.map((item) => {
+          const chip = el("span", "cm-queue__chip");
+          chip.setAttribute("role", "listitem");
+          const text = el("span", "cm-queue__text", item.text.length > CHIP_CHARS ? `${item.text.slice(0, CHIP_CHARS)}\u2026` : item.text);
+          const tag = el("span", "cm-queue__tag", S.queued);
+          const run = el("button", "cm-queue__run", S.queueRun);
+          run.type = "button";
+          setTip(run, S.queueRunTip);
+          run.setAttribute("aria-label", S.queueRun);
+          run.addEventListener("click", () => sendAction(send2, { type: "interruptQueued", id: item.id }));
+          const x = el("button", "cm-queue__x", "\xD7");
+          x.type = "button";
+          x.title = S.queueRemove;
+          x.setAttribute("aria-label", S.queueRemove);
+          x.addEventListener("click", () => takeBack(item));
+          chip.title = `${S.queued}: ${item.text}`;
+          chip.append(tag, text, run, x);
+          return chip;
+        })
+      );
+      queueRow.hidden = items.length === 0;
+    }
+    function renderMeter(state) {
+      const ctx = state.context;
+      if (ctx === null) {
+        meter.hidden = true;
+        return;
+      }
+      meter.hidden = false;
+      meter.className = `cm-meter cm-meter--${ctx.level}`;
+      meter.title = state.strings.contextLabel;
+      meterText.textContent = ctx.text;
+      meterFill.style.setProperty("width", `${ctx.pct}%`);
+      updateTokens(state);
     }
     sendBtn.addEventListener("click", () => {
       if (isStop) send2({ type: "stop" });
-      else submit();
+      else submit(false);
     });
+    interruptBtn.addEventListener("click", () => submit(true));
     input.addEventListener("keydown", (e) => {
-      if (e.isComposing || e.keyCode === 229) return;
+      if (isComposingKey(e)) return;
+      if (slash.onKeydown(e)) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        submit();
+        submit(e.ctrlKey || e.metaKey);
       }
     });
     input.addEventListener("input", () => {
-      resize();
-      refreshButton();
+      slash.refresh();
+      afterEdit();
     });
     return {
-      el: root,
+      el: block,
+      toast: toast.show,
+      /** Puts the last prompt into the draft for editing (the Edit button of the transcript). */
+      beginEdit(text) {
+        edit.begin();
+        input.value = text;
+        afterEdit();
+        input.focus();
+        input.setSelectionRange(text.length, text.length);
+      },
       update(state) {
+        const previousQueued = queued;
         last = state;
+        queued = state.snapshot.queue.length;
         input.placeholder = state.strings.placeholder;
-        input.disabled = !state.chatEnabled;
-        if (pendingText !== null && (state.snapshot.sending || state.snapshot.running)) pendingText = null;
-        if (pendingText !== null && state.errorText !== null && state.errorText !== errorAtSubmit) {
-          if (input.value === "") {
-            input.value = pendingText;
+        input.disabled = state.snapshot.chatSupport === "unsupported";
+        const conversation = state.snapshot.conversationId;
+        if (conversation !== lastConversation) {
+          lastConversation = conversation;
+          if (edit.active()) {
+            edit.end();
+            input.value = "";
             resize();
           }
-          pendingText = null;
         }
+        edit.update(stringsOf(state));
+        if (inFlight) {
+          inFlight = false;
+          const taken = state.snapshot.sending || state.snapshot.running || queued > previousQueued;
+          if (pendingText !== null && taken) {
+            if (input.value === pendingText) {
+              input.value = "";
+              resize();
+            }
+            pendingText = null;
+            attach.clear();
+            edit.end();
+          }
+        }
+        if (pendingText !== null && state.errorText !== null && state.errorText !== errorAtSubmit) pendingText = null;
+        attach.update(state);
+        slash.setEntries(extrasOf(state).slash);
+        renderQueue(state);
+        renderMeter(state);
         refreshButton();
       }
     };
@@ -1609,7 +3589,12 @@
     }
   }
   function build(rootEl2) {
-    const header = createHeader(send, { onToggleHistory: () => historyPanel2?.toggle() });
+    const checkpoints = createCheckpoints(send, rootEl2);
+    const header = createHeader(send, {
+      onToggleHistory: () => historyPanel2?.toggle(),
+      onToggleSettings: () => settingsPanel2?.toggle(),
+      checkpointBtn: checkpoints.button
+    });
     const banner = el("div", "cm-banner");
     banner.setAttribute("role", "status");
     banner.hidden = true;
@@ -1620,12 +3605,24 @@
     errorBar.append(errorText, dismiss);
     errorBar.hidden = true;
     const approvals = createApprovals(send);
-    const messages = createMessageList(send);
+    const messages = createMessageList(send, { onEdit: (text) => composer.beginEdit(text) });
     const pickers = createPickers(send);
-    const composer = createComposer(send);
+    const composer = createComposer(send, { onOpenModel: () => pickers.openModel() });
     const pairing = createPairing();
     const historyPanel2 = createHistory(send);
-    rootEl2.replaceChildren(header.el, banner, errorBar, approvals.el, messages.el, pickers.el, composer.el, pairing.el, historyPanel2.el);
+    const settingsPanel2 = createSettingsPanel(send, { toast: (text) => composer.toast(text) });
+    rootEl2.replaceChildren(
+      header.el,
+      banner,
+      errorBar,
+      approvals.el,
+      messages.el,
+      pickers.el,
+      composer.el,
+      pairing.el,
+      historyPanel2.el,
+      settingsPanel2.el
+    );
     rootEl2.className = "oc-page";
     return {
       header,
@@ -1638,19 +3635,33 @@
       pickers,
       composer,
       pairing,
-      historyPanel: historyPanel2
+      historyPanel: historyPanel2,
+      settingsPanel: settingsPanel2,
+      checkpoints
     };
   }
   var rootEl = document.getElementById("oc-root");
   var ui = null;
   var historyPanel = null;
+  var settingsPanel = null;
+  var lastState = null;
+  var lastAt = 0;
+  function closeCheckpoints() {
+    ui?.checkpoints.close();
+  }
   function render(state) {
     const u = ui;
     if (!u) return;
+    lastState = state;
+    lastAt = Date.now();
     const paired = state.paired;
     u.pairing.el.hidden = paired;
     for (const part of [u.approvals, u.messages, u.pickers, u.composer]) part.el.hidden = !paired;
-    if (!paired) historyPanel?.toggle(false);
+    if (!paired) {
+      historyPanel?.toggle(false);
+      settingsPanel?.toggle(false);
+      closeCheckpoints();
+    }
     if (state.banner) {
       u.banner.hidden = false;
       u.banner.textContent = state.banner.text;
@@ -1662,8 +3673,7 @@
     }
     u.errorBar.hidden = state.errorText === null;
     u.errorText.textContent = state.errorText ?? "";
-    u.dismiss.setAttribute("aria-label", state.strings.close);
-    u.dismiss.title = state.strings.close;
+    setTip(u.dismiss, state.strings.close);
     const parts = [
       ["header", u.header],
       ["approvals", u.approvals],
@@ -1671,7 +3681,9 @@
       ["pickers", u.pickers],
       ["composer", u.composer],
       ["pairing", u.pairing],
-      ["history", u.historyPanel]
+      ["history", u.historyPanel],
+      ["settings", u.settingsPanel],
+      ["checkpoints", u.checkpoints]
     ];
     for (const [name, part] of parts) safe(name, () => part.update(state));
   }
@@ -1682,6 +3694,15 @@
     }
     ui = build(rootEl);
     historyPanel = ui.historyPanel;
+    settingsPanel = ui.settingsPanel;
+    installTips(rootEl);
+    setInterval(() => {
+      const u = ui;
+      const st = lastState;
+      if (!u || !st || st.banner?.kind !== "reconnecting" || st.link.reconnect === null) return;
+      const left = st.link.reconnect.retryInMs - (Date.now() - lastAt);
+      u.banner.textContent = st.strings.reconnecting.replace("{sec}", String(Math.max(1, Math.ceil(left / 1e3))));
+    }, 1e3);
     window.addEventListener("message", (event) => {
       const msg = event.data;
       if (!msg || typeof msg !== "object") return;
@@ -1689,10 +3710,17 @@
         render(msg.state);
       } else if (msg.type === "notice" && typeof msg.text === "string") {
         ui?.pairing.notice(msg.text);
+      } else if (msg.type === "toast" && typeof msg.text === "string") {
+        ui?.composer.toast(msg.text);
+      } else if (msg.type === "scrollToMessage" && typeof msg.id === "string") {
+        ui?.messages.scrollTo(msg.id);
       }
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") historyPanel?.toggle(false);
+      if (e.key === "Escape") {
+        historyPanel?.toggle(false);
+        settingsPanel?.toggle(false);
+      }
     });
     send({ type: "ready" });
   }

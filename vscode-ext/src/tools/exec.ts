@@ -9,6 +9,7 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import { resolveInWorkspace, type PathRefusalReason } from "../guard/paths";
+import { outsideCandidate, outsideRefusal } from "../guard/outside";
 import { toolError, type ToolContext, type ToolRegistry } from "./index";
 import {
   RUN_COMMAND_OUTPUT_HEAD_BYTES,
@@ -69,6 +70,15 @@ export async function resolveCwd(ctx: ToolContext, requested?: string): Promise<
     const r = await resolveInWorkspace(root, input, (p) => realpath(p));
     if (r.ok) return r.abs;
     refusal ??= r;
+  }
+  if (ctx.allowOutside && refusal?.reason === "outside_workspace") {
+    const abs = outsideCandidate(ctx.root, input);
+    if (abs !== null) {
+      if ((await outsideRefusal(abs, (p) => realpath(p), false)) !== null) {
+        throw toolError("protected_path", "path is protected");
+      }
+      return abs;
+    }
   }
   if (!refusal) throw toolError("outside_workspace", "path is outside the workspace");
   throw toolError(refusal.reason, refusal.message);

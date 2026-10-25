@@ -328,6 +328,7 @@ test("title stays fixed (no title call) and notify is generic", async () => {
     await say(c, cl, nid, "normal topic");
     await waitFor("normal title call", () => c.be.bodies.length >= b0 + 2 ? true : null, 5000);
 
+    await sleep(1500); // the title request of the control chat is retried once after 500 ms: let it finish before counting
     const b1 = c.be.bodies.length;
     const M = marker();
     const id = await createEph(c);

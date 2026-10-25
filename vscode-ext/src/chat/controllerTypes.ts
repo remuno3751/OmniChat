@@ -2,8 +2,22 @@
  * Public types of the chat controller: the snapshot the view reads, the error codes, and the
  * controller options. Split out of controller.ts to keep that file small. No `vscode` import.
  */
-import type { ApprovalModeId, ConversationSummary, ModelItem, TranscriptItem } from "../protocol/chat-frames";
+import type {
+  ApprovalModeId,
+  CheckpointItem,
+  ContextBreakdownFields,
+  ConversationSettings,
+  ConversationSummary,
+  DeviceItem,
+  ModelItem,
+  PromptAttachment,
+  SearchHit,
+  SearchMode,
+  TranscriptItem,
+} from "../protocol/chat-frames";
 import type { Frame } from "../protocol/frames";
+import type { SettingsInput } from "./chatSettings";
+import type { CheckpointsState, ContextUsage } from "./state";
 import type { ChatSupport } from "./support";
 
 export type ChatErrorCode =
@@ -21,7 +35,10 @@ export type ChatErrorCode =
   | "workspace_not_open"
   | "outdated"
   | "not_found"
-  | "invalid_frame";
+  | "invalid_frame"
+  | "attachment_invalid"
+  | "attachment_too_large"
+  | "attachment_not_supported";
 
 const KNOWN_ERROR_CODES: ReadonlySet<string> = new Set<ChatErrorCode>([
   "generic",
@@ -39,6 +56,9 @@ const KNOWN_ERROR_CODES: ReadonlySet<string> = new Set<ChatErrorCode>([
   "outdated",
   "not_found",
   "invalid_frame",
+  "attachment_invalid",
+  "attachment_too_large",
+  "attachment_not_supported",
 ]);
 
 export interface ChatError {
@@ -54,8 +74,42 @@ export function toError(code: string, message?: string): ChatError {
     : { code: "generic", ...(message ? { message } : {}) };
 }
 
-/** Loading state of a list (models, conversations). */
+/** Loading state of a list (models, conversations, devices). */
 export type ListState = "idle" | "loading" | "ready" | "error";
+
+/** Result of a compact request: the token counts, or a failure (server error or timeout). */
+export type CompactOutcome = { ok: true; before: number; after: number } | { ok: false };
+
+/** Settings of the open conversation: `value` is null until a `conversation_settings` frame arrives. */
+export interface SettingsView {
+  state: ListState;
+  value: ConversationSettings | null;
+}
+
+/** The history search: `query` is the trimmed text searched, `hits` at most 30. */
+export interface SearchView {
+  query: string;
+  state: ListState;
+  hits: SearchHit[];
+}
+
+/** Result of a checkpoint restore: `ok`, or the server's reason (`error`, `message`), or "timeout". */
+export interface RestoreOutcome {
+  ok: boolean;
+  checkpointId: string;
+  error?: string;
+  message?: string;
+}
+
+/** The checkpoint calls of the controller (v0.5.6-E). */
+export interface CheckpointApi {
+  /** Asks for the checkpoints of the open conversation; the list lands in `snapshot().checkpoints`. */
+  request(): void;
+  /** Asks to restore to a checkpoint. False when nothing was sent (offline, no conversation, a restore is running). */
+  restore(checkpointId: string, removeNew: boolean, onResult: (r: RestoreOutcome) => void): boolean;
+  /** Adds a local status line to the end of the open transcript (not sent to the server). */
+  appendStatus(text: string): void;
+}
 
 /** What the server said about itself in its welcome frame. */
 export interface ServerInfo {
@@ -89,9 +143,25 @@ export interface ChatSnapshot {
   modelsState: ListState;
   conversationsState: ListState;
   loadingConversation: boolean;
+  /** Search policy for the next prompt; null means the conversation's stored mode. */
+  searchMode: SearchMode | null;
+  /** Prompts waiting for the active run to end, oldest first. */
+  queue: Array<{ id: string; text: string }>;
+  /** Context usage of the open conversation; null when unknown. `used`, `reasoning` and `last` when the server sent them. */
+  context: (ContextUsage & ContextBreakdownFields) | null;
+  /** The user's online bridges, as the last `devices` frame listed them. */
+  devices: { state: ListState; items: DeviceItem[] };
+  /** Settings of the open conversation ("this chat"). */
+  settings: SettingsView;
+  /** The last history search. */
+  search: SearchView;
+  /** Checkpoints of the open conversation (v0.5.6-E). */
+  checkpoints: CheckpointsState;
 }
 
 export interface ChatControllerOptions {
+  /** Clock in ms for the double-click guard. Default Date.now. */
+  now?: () => number;
   /** Sends one frame; false when the connection is not online. */
   send: (frame: Frame) => boolean;
   /** Workspace folder roots, first one is the default cwd. */
@@ -114,7 +184,16 @@ export interface ChatController {
   /** Re-reads models, the conversation list and the current conversation. */
   refresh(): void;
   snapshot(): ChatSnapshot;
-  sendPrompt(text: string): boolean;
+  /**
+   * Sends a prompt. While a run is active it is queued (max 10) and sent when the run ends;
+   * `interrupt` sends it at once with interrupt:true. False when nothing was taken (offline, empty,
+   * a duplicate within 300 ms, a full queue, or a failed send).
+   */
+  sendPrompt(text: string, opts?: { interrupt?: boolean; attachments?: PromptAttachment[]; replaceLast?: boolean }): boolean;
+  cancelQueued(id: string): void;
+  setSearchMode(mode: SearchMode | null): void;
+  /** The draft changed: refreshes the context meter after 800 ms of quiet. */
+  draftChanged(): void;
   stop(): void;
   newConversation(): void;
   openConversation(id: string): void;
@@ -123,6 +202,23 @@ export interface ChatController {
   setApprovalMode(mode: ApprovalModeId, confirmFull?: boolean): void;
   setCwd(cwd: string): void;
   clearError(): void;
+  /** Asks which bridges are online; the answer lands in `snapshot().devices`. */
+  requestDevices(): void;
+  /**
+   * Asks the server to compact the open conversation. `onResult` is called once: with the token
+   * counts, or with ok:false (no conversation, offline, server error, timeout).
+   */
+  compact(onResult?: (r: CompactOutcome) => void): void;
+  /** Refreshes the context meter now. `onUsage` is called once with the answer, if one comes. */
+  refreshContext(onUsage?: (usage: ContextUsage) => void): void;
+  /** Asks for the settings of the open conversation; the answer lands in `snapshot().settings`. */
+  requestSettings(): void;
+  /** Saves settings and/or the title of the open conversation. `onResult` is called once (false when not sent). */
+  saveSettings(input: SettingsInput, onResult?: (ok: boolean) => void): void;
+  /** Searches every conversation of this bridge; the answer lands in `snapshot().search`. */
+  searchHistory(query: string): void;
+  /** Checkpoint list and restore (v0.5.6-E). */
+  checkpoints: CheckpointApi;
   /** Clears every pending timer. Call when the view goes away. */
   dispose(): void;
 }

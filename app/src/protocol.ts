@@ -53,6 +53,8 @@ export interface Conversation {
   codeStatus?: CodeStatus;
   /** v7: ephemeral chat (id starts with eph_); absent on an older server */
   ephemeral?: boolean;
+  /** chat folder (Chat tab); null/absent = unclassified */
+  folderId?: string | null;
   /** Code approval mode (VS Code bridge); absent on an older server = manual. `ask`/`rules` are older aliases of manual/auto. */
   approvalMode?: ApprovalMode;
 }
@@ -253,6 +255,16 @@ export interface PromptPreset {
   deleted: boolean;
   seq: number;
 }
+/** Chat folder (sidebar grouping of chats; `mode` keeps Chat and Code folders apart). */
+export interface ChatFolder {
+  id: string;
+  name: string;
+  mode: 'chat' | 'code';
+  createdAt: number;
+  updatedAt: number;
+  deleted: boolean;
+  seq: number;
+}
 export interface Settings {
   systemPrompt: string | null;
   effort: Effort | null;
@@ -303,6 +315,7 @@ export interface SyncResponse {
   allowOwnProviders?: boolean;
   projects?: Project[];
   presets?: PromptPreset[];
+  folders?: ChatFolder[];
   settings?: Settings;
   templates?: Template[];
 }
@@ -330,6 +343,7 @@ export interface UpsertPayload {
   providers?: Provider[];
   projects?: Project[];
   presets?: PromptPreset[];
+  folders?: ChatFolder[];
   settings?: Settings;
   templates?: Template[];
 }
@@ -454,7 +468,8 @@ export interface CodeCheckpoint { id: string; conversationId: string; messageId:
 export interface ApprovalRule { id: string; projectId: string | null; kind: 'tool' | 'command' | 'path'; pattern: string; action: 'allow' | 'deny' | 'ask'; createdAt: number; note: string | null }
 export interface Template { id: string; projectId: string | null; name: string; body: string; description: string; kind: 'prompt' | 'action'; createdAt: number; updatedAt: number; deleted: boolean; seq: number }
 export interface PetManifest { id: string; displayName: string; description?: string; spriteVersionNumber: 1 | 2; spritesheetPath: string }
-export interface PetInfo { id: string; name: string; description: string; spriteVersionNumber: 1 | 2; mime: string; size: number; createdAt: number }
+/** kind: 'sprite' (sheet, default when missing) or 'stills' (one image per state; `states` lists the ones uploaded). */
+export interface PetInfo { id: string; name: string; description: string; kind?: 'sprite' | 'stills'; states?: string[]; spriteVersionNumber?: 1 | 2; mime: string; size: number; createdAt: number }
 
 /* ---- Usage (token analytics; GET /usage/*) ---- */
 export interface UsageTotals {

@@ -38,7 +38,7 @@ VS Code で開いているフォルダを、自分のサーバー経由で AI �
 
 インストール: `code --install-extension OmniChat-VS.vsix --force` を実行して、VS Code で「Reload Window」を実行します。設定と使い方は [docs/VSCODE.md](docs/VSCODE.md) を見てください。
 
-> **v0.5.0 は、一般公開の最初のバージョンです。** 0.x なので、仕様が変わることがあります。動作確認が十分でない部分もあります(下の「[状態と検証範囲](#状態と検証範囲)」)。大切なデータは、定期的にバックアップしてください。他の OS・.msi などは [Releases](https://github.com/remuno3751/omnichat/releases/latest) の表から選べます。
+> **v1.0.0 は、最初のメジャーバージョンです。** 実機での動作確認が十分でない部分もあります(下の「[状態と検証範囲](#状態と検証範囲)」)。大切なデータは、定期的にバックアップしてください。他の OS・.msi などは [Releases](https://github.com/remuno3751/omnichat/releases/latest) の表から選べます。
 
 > **注意**: インストーラーは署名していないため、初回に OS の警告が出ます(手順は [docs/DOWNLOAD.md](docs/DOWNLOAD.md#os-ごとのインストール手順))。
 
@@ -228,7 +228,7 @@ cd app && npx expo start                  # 実機は Expo Go でQRを読む
 
 ## 状態と検証範囲
 
-バージョンは 0.5.0 です(DSH 連携プラグインは 1.0.0)。実装は 4 フェーズ(基盤 / 可視化 / ツール・検索・履歴 / 開発者機能)で、詳細は [CHANGELOG.md](CHANGELOG.md)。フェーズ 4 の各機能は、まだ実機で検証していない項目があります([docs/DEVELOPER.md](docs/DEVELOPER.md) の状態一覧)。
+バージョンは 1.0.0 です(DSH 連携プラグインは 1.0.0、OmniChat VS は 1.0.0)。実装は 4 フェーズ(基盤 / 可視化 / ツール・検索・履歴 / 開発者機能)で、詳細は [CHANGELOG.md](CHANGELOG.md)。フェーズ 4 の各機能は、まだ実機で検証していない項目があります([docs/DEVELOPER.md](docs/DEVELOPER.md) の状態一覧)。
 
 以下の「確認したもの」は、各フェーズの開発時に行った確認の記録です。このドキュメントを書いた時点で再実行したものではありません。
 

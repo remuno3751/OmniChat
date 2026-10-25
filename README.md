@@ -37,7 +37,7 @@ Lets the AI work in the folder you have open in VS Code (chat, models, approvals
 
 Install: `code --install-extension OmniChat-VS.vsix --force`, then run "Reload Window". Setup and usage: [docs/VSCODE.md](docs/VSCODE.md) (Japanese).
 
-> **v0.5.0 is the first public version.** It is a 0.x release, so behavior may change, and some parts are not fully verified (see [Status and verification](#status-and-verification)). Please back up important data regularly.
+> **v1.0.0 is the first major version.** Some parts are not fully verified on real devices (see [Status and verification](#status-and-verification)). Please back up important data regularly.
 
 > **Note:** the installers are not code-signed, so your OS shows a warning on first launch.
 
@@ -99,7 +99,7 @@ Four ways (details in **[docs/INSTALL.md](docs/INSTALL.md)**, Japanese). Release
 | Linux | Extract the tarball and run `sudo ./install.sh` (systemd) |
 | macOS | Extract the tarball and run `./install.sh` (launchd) |
 
-> For v0.5.0 the released server files are the Windows server app and the update bundle; Docker, Linux and macOS server packages are not published yet.
+> For v1.0.0 the released server files are the Windows server app and the update bundle; Docker, Linux and macOS server packages are not published yet.
 
 ## Supported platforms
 
@@ -171,7 +171,7 @@ cd app && npx expo start                  # on a device with Expo Go
 
 ## Status and verification
 
-Version 0.5.0 (DSH plugin 1.0.0). See [CHANGELOG.md](CHANGELOG.md) (Japanese) for details.
+Version 1.0.0 (DSH plugin 1.0.0, OmniChat VS 1.0.0). See [CHANGELOG.md](CHANGELOG.md) (Japanese) for details.
 
 **Verified in practice**
 

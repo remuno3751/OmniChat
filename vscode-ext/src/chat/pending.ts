@@ -5,12 +5,34 @@
  */
 import type { TranscriptItem } from "../protocol/chat-frames";
 import { isRunning } from "./transcript";
+import type { CompactOutcome, RestoreOutcome } from "./controllerTypes";
+import type { ContextUsage } from "./state";
 
-export type PendingKind = "prompt" | "models" | "conversations" | "conversation";
+export type PendingKind =
+  | "prompt"
+  | "models"
+  | "conversations"
+  | "conversation"
+  | "context"
+  | "devices"
+  | "compact"
+  | "settings"
+  | "settingsSet"
+  | "search"
+  | "checkpoints"
+  | "checkpoint_restore";
 
 export interface PendingRequest {
   kind: PendingKind;
   conversationId?: string;
+  /** Compact requests: called once with the outcome (also on error or timeout). */
+  onCompact?: (outcome: CompactOutcome) => void;
+  /** Checkpoint restore requests: called once with the outcome (also on error or timeout). */
+  onRestore?: (outcome: RestoreOutcome) => void;
+  /** Context requests: called once with the usage when the answer arrives. */
+  onUsage?: (usage: ContextUsage) => void;
+  /** Settings saves: called once with true when stored, false on error or timeout. */
+  onSaved?: (ok: boolean) => void;
 }
 
 export interface RequestTracker {

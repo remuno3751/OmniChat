@@ -31,7 +31,7 @@ export class VscodeBridgeError extends Error {
 
 /* ---------- types ---------- */
 
-export interface ToolApproval { by: string; protectedOk: boolean }
+export interface ToolApproval { by: string; protectedOk: boolean; outsideOk?: boolean }
 export type ToolResult =
   | { ok: true; result: unknown; truncated: boolean; durationMs: number }
   | { ok: false; error: { code: string; message: string; details?: unknown } };
@@ -55,7 +55,7 @@ export interface VscodeRunHooks {
 export interface VscodeReady {
   version: string; protocol: number; vscodeVersion: string; platform: string; shell: string;
   remote: string | null; cwd: string; workspaces: string[]; allowAnyCwd: boolean; trusted: boolean;
-  tools: string[]; capabilities: { workspaces: boolean; fs: boolean; approval: boolean; checkpoints: boolean; transcript: boolean; chat: boolean };
+  tools: string[]; capabilities: { workspaces: boolean; fs: boolean; approval: boolean; checkpoints: boolean; transcript: boolean; chat: boolean; transcriptDelta: boolean };
 }
 
 export interface DoneInfo { ok: boolean; error?: string; warning?: string }
@@ -129,7 +129,7 @@ function parseReady(m: any): VscodeReady {
     platform: clip(m.platform, 40), shell: clip(m.shell, 100), remote: typeof m.remote === "string" && m.remote ? clip(m.remote, 40) : null,
     cwd: isValidCwd(m.cwd) ? m.cwd : "", workspaces: sanitizeWorkspaces(m.workspaces), allowAnyCwd: m.allowAnyCwd === true, trusted: m.trusted !== false,
     tools,
-    capabilities: { workspaces: caps.workspaces === true, fs: caps.fs === true, approval: caps.approval === true, checkpoints: caps.checkpoints === true, transcript: caps.transcript === true, chat: caps.chat === true },
+    capabilities: { workspaces: caps.workspaces === true, fs: caps.fs === true, approval: caps.approval === true, checkpoints: caps.checkpoints === true, transcript: caps.transcript === true, chat: caps.chat === true, transcriptDelta: caps.transcriptDelta === true },
   };
 }
 
@@ -269,7 +269,7 @@ function onMessage(c: Conn, raw: string): void {
 
 /* ---------- chat from VS Code (S12): frames are handed to vscode-chat.ts ---------- */
 
-const CHAT_FRAME_TYPES = new Set(["prompt", "models_request", "conversations_request", "conversation_request", "set_approval_mode", "stop"]);
+const CHAT_FRAME_TYPES = new Set(["prompt", "models_request", "conversations_request", "conversation_request", "set_approval_mode", "stop", "context_request", "devices_request", "compact_request", "conversation_settings_request", "conversation_settings_set", "history_search_request", "checkpoints_request", "checkpoint_restore"]);
 /** Chat frames per second and connection; more are dropped with an `error` frame. */
 export const VSCODE_CHAT_RATE = 30;
 
@@ -306,6 +306,16 @@ function onChatFrame(c: Conn, m: RawFrame): void {
 export function sendToChatInstances(userId: string, name: string, frame: unknown): number {
   let n = 0;
   for (const c of conns.values()) if (c.userId === userId && c.name === name && chatCapable(c) && send(c, frame)) n++;
+  return n;
+}
+
+/** Like sendToChatInstances, but the frame is built per instance from what it advertised (`transcriptDelta`, v0.5.5-a). */
+export function sendToChatInstancesBy(userId: string, name: string, build: (caps: { transcriptDelta: boolean }) => unknown): number {
+  let n = 0;
+  for (const c of conns.values()) {
+    if (c.userId !== userId || c.name !== name || !chatCapable(c)) continue;
+    if (send(c, build({ transcriptDelta: c.ready!.capabilities.transcriptDelta }))) n++;
+  }
   return n;
 }
 

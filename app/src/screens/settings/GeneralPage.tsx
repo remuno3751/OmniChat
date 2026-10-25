@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Linking, Platform, Text, View } from 'react-native';
 import { ApiError, api, getIsAdmin, getServerUrl } from '../../api';
 import { APP_VERSION } from '../../appVersion';
+import { aboutVersionLine, desktopVersionFromWindow } from '../../clientVersion';
 import NotifySettings from '../../components/NotifySettings';
 import { SOURCE_LINKS } from '../../sourceLinks';
 import { useDeviceSetting } from '../../deviceSettings';
@@ -66,7 +67,7 @@ export default function GeneralPage({ onBack, onLogout }: { onBack: () => void; 
       <Hint>{tr('settings.password.hint')}</Hint>
       <Btn label={tr('settings.password.change')} onPress={changePassword} disabled={busy || !cur || !next || !again} />
       <Section title={tr('general.about')} />
-      <Text selectable style={{ color: t.text }}>{tr('general.aboutVersion', { version: APP_VERSION, platform: Platform.OS })}</Text>
+      <Text selectable style={{ color: t.text }}>{(() => { const a = aboutVersionLine(Platform.OS, APP_VERSION, desktopVersionFromWindow(globalThis as any)); return tr(a.key, a.params); })()}</Text>
       <Hint>{tr('update.sourceHint')}</Hint>
       <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
         <Btn small label={tr('update.src.repo')} onPress={() => { Linking.openURL(SOURCE_LINKS.repo).catch(() => toast(tr('update.openFailed'), 'error')); }} />

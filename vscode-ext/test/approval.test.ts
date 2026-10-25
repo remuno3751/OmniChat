@@ -185,7 +185,8 @@ describe.each(["chat.js", "settings.js"])("webview %s", (file) => {
 
   it("uses the VS Code API and sets no inline style attribute (CSP)", () => {
     expect(src).toContain("acquireVsCodeApi");
-    expect(src).not.toMatch(/setAttribute\(\s*["']style["']|\.style\./);
+    // CSSOM setProperty/removeProperty is exempt from style-src (only style attributes from markup or setAttribute are blocked)
+    expect(src).not.toMatch(/setAttribute\(\s*["']style["']|\.style\.(?!setProperty|removeProperty)/);
   });
 
   it("posts only the documented reply shape", () => {

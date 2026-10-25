@@ -4,6 +4,8 @@ import { normalizeRemembered } from './modelLoad';
 import type { RememberedPolicy } from './modelLoad';
 import { CODE_LOCK_DEFAULTS, normalizeCodeLock } from './codeLock';
 import type { CodeLockSettings } from './codeLock';
+import { normalizePetPos } from './petPos';
+import type { PetPos } from './petPos';
 
 /** Per-device settings (never synced to the server). Persisted to AsyncStorage key `omnichat.device`. */
 
@@ -17,6 +19,8 @@ export type AppIconId =
   | 'frontier-light' | 'frontier-dark' | 'astral-light' | 'astral-dark';
 export type CodeScheme = 'midnight' | 'daylight' | 'solar' | 'mono';
 export type PetActivity = 'low' | 'normal' | 'high';
+/** several chats at once on the desktop pet: one bubble with < > ('pager') or the bubbles stacked ('stack') */
+export type PetMulti = 'pager' | 'stack';
 /** UI animation amount (Off disables all motion). */
 export type MotionAmount = 'off' | 'reduced' | 'standard' | 'rich';
 /** How streamed text appears: off / smooth steady reveal / particles condensing into glyphs. */
@@ -31,6 +35,16 @@ export interface PetSettings {
   size: number;
   activity: PetActivity;
   clickThrough: boolean;
+  /** where the pet was dragged to (fractions of the free room); null = the default bottom-right spot */
+  pos: PetPos | null;
+  /** show the pet in its own window on the desktop (desktop app only) */
+  desktop: boolean;
+  /** show the pet inside the app too (only matters while `desktop` is on) */
+  inApp: boolean;
+  /** how several chats' bubbles are shown on the desktop pet */
+  multi: PetMulti;
+  /** the user chose the pet or the enabled switch on this device (false = follow the synced active pet) */
+  explicit: boolean;
 }
 
 /** DeepSeek Harness relay on this device (local plugin port <-> OmniChat server bridge). */
@@ -99,7 +113,7 @@ export const DEVICE_DEFAULTS: DeviceSettings = {
   appIcon: 'simple-contrast',
   fontSize: 16,
   messageWidth: 820,
-  pets: { enabled: false, petId: null, size: 128, activity: 'normal', clickThrough: true },
+  pets: { enabled: false, petId: null, size: 128, activity: 'normal', clickThrough: true, pos: null, desktop: false, inApp: true, multi: 'pager', explicit: false },
   modelLogosOnline: true,
   motionAmount: 'standard',
   streamAnim: 'smooth',
@@ -127,6 +141,7 @@ const MOTION_AMOUNTS: MotionAmount[] = ['off', 'reduced', 'standard', 'rich'];
 const PARTICLE_COLOR_MODES: ParticleColorMode[] = ['text', 'preset', 'custom'];
 const STREAM_ANIMS: StreamAnim[] = ['off', 'smooth', 'particles'];
 const ACTIVITIES: PetActivity[] = ['low', 'normal', 'high'];
+const PET_MULTIS: PetMulti[] = ['pager', 'stack'];
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 const pick = <T>(v: unknown, allowed: T[], fallback: T): T =>
@@ -153,6 +168,11 @@ function normalize(raw: any): DeviceSettings {
       size: clamp(Math.round(num(p.size, d.pets.size)), 64, 256),
       activity: pick(p.activity, ACTIVITIES, d.pets.activity),
       clickThrough: typeof p.clickThrough === 'boolean' ? p.clickThrough : d.pets.clickThrough,
+      pos: normalizePetPos(p.pos),
+      desktop: typeof p.desktop === 'boolean' ? p.desktop : d.pets.desktop,
+      inApp: typeof p.inApp === 'boolean' ? p.inApp : d.pets.inApp,
+      multi: pick(p.multi, PET_MULTIS, d.pets.multi),
+      explicit: typeof p.explicit === 'boolean' ? p.explicit : d.pets.explicit,
     },
     modelLogosOnline: typeof raw?.modelLogosOnline === 'boolean' ? raw.modelLogosOnline : d.modelLogosOnline,
     motionAmount: pick(raw?.motionAmount, MOTION_AMOUNTS, d.motionAmount),
@@ -218,6 +238,37 @@ export function setDevice(patch: DevicePatch): void {
   written = true;
   persist();
   emit();
+}
+
+/**
+ * Pet id and enabled switch in effect: the device's own choice, else the synced active pet (settings.activePetId).
+ * A device that never touched the pet setting (`explicit` false) shows the synced pet by default.
+ */
+export function effectivePets(pets: PetSettings, syncedActivePetId: string | null | undefined): { enabled: boolean; petId: string | null } {
+  const synced = syncedActivePetId || null;
+  const petId = pets.petId || synced;
+  const enabled = pets.explicit ? pets.enabled : pets.enabled || !!synced;
+  return { enabled, petId };
+}
+
+/**
+ * Applies a stored value written by another window of the same origin (the desktop pet window hides the pet
+ * through localStorage; see the 'storage' listener below). Does not write back.
+ */
+export function applyStoredDevice(raw: string | null): void {
+  if (!raw) return;
+  try {
+    state = normalize(JSON.parse(raw));
+    emit();
+  } catch {
+    // not our JSON: keep the current settings
+  }
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (e: StorageEvent) => {
+    if (e.key === DEVICE_KEY) applyStoredDevice(e.newValue);
+  });
 }
 
 export function subscribeDevice(l: () => void): () => void {

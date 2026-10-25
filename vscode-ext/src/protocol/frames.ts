@@ -26,6 +26,8 @@ export type ToolArgs = Record<string, unknown>;
 export interface ToolApproval {
   by: "mode:manual" | "user" | `rule:${string}`;
   protectedOk: boolean;
+  /** Outside-workspace access is permitted for this call (full-access mode, or the user approved it). */
+  outsideOk?: boolean;
 }
 
 /** A tool invocation sent S -> E (payload part of the `tool_call` frame). */
@@ -75,6 +77,8 @@ export interface BridgeCapabilities {
   transcript: boolean;
   /** Extension 0.2.0+: this window can chat (prompt, models, conversations, transcript). */
   chat?: boolean;
+  /** Extension 0.5.5+: accepts assistant deltas (`from` / `reasoningFrom`) in transcript frames. */
+  transcriptDelta?: boolean;
   tools: ToolName[];
 }
 

@@ -1,6 +1,6 @@
 # 引き継ぎメモ(ローカル LLM で開発を続けるための手順書)
 
-対象リポジトリ: `C:\vibecording\omnichat`(Git 管理済み、Windows 11、シェルは Git Bash か PowerShell)。
+対象リポジトリ: `<リポジトリのルート>`(Git 管理済み、Windows 11、シェルは Git Bash か PowerShell)。
 このメモは、小さめのローカルモデルでも迷わないように、**やること・やり方・落とし穴**を具体的に書いています。迷ったら、まずこの順で読んでください: 1 → 3 → 4 → 5。
 
 ## 1. このプロジェクトは何か
@@ -67,14 +67,14 @@ OmniChat は、スマホ・PC・Web・Mac から同じ会話を続けられる A
 
 ```bash
 # サーバー: 型チェック → テスト(全 178 件、約 1〜2 分)
-cd /c/vibecording/omnichat/server && npx tsc --noEmit && npm test
+cd <リポジトリのルート>/server && npx tsc --noEmit && npm test
 
 # アプリ: 型チェック → Web 書き出し
-cd /c/vibecording/omnichat/app && npx tsc --noEmit
+cd <リポジトリのルート>/app && npx tsc --noEmit
 npx expo export --platform web --output-dir <出力先>
 
 # 検証用サーバーの起動(別ポートとデータ置き場を使う。本番データを触らない)
-cd /c/vibecording/omnichat/server
+cd <リポジトリのルート>/server
 PORT=8790 DATA_DIR=<空のフォルダ> WEB_DIR=<書き出し先> ALLOW_REGISTRATION=1 \
   SEARXNG_URL=http://192.168.0.10:8080 npx tsx src/index.ts
 ```

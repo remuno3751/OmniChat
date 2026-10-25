@@ -2,6 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { computeGrid, type GridCell } from '../../sheetEval';
 import { colLetter, parseSheets } from '../../sheetModel';
+import { sheetCharts } from '../../sheetCharts';
+import ChartBlock from '../ChartBlock';
 import { useT } from '../../i18n';
 import { useThemeDef, useTheme } from '../../theme';
 
@@ -104,6 +106,7 @@ export default function XlsxPreview({ content }: { content: string; title: strin
   const idx = Math.min(picked, Math.max(0, sheets.length - 1));
   const sheet = sheets[idx];
   const grid = useMemo(() => (sheet ? computeGrid(sheet.rows) : []), [sheet]);
+  const charts = useMemo(() => sheetCharts(content, sheets).get(idx) ?? [], [content, sheets, idx]);
 
   if (!sheet) {
     return (
@@ -155,6 +158,13 @@ export default function XlsxPreview({ content }: { content: string; title: strin
           fxLabel={tr('art.fx')}
         />
       )}
+      {charts.length > 0 && (
+        <ScrollView style={[styles.charts, { borderTopColor: t.border, backgroundColor: pal.cell }]} contentContainerStyle={styles.chartsBody}>
+          {charts.map((c, i) => (
+            <ChartBlock key={i} source={JSON.stringify(c)} t={t} fallback={null} />
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -164,6 +174,8 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center', padding: 16 },
   vpad: { paddingBottom: 16 },
   tabs: { flexGrow: 0, borderBottomWidth: 1 },
+  charts: { flexGrow: 0, maxHeight: 260, borderTopWidth: 1 },
+  chartsBody: { padding: 12, gap: 8 },
   tab: { paddingHorizontal: 14, paddingVertical: 9, borderBottomWidth: 2 },
   note: { fontSize: 12, paddingHorizontal: 12, paddingVertical: 6 },
   cell: { borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, justifyContent: 'center', paddingHorizontal: 6, overflow: 'hidden' },

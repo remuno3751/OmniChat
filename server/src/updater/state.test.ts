@@ -334,7 +334,7 @@ test("detectInstall: each launcher type is recognised, unknown values are not", 
 });
 
 test("detectInstall: dev when running from source or without a launcher", () => {
-  const src = detectInstall({ OMNICHAT_INSTALL_TYPE: "tarball", OMNICHAT_BOOT: "1" }, never, "C:/vibecording/omnichat/server/src/index.ts");
+  const src = detectInstall({ OMNICHAT_INSTALL_TYPE: "tarball", OMNICHAT_BOOT: "1" }, never, "C:/work/omnichat/server/src/index.ts");
   assert.equal(src.type, "dev");
   assert.equal(src.selfUpdate, false);
   assert.match(src.reason ?? "", /source/);

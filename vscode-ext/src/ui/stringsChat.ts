@@ -4,6 +4,8 @@
  * `Strings` in strings.ts extends `ChatStrings`, and both languages must have the same keys.
  */
 export interface ChatStrings {
+  /** Shown when VS Code cannot open the right side bar chat (older versions). */
+  rightDockUnsupported: string;
   errors: Record<
     | "generic"
     | "busy"
@@ -37,6 +39,8 @@ export interface ChatStrings {
   copy: string;
   copied: string;
   thinking: string;
+  /** The collapsed reasoning row once the run is done. */
+  thought: string;
   modelLabel: string;
   modeLabel: string;
   modeManualHint: string;
@@ -44,9 +48,37 @@ export interface ChatStrings {
   modeFullHint: string;
   selectModel: string;
   toolDuration: string;
+  diffTruncated: string;
+  /** Timeline wording per tool: past tense when finished, progressive while running. */
+  toolDone: Record<ToolKey, string>;
+  toolRunning: Record<ToolKey, string>;
+  /** Fallbacks for unknown tools; "{tool}" is replaced by the tool name. */
+  toolDoneOther: string;
+  toolRunningOther: string;
+  /** Tooltip of a clickable file path. */
+  openFile: string;
+  /** Folded run of one tool, e.g. "Read file · 4"; "{label}" and "{n}" are replaced. */
+  toolGroup: string;
+  /** Header button: move the chat to the right-hand (secondary) side bar. */
+  dockRight: string;
 }
 
+export type ToolKey =
+  | "read_file"
+  | "list_dir"
+  | "glob"
+  | "grep"
+  | "get_diagnostics"
+  | "git_status"
+  | "git_diff"
+  | "git_log"
+  | "git_commit"
+  | "edit_file"
+  | "write_file"
+  | "run_command";
+
 export const chatJa: ChatStrings = {
+  rightDockUnsupported: "この VS Code バージョンでは右のサイドバーに表示できません。OmniChat VS のアイコンを右端にドラッグしてください。",
   errors: {
     generic: "送信できませんでした。",
     busy: "別の実行が進行中です。",
@@ -77,6 +109,7 @@ export const chatJa: ChatStrings = {
   copy: "コピー",
   copied: "コピーしました",
   thinking: "考え中…",
+  thought: "考えました",
   modelLabel: "モデル",
   modeLabel: "承認モード",
   modeManualHint: "ツールの実行前に毎回確認します",
@@ -84,9 +117,44 @@ export const chatJa: ChatStrings = {
   modeFullHint: "保護項目以外は確認なしで実行します",
   selectModel: "モデルを選択",
   toolDuration: "所要時間",
+  diffTruncated: "… 以降の変更は省略しました",
+  toolDone: {
+    read_file: "ファイルを読みました",
+    list_dir: "フォルダーを一覧しました",
+    glob: "globを実行しました",
+    grep: "grepを実行しました",
+    get_diagnostics: "診断を取得しました",
+    git_status: "git statusを実行しました",
+    git_diff: "git diffを実行しました",
+    git_log: "git logを実行しました",
+    git_commit: "git commitを実行しました",
+    edit_file: "ファイルを編集しました",
+    write_file: "ファイルを書き込みました",
+    run_command: "コマンドを実行しました",
+  },
+  toolRunning: {
+    read_file: "ファイルを読み込み中…",
+    list_dir: "フォルダーを一覧中…",
+    glob: "globを実行中…",
+    grep: "grepを実行中…",
+    get_diagnostics: "診断を取得中…",
+    git_status: "git statusを実行中…",
+    git_diff: "git diffを実行中…",
+    git_log: "git logを実行中…",
+    git_commit: "git commitを実行中…",
+    edit_file: "ファイルを編集中…",
+    write_file: "ファイルを書き込み中…",
+    run_command: "コマンドを実行中…",
+  },
+  toolDoneOther: "{tool}を実行しました",
+  toolRunningOther: "{tool}を実行中…",
+  openFile: "エディターで開く",
+  toolGroup: "{label} · {n} 件",
+  dockRight: "右のサイドバーに移動",
 };
 
 export const chatEn: ChatStrings = {
+  rightDockUnsupported: "This VS Code version cannot dock views on the right. Drag the OmniChat VS icon to the right edge instead.",
   errors: {
     generic: "Could not send.",
     busy: "Another run is in progress.",
@@ -117,6 +185,7 @@ export const chatEn: ChatStrings = {
   copy: "Copy",
   copied: "Copied",
   thinking: "Thinking…",
+  thought: "Thought",
   modelLabel: "Model",
   modeLabel: "Approval mode",
   modeManualHint: "Asks before each tool runs",
@@ -124,4 +193,38 @@ export const chatEn: ChatStrings = {
   modeFullHint: "Runs everything except protected items without asking",
   selectModel: "Select a model",
   toolDuration: "Duration",
+  diffTruncated: "… remaining changes omitted",
+  toolDone: {
+    read_file: "Read file",
+    list_dir: "Listed folder",
+    glob: "Ran glob",
+    grep: "Ran grep",
+    get_diagnostics: "Got diagnostics",
+    git_status: "Ran git status",
+    git_diff: "Ran git diff",
+    git_log: "Ran git log",
+    git_commit: "Ran git commit",
+    edit_file: "Edited file",
+    write_file: "Wrote file",
+    run_command: "Ran command",
+  },
+  toolRunning: {
+    read_file: "Reading file…",
+    list_dir: "Listing folder…",
+    glob: "Running glob…",
+    grep: "Running grep…",
+    get_diagnostics: "Getting diagnostics…",
+    git_status: "Running git status…",
+    git_diff: "Running git diff…",
+    git_log: "Running git log…",
+    git_commit: "Running git commit…",
+    edit_file: "Editing file…",
+    write_file: "Writing file…",
+    run_command: "Running command…",
+  },
+  toolDoneOther: "Ran {tool}",
+  toolRunningOther: "Running {tool}…",
+  openFile: "Open in editor",
+  toolGroup: "{label} · {n}",
+  dockRight: "Move to the right side bar",
 };

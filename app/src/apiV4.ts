@@ -5,6 +5,17 @@ import { t } from './i18n';
 import type {
   ApprovalRule, CodeCheckpoint, CodeSession, FileChange, PetInfo, PetManifest, Settings, Template,
 } from './protocol';
+import type { StillState } from './petStills';
+
+/** One stills image as uploaded: PNG or WebP, base64 of the bytes (each at most 600 KB decoded). */
+export interface StillImagePayload { mime: 'image/png' | 'image/webp'; dataBase64: string }
+/** POST /pets/stills body. `idle` is required; the other states are optional. */
+export interface StillsPetBody {
+  id: string;
+  displayName: string;
+  description?: string;
+  images: { idle: StillImagePayload } & Partial<Record<Exclude<StillState, 'idle'>, StillImagePayload>>;
+}
 
 async function v4fetch(method: string, path: string, body?: unknown): Promise<Response> {
   const headers: Record<string, string> = {};
@@ -38,8 +49,21 @@ const qs = (params: Record<string, string | undefined>) => {
   return parts.length ? `?${parts.join('&')}` : '';
 };
 
-/** In-memory cache of pet sheet URLs (object URLs on web, data URIs elsewhere). */
-const petSheetCache = new Map<string, Promise<string>>();
+/**
+ * In-memory cache of pet image URLs (object URLs on web, data URIs elsewhere). Keys are `${id}|sheet`
+ * for sprite sheets and `${id}|${state}` for stills images, so deleting a pet drops all of its entries.
+ */
+const petUrlCache = new Map<string, Promise<string>>();
+
+/** Cached URL for one key; the entry is dropped again if the fetch fails. */
+function cachedPetUrl(key: string, load: () => Promise<Blob>): Promise<string> {
+  const hit = petUrlCache.get(key);
+  if (hit) return hit;
+  const p = load().then(blobToUrl);
+  petUrlCache.set(key, p);
+  p.catch(() => { if (petUrlCache.get(key) === p) petUrlCache.delete(key); });
+  return p;
+}
 
 function blobToUrl(blob: Blob): Promise<string> {
   const URLc: any = (globalThis as any).URL;
@@ -130,29 +154,29 @@ export const apiV4 = {
     v4json<PetInfo>('POST', '/pets', b),
 
   deletePet: (id: string) => {
-    const old = petSheetCache.get(id);
-    if (old) {
-      petSheetCache.delete(id);
-      old.then((u) => { if (u.startsWith('blob:')) (globalThis as any).URL?.revokeObjectURL?.(u); }, () => {});
+    for (const key of [...petUrlCache.keys()]) {
+      if (!key.startsWith(`${id}|`)) continue;
+      const old = petUrlCache.get(key);
+      petUrlCache.delete(key);
+      old?.then((u) => { if (u.startsWith('blob:')) (globalThis as any).URL?.revokeObjectURL?.(u); }, () => {});
     }
     return v4json<{ ok: boolean }>('DELETE', `/pets/${encodeURIComponent(id)}`);
   },
+
+  /** POST /pets/stills: one image per state (idle required). Returns the new pet's info. */
+  createStillsPet: (b: StillsPetBody) => v4json<PetInfo>('POST', '/pets/stills', b),
 
   /**
    * Usable <img src> for a pet sprite sheet. GET /pets/:id/sheet needs the Bearer header, so the
    * binary is fetched here and turned into an object URL (web) or a data URI (native). Cached per id.
    */
-  petSheetBlobUrl: (id: string): Promise<string> => {
-    const hit = petSheetCache.get(id);
-    if (hit) return hit;
-    const p = (async () => {
-      const res = await v4fetch('GET', `/pets/${encodeURIComponent(id)}/sheet`);
-      return blobToUrl(await res.blob());
-    })();
-    petSheetCache.set(id, p);
-    p.catch(() => { if (petSheetCache.get(id) === p) petSheetCache.delete(id); });
-    return p;
-  },
+  petSheetBlobUrl: (id: string): Promise<string> =>
+    cachedPetUrl(`${id}|sheet`, async () => (await v4fetch('GET', `/pets/${encodeURIComponent(id)}/sheet`)).blob()),
+
+  /** Usable <img src> for one state of a stills pet (GET /pets/:id/image/:state, Bearer needed). Cached per state. */
+  petImageBlobUrl: (id: string, state: StillState): Promise<string> =>
+    cachedPetUrl(`${id}|${state}`, async () =>
+      (await v4fetch('GET', `/pets/${encodeURIComponent(id)}/image/${encodeURIComponent(state)}`)).blob()),
 
   /** PUT /settings with only the v4 notification/pet keys (api.putSettings does not type them). */
   putNotify: (patch: { notify?: Settings['notify']; notifyUrl?: string | null; activePetId?: string | null }) =>

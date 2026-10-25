@@ -1,4 +1,5 @@
 import type { Conversation, Provider } from './protocol';
+import { bridgeNameOfDevice } from './deviceList';
 
 /* Code tab: grouping by workspace (working folder) and device (PC / bridge). Pure; docs/design/CODE-WORKSPACES.md. */
 
@@ -105,4 +106,46 @@ export function groupByDevice(convs: Conversation[], providers: Record<string, P
     out.push({ key: deviceKey(d || null), device: d || null, latest: Math.max(...list.map((c) => c.updatedAt)), groups });
   }
   return out.sort((a, b) => (a.device === null ? 1 : 0) - (b.device === null ? 1 : 0) || b.latest - a.latest);
+}
+
+/** Per device name: the normalized folders its Code chats run in. Those folders are already a workspace group on the Code tab. */
+export function codeChatFolders(convs: Conversation[], providers: Record<string, Provider>): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const c of convs) {
+    if (c.deleted || (c.mode ?? 'chat') !== 'code' || !c.cwd) continue;
+    const dev = deviceOf(c, providers);
+    if (!dev) continue;
+    const set = out.get(dev) ?? new Set<string>();
+    set.add(normCwd(c.cwd));
+    out.set(dev, set);
+  }
+  return out;
+}
+
+/** Why a new Code chat cannot start in a workspace group ('offline' PC, folder not open in VS Code, or no folder picker); null = it can. */
+export type StartBlock = 'offline' | 'notOpen' | 'unavailable';
+export function startBlock(dev: { online: boolean; kind: 'dsh' | 'vscode'; workspaces: boolean } | undefined, openHere: boolean): StartBlock | null {
+  if (!dev) return 'unavailable';
+  if (!dev.online) return 'offline';
+  if (!dev.workspaces) return 'unavailable';
+  if (dev.kind === 'vscode' && !openHere) return 'notOpen';
+  return null;
+}
+
+/**
+ * Splits the conversations of hidden devices off a Code list. `hiddenNames` are the device names the Devices screen
+ * stored when a revoke chose "hide" ("VS Code (my-pc)"); a conversation belongs to a hidden device when its bridge
+ * name (`deviceOf`) is the bridge name inside one of them. Nothing hidden gives every conversation as shown.
+ */
+export function splitHiddenDeviceChats(convs: Conversation[], providers: Record<string, Provider>, hiddenNames: string[]): { shown: Conversation[]; hidden: Conversation[] } {
+  const bridges = new Set<string>();
+  for (const n of hiddenNames) { const b = bridgeNameOfDevice(n); if (b) bridges.add(b); }
+  if (bridges.size === 0) return { shown: convs, hidden: [] };
+  const shown: Conversation[] = [];
+  const hidden: Conversation[] = [];
+  for (const c of convs) {
+    const d = deviceOf(c, providers);
+    (d !== null && bridges.has(d) ? hidden : shown).push(c);
+  }
+  return { shown, hidden };
 }

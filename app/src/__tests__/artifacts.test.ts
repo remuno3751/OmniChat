@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ARTIFACT_EXT, lastArtifact, parseArtifactInfo } from '../artifacts';
+import { ARTIFACT_EXT, countPartialSlides, isEmptyArtifact, lastArtifact, parseArtifactInfo } from '../artifacts';
 
 test('parseArtifactInfo accepts all six types', () => {
   assert.deepEqual(parseArtifactInfo('artifact type=markdown title="Notes"'), { type: 'markdown', title: 'Notes' });
@@ -83,4 +83,57 @@ test('lastArtifact normalises CRLF', () => {
   const r = lastArtifact('```artifact type=xlsx title="C"\r\nA\r\nB\r\n```');
   assert.equal(r.content, 'A\nB');
   assert.equal(r.type, 'xlsx');
+});
+
+test('isEmptyArtifact is true only for blank content', () => {
+  assert.equal(isEmptyArtifact(''), true);
+  assert.equal(isEmptyArtifact(' \n\t\n'), true);
+  assert.equal(isEmptyArtifact('x'), false);
+  assert.equal(isEmptyArtifact('\n# T\n'), false);
+});
+
+test('countPartialSlides counts # and ## lines, not ### or text', () => {
+  const body = ['# Cover', 'sub', '## Slide 2', 'text', '### not a slide', '#tag', '##  Slide 3', '# '].join('\n');
+  assert.equal(countPartialSlides(body), 4);
+  assert.equal(countPartialSlides(''), 0);
+});
+
+test('countPartialSlides ignores lines inside nested code fences', () => {
+  const body = [
+    '## One',
+    '```shapes',
+    '# not a slide',
+    '## nor this',
+    '```',
+    '## Two',
+    '~~~',
+    '## inside tilde',
+    '~~~',
+    '## Three',
+  ].join('\n');
+  assert.equal(countPartialSlides(body), 3);
+});
+
+test('countPartialSlides keeps counting an unterminated nested fence as open', () => {
+  assert.equal(countPartialSlides('## A\n```shapes\n## B\n## C'), 1);
+});
+
+test('an artifact opened with three backticks survives inner ```shapes blocks', () => {
+  const text = ['intro', '```artifact type=pptx title="Deck"', '## A', '```shapes', 'layout: cover', '```', '## B', '```shapes', 'layout: cards', '```', '```', 'after'].join('\n');
+  const a = lastArtifact(text);
+  assert.ok(a);
+  assert.equal(a!.type, 'pptx');
+  assert.match(a!.content, /## B/);
+  assert.match(a!.content, /layout: cards/);
+  assert.doesNotMatch(a!.content, /after/);
+});
+
+test('a fence like ```excel whose first line is the artifact line is read as that artifact', () => {
+  const text = ['```excel', 'artifact type=xlsx title="Sales"', '## S', '| a | b |', '|---|---|', '| 1 | 2 |', '```chart', '{"type":"column"}', '```', '```'].join('\n');
+  const a = lastArtifact(text);
+  assert.ok(a);
+  assert.equal(a.type, 'xlsx');
+  assert.equal(a.title, 'Sales');
+  assert.match(a.content, /```chart/);
+  assert.doesNotMatch(a.content, /^artifact/);
 });

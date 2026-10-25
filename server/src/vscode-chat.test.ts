@@ -133,7 +133,7 @@ before(async () => {
   ext = await new Ext("pcA", "i1").connect();
   plain = await new Ext("pcA", "i2", "/other").connect({ chat: false, transcript: false });
 });
-after(() => { ext?.close(); plain?.close(); server.close(); server.closeAllConnections?.(); modelServer.close(); });
+after(() => { ext?.close(); plain?.close(); server.close(); server.closeAllConnections?.(); modelServer.close(); visionSrv?.close(); });
 
 test("no model chosen and none configured: prompt_ack no_model, nothing is created", async () => {
   resetExt();
@@ -209,7 +209,7 @@ test("conversations_request lists this bridge's Code conversations for the folde
   resetExt();
   const l = await ext.ask({ type: "conversations_request", requestId: rid(), cwd: "/work/app" }, "conversations");
   assert.ok(l.items.length >= 2);
-  assert.deepEqual(Object.keys(l.items[0]).sort(), ["approvalMode", "cwd", "id", "title", "updatedAt"]);
+  assert.deepEqual(Object.keys(l.items[0]).sort(), ["approvalMode", "cwd", "id", "searchMode", "title", "updatedAt"]);
   assert.ok(l.items.every((i: any) => i.cwd === "/work/app"));
   assert.ok(l.items[0].updatedAt >= l.items[1].updatedAt);
   assert.equal(l.items.find((i: any) => i.title === "fix a")?.approvalMode, "auto");
@@ -274,6 +274,17 @@ test("full access on a prompt needs confirmFull", async () => {
   assert.equal(a.ok, true);
   assert.equal(dbm.getConversationRow(a.conversationId).approval_mode, "full");
   await settled(a.conversationId);
+});
+
+test("prompt attachments: a document is accepted, a bad one is refused with attachment_invalid and nothing is created", async () => {
+  resetExt();
+  script = [["ok"]];
+  const bad = await prompt({ attachments: [{ name: "x.exe", mime: "application/octet-stream", data: Buffer.from("MZ").toString("base64") }] });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.error, "attachment_invalid");
+  const good = await prompt({ attachments: [{ name: "n.txt", mime: "text/plain", data: Buffer.from("hello doc").toString("base64") }] });
+  assert.equal(good.ok, true);
+  await settled(good.conversationId);
 });
 
 test("set_approval_mode: confirm_required for full, persisted + broadcast otherwise, not_found for others' conversations", async () => {
@@ -437,4 +448,190 @@ test("Windows folder C:\\Users\\me\\proj: prompt, listing under any slash/case f
     w.close();
     bridgeOnlyExt?.close();
   }
+});
+
+test("searchMode: persisted on prompt, listed by conversations (default smart), invalid value rejected", async () => {
+  resetExt();
+  await sleep(1100); // the chat frame rate window of this connection (earlier tests) must be empty
+  script = [["ok"]];
+  const bad = await ext.ask({ type: "prompt", requestId: rid(), cwd: "/work/app", text: "hi", model: `${modelProvId}::m1`, searchMode: "bogus" }, "error");
+  assert.equal(bad.code, "invalid_frame");
+  const a = await prompt({ searchMode: "off" });
+  assert.equal(a.ok, true);
+  const cid = a.conversationId as string;
+  assert.equal((dbm.getConversationRow(cid) as any).search_mode, "off");
+  await settled(cid);
+  const list = async () => (await ext.ask({ type: "conversations_request", requestId: rid(), cwd: "/work/app" }, "conversations")).items;
+  assert.equal((await list()).find((i: any) => i.id === cid).searchMode, "off");
+  // a new conversation without searchMode inherits the user's setting (stored null => smart)
+  resetExt(); script = [["ok"]];
+  const b = await prompt();
+  assert.equal((dbm.getConversationRow(b.conversationId) as any).search_mode, null);
+  assert.equal((await list()).find((i: any) => i.id === b.conversationId).searchMode, "smart");
+  await settled(b.conversationId);
+  // existing conversation: a new searchMode is stored, absent keeps it
+  resetExt(); script = [["ok"]];
+  assert.equal((await prompt({ conversationId: cid, searchMode: "always" })).ok, true);
+  await settled(cid);
+  assert.equal((await list()).find((i: any) => i.id === cid).searchMode, "always");
+  resetExt(); script = [["ok"]];
+  assert.equal((await prompt({ conversationId: cid })).ok, true);
+  await settled(cid);
+  assert.equal((dbm.getConversationRow(cid) as any).search_mode, "always");
+});
+
+test("context_request: numbers for an own conversation, not_found for unknown or foreign ones", async () => {
+  resetExt(); script = [["ok"]];
+  const a = await prompt({ text: "measure me" });
+  await settled(a.conversationId);
+  const c = await ext.ask({ type: "context_request", requestId: rid(), conversationId: a.conversationId }, "context");
+  assert.equal(typeof c.total, "number");
+  assert.ok(c.total > 0);
+  assert.equal(typeof c.limit, "number");
+  assert.equal(typeof c.fits, "boolean");
+  assert.equal(typeof c.estimated, "boolean");
+  assert.equal(typeof c.used.history, "number");
+  assert.equal(typeof c.reasoning, "number");
+  const nf = await ext.ask({ type: "context_request", requestId: rid(), conversationId: "cnope" }, "error");
+  assert.equal(nf.code, "not_found");
+  // another user's Code conversation on the same bridge name
+  const foreign = "c" + randomUUID();
+  dbm.db.prepare("INSERT INTO conversations (id, user_id, title, provider_id, model, created_at, updated_at, deleted, seq, system_mode, mode, cwd) VALUES (?,?,?,?,?,?,?,0,?,?,?,?)")
+    .run(foreign, otherUserId, "x", dbm.db.prepare("SELECT id FROM providers WHERE user_id = ? AND kind = 'vscode-bridge' LIMIT 1").get(userId) ? (dbm.db.prepare("SELECT id FROM providers WHERE user_id = ? AND kind = 'vscode-bridge' LIMIT 1").get(userId) as any).id : otherProvId, `${otherProvId}::p1`, Date.now(), Date.now(), dbm.nextSeq(), "append", "code", "/work/app");
+  const f = await ext.ask({ type: "context_request", requestId: rid(), conversationId: foreign }, "error");
+  assert.equal(f.code, "not_found");
+});
+
+test("context_request: used / reasoning always, last from the latest finished assistant metrics (omitted when none or zero)", async () => {
+  resetExt(); script = [["ok"]];
+  const a = await prompt({ text: "usage parts" });
+  await settled(a.conversationId);
+  const cid = a.conversationId;
+  const latest = () => (dbm.db.prepare("SELECT id FROM messages WHERE conversation_id = ? AND role = 'assistant' AND status = 'done' ORDER BY seq DESC LIMIT 1").get(cid) as any)?.id as string | undefined;
+  const aid = latest();
+  assert.ok(aid, "a finished assistant message");
+  dbm.db.prepare("DELETE FROM metrics WHERE message_id = ?").run(aid);
+  const none = await ext.ask({ type: "context_request", requestId: rid(), conversationId: cid }, "context");
+  assert.equal("last" in none, false); // no metrics row: last is omitted
+  assert.deepEqual(Object.keys(none.used).sort(), ["attachments", "history", "input", "system", "tools"]);
+  assert.equal(typeof none.used.system, "number");
+  assert.equal(typeof none.reasoning, "number");
+  dbm.db.prepare("INSERT INTO metrics (message_id, user_id, conversation_id, prompt_tokens, completion_tokens, reasoning_tokens, source, usage_exact, created_at) VALUES (?,?,?,?,?,?,?,?,?)")
+    .run(aid, userId, cid, 123, 45, 6, "test", 1, Date.now());
+  const withLast = await ext.ask({ type: "context_request", requestId: rid(), conversationId: cid }, "context");
+  assert.deepEqual(withLast.last, { prompt: 123, completion: 45, reasoning: 6 });
+  dbm.db.prepare("UPDATE metrics SET prompt_tokens = 0, completion_tokens = 0, reasoning_tokens = 0 WHERE message_id = ?").run(aid);
+  const zero = await ext.ask({ type: "context_request", requestId: rid(), conversationId: cid }, "context");
+  assert.equal("last" in zero, false); // all zero: omitted
+});
+
+test("interrupt: a prompt with interrupt stops the active run of its conversation, then runs", async () => {
+  resetExt();
+  ext.tools = () => null; // the tool call never answers
+  script = [[call("run_command", { command: "npm test" })]];
+  const a = await prompt();
+  await until(() => ext.of("tool_call").length === 1);
+  resetExt();
+  script = [["after interrupt"]];
+  const b = await prompt({ conversationId: a.conversationId, interrupt: true, text: "again" });
+  assert.deepEqual([b.ok, b.conversationId], [true, a.conversationId]);
+  assert.equal(dbm.db.prepare("SELECT status FROM messages WHERE conversation_id = ? AND role = 'assistant' ORDER BY seq LIMIT 1").get(a.conversationId) && (dbm.db.prepare("SELECT status FROM messages WHERE conversation_id = ? AND role = 'assistant' ORDER BY seq LIMIT 1").get(a.conversationId) as any).status, "stopped");
+  await until(() => itemsOf("assistant").some((i: any) => i.status === "done" && /after interrupt/.test(i.text)));
+});
+
+/* A second openai-compatible provider for the last tests: a model list with a context window and image input, and a summary
+   for /chat/completions. Created on first use, so the tests above see only the provider they always did. */
+let visionSrv: Server | null = null;
+let visionProv = "";
+async function visionProvider(): Promise<string> {
+  if (visionProv) return visionProv;
+  visionSrv = createServer((_req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (_req.url?.endsWith("/chat/completions")) { res.end(JSON.stringify({ choices: [{ message: { content: "SUMMARY" } }] })); return; }
+    // LM Studio style (/api/v0/models carries the window per model); the same list answers /v1/models
+    res.end(JSON.stringify({ data: [{ id: "mv", state: "loaded", type: "llm", max_context_length: 8192, architecture: { input_modalities: ["text", "image"] } }, { id: "mt", state: "not-loaded", type: "llm" }] }));
+  });
+  await new Promise<void>((res) => visionSrv!.listen(0, "127.0.0.1", () => res()));
+  visionProv = randomUUID();
+  dbm.db.prepare("INSERT INTO providers (id, user_id, name, kind, base_url, model, api_key, created_at, deleted, seq) VALUES (?,?,?,?,?,?,?,?,0,?)")
+    .run(visionProv, userId, "Vision", "openai-compatible", `http://127.0.0.1:${(visionSrv.address() as any).port}/v1`, "mv", "", Date.now(), dbm.nextSeq());
+  return visionProv;
+}
+
+test("models_request: contextLength and vision from the provider's model list (absent when it says nothing)", async () => {
+  resetExt();
+  const pv = await visionProvider();
+  const m = await ext.ask({ type: "models_request", requestId: rid() }, "models");
+  const mv = m.items.find((i: any) => i.ref === `${pv}::mv`);
+  const mt = m.items.find((i: any) => i.ref === `${pv}::mt`);
+  assert.deepEqual([mv.contextLength, mv.vision], [8192, "yes"]);
+  assert.equal("contextLength" in mt, false); // the list says nothing about a window
+  assert.equal(mt.vision, "no"); // LM Studio reports the model as not a vision model
+});
+
+test("devices_request: online vscode and dsh bridges of this user, self = the asking bridge, workspaces de-duplicated", async () => {
+  resetExt();
+  const dsh = new WebSocket(`ws://127.0.0.1:${port}/bridge?${new URLSearchParams({ token, name: "Desk", kind: "dsh" })}`);
+  await new Promise<void>((res, rej) => { dsh.once("open", () => res()); dsh.once("error", rej); });
+  dsh.send(JSON.stringify({ type: "ready", cwd: "/desk/proj", workspaces: ["/desk/proj", "/desk/other"], capabilities: { workspaces: true } }));
+  await sleep(50);
+  try {
+    const d = await ext.ask({ type: "devices_request", requestId: rid() }, "devices");
+    const pc = d.items.find((i: any) => i.name === "pcA");
+    assert.deepEqual({ ...pc, workspaces: [...pc.workspaces].sort() }, { name: "pcA", kind: "vscode", online: true, self: true, workspaces: ["/other", "/work/app"] });
+    const desk = d.items.find((i: any) => i.name === "Desk");
+    assert.deepEqual(desk, { name: "Desk", kind: "dsh", online: true, self: false, workspaces: ["/desk/proj", "/desk/other"] });
+    assert.equal(d.items.filter((i: any) => i.name === "pcA").length, 1);
+  } finally { dsh.terminate(); }
+  // a bridge that went offline is no longer listed
+  let gone = false;
+  for (let i = 0; i < 50 && !gone; i++) {
+    gone = !(await ext.ask({ type: "devices_request", requestId: rid() }, "devices")).items.some((x: any) => x.name === "Desk");
+    if (!gone) await sleep(20);
+  }
+  assert.equal(gone, true);
+  const bad = await ext.ask({ type: "devices_request" }, "error");
+  assert.equal(bad.code, "invalid_frame");
+});
+
+test("compact_request: compacted with tokens before/after for an own conversation; busy while running; not_found; too_short", async () => {
+  resetExt(); script = [["ok"]];
+  const short = await prompt({ text: "only one turn" });
+  await settled(short.conversationId);
+  const ts = await ext.ask({ type: "compact_request", requestId: rid(), conversationId: short.conversationId }, "error");
+  assert.equal(ts.code, "too_short");
+
+  const a = await prompt({ text: "one" });
+  await settled(a.conversationId);
+  resetExt(); script = [["ok"]];
+  await prompt({ conversationId: a.conversationId, text: "two" }).then((r) => settled(r.conversationId));
+  resetExt(); script = [["ok"]];
+  await prompt({ conversationId: a.conversationId, text: "three" }).then((r) => settled(r.conversationId));
+  // summaries run on the openai-compatible provider: point the conversation at it
+  dbm.db.prepare("UPDATE conversations SET model = ? WHERE id = ?").run(`${await visionProvider()}::mv`, a.conversationId);
+  resetExt();
+  const c = await ext.ask({ type: "compact_request", requestId: rid(), conversationId: a.conversationId }, "compacted");
+  assert.equal(c.ok, true);
+  assert.equal(c.conversationId, a.conversationId);
+  assert.equal(typeof c.before, "number");
+  assert.equal(typeof c.after, "number");
+  assert.ok(c.before > 0);
+  const row = dbm.getConversationRow(a.conversationId) as any;
+  assert.equal(row.compact_summary, "SUMMARY");
+  assert.ok(row.compact_upto);
+
+  // a run in progress: busy, and the conversation is untouched
+  resetExt(); script = [["slow"]]; streamDelay = 300;
+  try {
+    const run = await prompt({ conversationId: a.conversationId, text: "still going" });
+    assert.equal(run.ok, true);
+    const busy = await ext.ask({ type: "compact_request", requestId: rid(), conversationId: a.conversationId }, "error");
+    assert.equal(busy.code, "busy");
+    await settled(a.conversationId);
+  } finally { streamDelay = 1; }
+
+  const nf = await ext.ask({ type: "compact_request", requestId: rid(), conversationId: "cnope" }, "error");
+  assert.equal(nf.code, "not_found");
+  const bad = await ext.ask({ type: "compact_request", requestId: rid() }, "error");
+  assert.equal(bad.code, "invalid_frame");
 });

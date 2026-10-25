@@ -1,0 +1,57 @@
+/* 0.4.0: chat settings panel, effort chip, history search. Same tokens as chat-pop.css; no inline styles anywhere. */
+.ch-effort-btn { flex: 0 0 auto; }
+.ch-effort-btn--set { border-color: var(--oc-accent); }
+
+.ch-cs {
+  position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; box-sizing: border-box;
+  background: var(--oc-bg); color: var(--oc-text); font-size: 12px;
+}
+.ch-cs[hidden] { display: none; }
+.ch-cs__head { display: flex; align-items: center; gap: 6px; flex: none; padding: 8px 10px; border-bottom: var(--oc-bw-base) solid var(--oc-border-strong); }
+.ch-cs__title { flex: 1 1 auto; margin: 0; font-size: 13px; font-weight: 600; }
+.ch-cs__body { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 12px 10px; }
+.ch-cs__field { display: flex; flex-direction: column; gap: 6px; }
+.ch-cs__label { font-size: 11px; letter-spacing: 0.03em; color: var(--oc-sub); }
+.ch-cs__hint { margin: 0; font-size: 11px; color: var(--oc-sub); }
+.ch-cs__text {
+  box-sizing: border-box; width: 100%; min-height: 140px; resize: vertical; padding: 8px 10px; font: inherit; line-height: 1.5; color: var(--oc-text);
+  background: var(--oc-input); border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-sm, 6px);
+}
+.ch-cs__text:focus-visible { outline: 1px solid var(--oc-accent); outline-offset: 0; }
+.ch-cs__modes { display: flex; flex-direction: column; gap: 4px; }
+.ch-cs__radio { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.ch-cs__efforts { display: flex; flex-wrap: wrap; gap: 4px; }
+.ch-cs__eff {
+  flex: 1 1 0; min-width: 52px; padding: 6px 8px; margin: 0; font: inherit; color: var(--oc-text); cursor: pointer;
+  background: var(--oc-input); border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-sm, 6px);
+}
+.ch-cs__eff:hover, .ch-cs__eff:focus-visible { border-color: var(--oc-text); outline: none; }
+.ch-cs__eff--on { background: var(--oc-accent); border-color: var(--oc-accent); color: var(--oc-accent-text); }
+.ch-cs__foot { display: flex; justify-content: flex-end; gap: 8px; flex: none; padding: 8px 10px; border-top: var(--oc-bw-base) solid var(--oc-border-strong); }
+.ch-cs__btn {
+  padding: 6px 14px; margin: 0; font: inherit; color: var(--oc-text); cursor: pointer;
+  background: var(--oc-panel2); border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-sm, 6px);
+}
+.ch-cs__btn:disabled { opacity: 0.55; cursor: default; }
+.ch-cs__btn--primary { background: var(--oc-accent); border-color: var(--oc-accent); color: var(--oc-accent-text); }
+
+.ch-history__search {
+  box-sizing: border-box; width: calc(100% - 16px); margin: 8px; padding: 6px 10px; font: inherit; font-size: 12px; color: var(--oc-text);
+  background: var(--oc-input); border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-sm, 6px);
+}
+.ch-history__search:focus-visible { outline: 1px solid var(--oc-accent); outline-offset: 0; }
+.ch-hit__btn {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 6px 10px; margin: 0; font: inherit; text-align: left; color: inherit;
+  background: transparent; border: 0; border-radius: var(--oc-r-sm, 6px); cursor: pointer;
+}
+.ch-hit__btn:hover, .ch-hit__btn:focus-visible { background: var(--oc-panel2); outline: none; }
+.ch-hit__top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ch-hit__title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.ch-hit__tag { flex: none; padding: 0 6px; border-radius: var(--oc-r-pill); font-size: 10px; line-height: 14px; background: var(--oc-panel2); color: var(--oc-sub); }
+.ch-hit__snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 11px; color: var(--oc-sub); }
+.ch-hit__snippet mark { background: transparent; color: var(--oc-text); font-weight: 600; text-decoration: underline; text-decoration-color: var(--oc-accent); }
+
+@keyframes ch-flash { from { background: var(--oc-panel2); box-shadow: inset 2px 0 0 var(--oc-accent); } to { background: transparent; box-shadow: none; } }
+.ch-msg--flash { animation: ch-flash 2s ease-out 1; }
+@media (prefers-reduced-motion: reduce) { .ch-msg--flash { animation: none; box-shadow: inset 2px 0 0 var(--oc-accent); } }
+@media (forced-colors: active) { .ch-cs__eff--on { outline: 2px solid Highlight; } }

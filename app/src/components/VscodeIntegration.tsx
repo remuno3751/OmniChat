@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Platform, Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import { api, getServerUrl, uuid } from '../api';
 import { refreshModels } from '../ModelPicker';
 import { activeProviders, applyUpsert, useStore } from '../store';
@@ -11,10 +11,9 @@ import { toast } from '../ui/toast';
 import { Btn, Check, Field, Hint } from '../ui/kit';
 import { CopyBlock, IntegrationCard, IntegrationStatus, Step } from './IntegrationParts';
 import {
-  VSCODE_EXT_VERSION, compatState, extensionOutdated, installCommand, pairingCode, pairingLink,
+  VSCODE_EXT_VERSION, compatState, extensionOutdated, installCommand, pairingCode,
   shouldAutoAddProvider, vscodeBridges, vscodeProviderBody, vsixName,
 } from '../vscodeBridge';
-import { openLinkPlan } from '../openLink';
 
 const wrap: any = Platform.OS === 'web' ? { overflowWrap: 'anywhere', wordBreak: 'break-word' } : null;
 /** True when the URL points at this machine only (the PC running VS Code may be another one). */
@@ -39,7 +38,6 @@ export function VscodeIntegration() {
   const [code, setCode] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState('');
-  const [opened, setOpened] = useState(false);
 
   const name = pcName.trim() || 'my-pc';
   const serverUrl = url.trim() || getServerUrl();
@@ -76,26 +74,10 @@ export function VscodeIntegration() {
     }
   }, [auto, bridges, providers]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Runs inside the click handler (user gesture). Desktop app: the shell opens it; web: same-tab navigation (no blank tab).
-  const openLink = (target: string) => {
-    setOpened(true);
-    const w: any = typeof window !== 'undefined' ? window : null;
-    const bridge = w?.__OMNICHAT_DESKTOP__;
-    const hasBridge = typeof bridge?.openExternal === 'function';
-    const plan = openLinkPlan(Platform.OS, hasBridge, target);
-    const fail = () => toast(tr('integ.vscode.openFailed'), 'error');
-    if (plan === 'desktop') bridge.openExternal(target).then((r: any) => { if (!r?.ok) fail(); }, fail);
-    else if (plan === 'location') w.location.href = target;
-    else if (plan === 'window-open') w.open(target, '_blank', 'noopener');
-    else if (plan === 'linking') Linking.openURL(target).catch(fail);
-    else fail();
-  };
-
   const online = list.filter((b) => b.online);
   const status: IntegrationStatus = bridges === null ? 'unknown' : online.length ? 'ok' : list.length ? 'warn' : 'off';
   const statusText = online.length ? tr('integ.vscode.status.connected') : list.length ? tr('integ.vscode.status.offline') : tr('integ.vscode.status.off');
   const ver = VSCODE_EXT_VERSION;
-  const link = code ? pairingLink(code) : '';
 
   return (
     <IntegrationCard title={tr('integ.vscode.title')} subtitle={tr('integ.vscode.subtitle')} status={status} statusText={statusText}>
@@ -118,11 +100,6 @@ export function VscodeIntegration() {
           <View style={{ minWidth: 0 }}>
             <CopyBlock label={tr('integ.vscode.codeLabel')} text={code} />
             <Hint>{tr('integ.vscode.codeOnce')}</Hint>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-              <Btn small label={tr('integ.vscode.openLink')} onPress={() => openLink(link)} />
-            </View>
-            {opened && <Hint>{tr('integ.vscode.openHint')}</Hint>}
-            <CopyBlock label={tr('integ.vscode.linkLabel')} text={link} />
           </View>
         )}
       </Step>

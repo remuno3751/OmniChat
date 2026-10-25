@@ -2,18 +2,23 @@ import type { FastifyInstance } from "fastify";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType } from "docx";
 import PptxGenJS from "pptxgenjs";
 import { authFromRequest, AuthError } from "./auth.js";
-import { inlineRuns, parseMarkdown, toSlides, type Block, type Run, type ShapeBox, type ShapeBoxType, type ShapeChart, type ShapeDash, type ShapesSpec, type Slide } from "./docmodel.js";
-import { attachShapes, arrowSegment, type Segment } from "./shapes.js";
+import { codeTokens, inlineRuns, parseMarkdown, toSlides, type Block, type CodeTokKind, type Run, type ShapeBox, type ShapeBoxType, type ShapeChart, type ShapeDash, type ShapesSpec, type Slide } from "./docmodel.js";
+import { attachShapes, arrowSegment, arrowLabelBox, INK_LIGHT, type Segment } from "./shapes.js";
 import { parseSheets, cellValue } from "./sheetmodel.js";
 import { registerImportRoutes } from "./artifacts-import.js";
+import { autoDesign } from "./slide-autodesign.js";
+import { fixSlides } from "./slide-fix.js";
+import { addDocxCharts, addXlsxCharts, bindToSheet, chartsBySheet, findChartBlocks, parseChartJson, type ChartDef, type SheetChart } from "./office-charts.js";
 import ExcelJS from "exceljs";
 
 export { inlineRuns, parseMarkdown, toSlides };
 export type { Block, Run };
 
-/** Markdown -> slides with each ```shapes block parsed (blocks that do not parse fall back to code). */
+/** Markdown -> slides with each ```shapes block parsed. A block that does not parse is dropped (its YAML must not show
+ * up as slide text); slides without any valid block get an automatic design (slide-autodesign.ts). */
 export function markdownToSlides(md: string, title: string): Slide[] {
-  return toSlides(attachShapes(parseMarkdown(md)), title);
+  const blocks = attachShapes(parseMarkdown(md)).filter((b) => !(b.kind === "shapes" && !b.spec));
+  return autoDesign(fixSlides(toSlides(blocks, title)));
 }
 
 /* Phase 5 (PROTOCOL-v3-phase5.md section 4): documents for the artifact panel. Markdown in, .docx / .pptx / .xlsx out. */
@@ -44,7 +49,21 @@ const shapeTexts = (spec: ShapesSpec): string[] => {
   return out;
 };
 
-export async function markdownToDocx(md: string, title: string): Promise<Buffer> {
+/** ```chart blocks of a docx markdown become placeholder paragraphs (`@@CHART:n@@`), swapped for native charts after packing. */
+function extractDocxCharts(md: string): { md: string; charts: ChartDef[] } {
+  const lines = md.replace(/\r\n?/g, "\n").split("\n");
+  const charts: ChartDef[] = [];
+  for (const b of findChartBlocks(md).reverse()) {
+    const def = parseChartJson(b.raw);
+    const ok = !!def && !!def.categories && !!def.series;
+    if (ok) charts.unshift(def!);
+    lines.splice(b.start, b.end - b.start + 1, ...(ok ? ["", `@@CHART:${charts.length - 1}@@`, ""] : []));
+  }
+  return { md: lines.join("\n"), charts };
+}
+
+export async function markdownToDocx(source: string, title: string): Promise<Buffer> {
+  const { md, charts } = extractDocxCharts(source);
   const children: (Paragraph | Table)[] = [];
   for (const b of attachShapes(parseMarkdown(md))) {
     if (b.kind === "heading") children.push(new Paragraph({ heading: HEADINGS[Math.min(b.level, 6) - 1], children: docxRuns(b.text) }));
@@ -76,7 +95,7 @@ export async function markdownToDocx(md: string, title: string): Promise<Buffer>
   }
   if (!children.length) children.push(new Paragraph({ children: [] }));
   const doc = new Document({ creator: "OmniChat", title, sections: [{ children }] });
-  return Packer.toBuffer(doc);
+  return addDocxCharts(await Packer.toBuffer(doc), charts);
 }
 
 /* ---------------- .pptx ---------------- */
@@ -170,7 +189,8 @@ function drawChart(s: any, c: ShapeChart): void {
     });
 }
 
-function drawShapes(s: any, spec: ShapesSpec): void {
+const LABEL_PT = 12;
+function drawShapes(s: any, spec: ShapesSpec, labelColor: string): void {
   const boxes = new Map<string, ShapeBox>();
   for (const e of spec.elements) if (e.type !== "line" && e.type !== "arrow" && e.type !== "chart" && e.id !== undefined) boxes.set(e.id, e);
   for (const e of spec.elements) {
@@ -180,49 +200,82 @@ function drawShapes(s: any, spec: ShapesSpec): void {
       if (!seg) continue;
       drawLine(s, seg, { color: e.color, width: e.width, dash: e.dash, head: "end" });
       if (e.label) {
-        const mx = inX((seg.x1 + seg.x2) / 2), my = inY((seg.y1 + seg.y2) / 2);
-        s.addText(e.label, { x: mx - 1, y: my - 0.25, w: 2, h: 0.5, fontSize: 12, color: "374151", align: "center", valign: "middle", fill: { color: "FFFFFF" } });
+        const b = arrowLabelBox(seg, e.label, LABEL_PT);
+        s.addText(e.label, { x: inX(b.x), y: inY(b.y), w: inX(b.w), h: inY(b.h), fontSize: LABEL_PT, color: labelColor, align: "center", valign: "middle" });
       }
     } else if (e.type === "chart") drawChart(s, e);
     else drawBox(s, e);
   }
 }
 
+/* Code lines: token colors (light code colors on a dark background). */
+const CODE_COLOR: Record<CodeTokKind, string> = { plain: "222222", keyword: "7C3AED", string: "059669", comment: "6B7280", number: "D97706" };
+const codeParts = (line: string, dark: boolean): TextPart[] => {
+  const toks = codeTokens(line || " ");
+  return toks.map((t, i) => ({
+    text: t.text,
+    options: {
+      fontFace: "Consolas", fontSize: 18,
+      color: t.kind === "plain" && dark ? rgb(INK_LIGHT) : CODE_COLOR[t.kind],
+      ...(i === toks.length - 1 ? { breakLine: true } : {}),
+    },
+  }));
+};
+
+/** Title / body box in inches from a percent box. */
+const boxRegion = (b: { x: number; y: number; w: number; h: number }) => ({ x: inX(b.x), y: inY(b.y), w: inX(b.w), maxH: inY(b.h) });
+
 export async function markdownToPptx(md: string, title: string): Promise<Buffer> {
   const pres = new PptxCtor();
   pres.layout = "LAYOUT_WIDE";
   pres.title = title;
   pres.author = "OmniChat";
-  for (const sl of markdownToSlides(md, title)) {
+  (markdownToSlides(md, title)).forEach((sl, index) => {
     const s = pres.addSlide();
-    s.addText(inlineRuns(sl.title).map((r) => r.text).join("") || " ", {
-      x: 0.6, y: 0.35, w: 12.1, h: 1.0, fontSize: 30, bold: true, color: "1F2937", fit: "shrink",
-    });
-    // All ```shapes blocks of the slide are merged into one spec.
+    // All ```shapes blocks of the slide are merged into one spec. The first one with a layout decides the layout boxes.
     const specs = sl.blocks.flatMap((b: Block) => (b.kind === "shapes" && b.spec ? [b.spec] : []));
-    const merged: ShapesSpec | undefined = specs.length ? {
-      bg: specs.map((x) => x.bg).find((x) => x !== undefined),
+    const primary = specs.find((x) => x.layout) ?? specs[0];
+    const bg = primary?.bg ?? specs.map((x) => x.bg).find((x) => x !== undefined);
+    const merged: ShapesSpec | undefined = primary ? {
+      bg,
       body: specs[0].body,
       notes: specs.map((x) => x.notes).filter((x) => x).join("\n") || undefined,
       elements: specs.flatMap((x) => x.elements),
+      layout: primary.layout,
+      accent: primary.accent,
+      ink: primary.ink,
+      titleBox: primary.titleBox,
+      bodyBox: primary.bodyBox,
     } : undefined;
-    const region = merged ? BODY_REGION[merged.body] : BODY_DEFAULT;
+    const dark = merged?.ink === INK_LIGHT;
+    const titleColor = merged?.ink ? rgb(merged.ink) : "1F2937";
+    const bodyColor = merged?.ink ? rgb(merged.ink) : "222222";
+    const tb = merged?.titleBox;
+    s.addText(inlineRuns(sl.title).map((r) => r.text).join("") || " ", tb ? {
+      x: inX(tb.x), y: inY(tb.y), w: inX(tb.w), h: inY(tb.h), fontSize: tb.size, align: tb.align, bold: true, color: titleColor, fit: "shrink",
+    } : {
+      x: 0.6, y: 0.35, w: 12.1, h: 1.0, fontSize: 30, bold: true, color: titleColor, fit: "shrink",
+    });
+    const region = !merged ? BODY_DEFAULT
+      : merged.body === "none" ? null
+      : merged.bodyBox ? boxRegion(merged.bodyBox)
+      : BODY_REGION[merged.body];
     const parts: TextPart[] = [];
     const tables: string[][][] = [];
     for (const b of sl.blocks) {
       if (b.kind === "table") tables.push(b.rows);
-      else if (b.kind === "code") for (const line of b.lines) parts.push(...pptxParts(line || " ", { fontFace: "Consolas", fontSize: 16 }));
-      else if (b.kind === "bullet") parts.push(...pptxParts(b.text, { bullet: true, indentLevel: b.level }));
-      else if (b.kind === "ordered") parts.push(...pptxParts(b.text, { bullet: { type: "number" } }));
-      else if (b.kind === "para") parts.push(...pptxParts(b.text, { bullet: false }));
+      else if (b.kind === "code") for (const line of b.lines) parts.push(...codeParts(line, dark));
+      else if (b.kind === "bullet") parts.push(...pptxParts(b.text, { bullet: true, indentLevel: b.level, color: bodyColor }));
+      else if (b.kind === "ordered") parts.push(...pptxParts(b.text, { bullet: { type: "number" }, color: bodyColor }));
+      else if (b.kind === "para") parts.push(...pptxParts(b.text, { bullet: false, color: bodyColor }));
       else if (b.kind === "shapes") continue;
-      else parts.push(...pptxParts(b.text, { bullet: false }));
+      else parts.push(...pptxParts(b.text, { bullet: false, color: bodyColor }));
     }
     if (region) {
       let y = region.y;
       if (parts.length) {
         const h = Math.min(region.maxH, Math.max(0.8, parts.length * 0.5));
-        s.addText(parts as any, { x: region.x, y, w: region.w, h, fontSize: 20, color: "222222", valign: "top", fit: "shrink" });
+        s.addText(parts as any, { x: region.x, y, w: region.w, h, fontSize: 20, color: bodyColor, valign: "top", fit: "shrink" });
         y += h + 0.2;
       }
       for (const rows of tables) {
@@ -239,10 +292,14 @@ export async function markdownToPptx(md: string, title: string): Promise<Buffer>
     }
     if (merged) {
       if (merged.bg) s.background = { color: rgb(merged.bg) };
-      drawShapes(s, merged);
+      drawShapes(s, merged, dark ? rgb(INK_LIGHT) : "374151");
       if (merged.notes) s.addNotes(merged.notes);
     }
-  }
+    // Slide numbers from the second slide on; the cover and section slides have none.
+    if (index >= 1 && merged?.layout !== "cover" && merged?.layout !== "section") {
+      s.slideNumber = { x: 12.3, y: 7.0, w: 0.6, h: 0.3, fontSize: 11, color: dark ? "94A3B8" : "6B7280", align: "right" };
+    }
+  });
   return (await pres.write({ outputType: "nodebuffer" })) as Buffer;
 }
 
@@ -262,7 +319,9 @@ export async function markdownToXlsx(md: string, title: string): Promise<Buffer>
   wb.title = title;
   const sheets = parseSheets(md);
   if (!sheets.length) sheets.push({ name: "Sheet1", rows: [], header: false });
-  for (const sh of sheets) {
+  const wanted = chartsBySheet(md, sheets);
+  const placed: SheetChart[] = [];
+  for (const [si, sh] of sheets.entries()) {
     const ws = wb.addWorksheet(sh.name);
     const width = Math.max(0, ...sh.rows.map((r) => r.length));
     const cols: number[] = Array.from({ length: width }, () => 0);
@@ -280,8 +339,12 @@ export async function markdownToXlsx(md: string, title: string): Promise<Buffer>
     });
     cols.forEach((len, ci) => { ws.getColumn(ci + 1).width = Math.min(60, Math.max(8, len + 2)); });
     if (sh.header) ws.views = [{ state: "frozen", ySplit: 1, topLeftCell: "A2", activeCell: "A2" }];
+    (wanted.get(si) ?? []).forEach((d, k) => {
+      const b = bindToSheet(d, sh);
+      if (b) placed.push({ sheetFileId: ws.id, def: b.def, refs: b.refs, col: width + 1, row: k * 20 });
+    });
   }
-  return Buffer.from(await wb.xlsx.writeBuffer());
+  return addXlsxCharts(Buffer.from(await wb.xlsx.writeBuffer()), placed);
 }
 
 /* ---------------- route ---------------- */
@@ -307,10 +370,22 @@ function convertInput(body: any): { type: ConvertType; markdown: string; stem: s
   return { type, markdown: b.markdown, stem: fileStem(b.title, fallback) };
 }
 
+/** Diagnostics only: a pptx with at most one slide, or blank Markdown, is logged as one line. Never throws. */
+function diagnoseThinPptx(log: { warn: (msg: string) => void }, markdown: string, stem: string): void {
+  try {
+    const slides = markdownToSlides(markdown, stem).length;
+    if (slides > 1 && markdown.trim()) return;
+    log.warn(`pptx convert: length=${markdown.length} slides=${slides} head=${JSON.stringify(markdown.slice(0, 200))}`);
+  } catch {
+    /* the diagnostic must not change the response */
+  }
+}
+
 export function registerArtifactRoutes(app: FastifyInstance): void {
   app.post("/artifacts/convert", async (req, reply) => {
     authFromRequest(req);
     const { type, markdown, stem } = convertInput(req.body);
+    if (type === "pptx") diagnoseThinPptx(req.log, markdown, stem);
     const out = type === "docx" ? await markdownToDocx(markdown, stem)
       : type === "pptx" ? await markdownToPptx(markdown, stem)
       : await markdownToXlsx(markdown, stem);

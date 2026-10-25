@@ -44,10 +44,10 @@ export class RunSupport {
   async authorize(tool: string, args: Record<string, unknown>): Promise<AuthResult> {
     const d = decideToolCall({ userId: this.c.userId, projectId: this.projectId(), tool, args, roots: this.c.roots, mode: currentApprovalMode(this.c.conversationId) });
     if (d.action === "deny") return { ok: false, decidedBy: d.by, message: `denied by rule${d.reasons.length > 1 ? ` (${d.reasons.slice(1).join("; ")})` : ""}` };
-    if (d.action === "allow") return { ok: true, approval: { by: d.by, protectedOk: false }, decidedBy: d.by };
+    if (d.action === "allow") return { ok: true, approval: { by: d.by, protectedOk: false, ...(d.outsideOk ? { outsideOk: true } : {}) }, decidedBy: d.by };
     const approvalId = randomUUID();
     const r = await this.ask(approvalId, tool, args, d.protected, d.reasons, false);
-    if (r.decision === "allowed-once") return { ok: true, approval: { by: "user", protectedOk: d.protected }, decidedBy: r.decidedBy };
+    if (r.decision === "allowed-once") return { ok: true, approval: { by: "user", protectedOk: d.protected, ...(d.outsideOk ? { outsideOk: true } : {}) }, decidedBy: r.decidedBy };
     const why = r.decidedBy === "timeout" ? "approval timed out" : r.decidedBy === "abort" ? "cancelled" : "denied by user";
     return { ok: false, decidedBy: r.decidedBy, message: why };
   }

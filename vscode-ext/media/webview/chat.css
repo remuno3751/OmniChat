@@ -21,8 +21,9 @@
   border-bottom: var(--oc-bw-base) solid var(--oc-border);
 }
 .ch-header__brand { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.ch-header .oc-logo { flex: none; }
 .ch-header__title {
-  margin: 0; min-width: 0; font-size: 16px; font-weight: 600; line-height: 1.3;
+  flex: 1 1 0; margin: 0; min-width: 0; font-size: 16px; font-weight: 600; line-height: 1.3;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ch-header__tools { display: flex; align-items: center; gap: 2px; flex: none; }
@@ -92,7 +93,7 @@
 
 /* Composer picker bar: folder, model and approval-mode controls in one row. */
 .ch-pickers {
-  display: flex; align-items: center; gap: 6px; flex: none; min-width: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: none; min-width: 0;
   padding: 6px 10px; background: var(--oc-panel); border-top: var(--oc-bw-base) solid var(--oc-border);
 }
 .ch-select {
@@ -138,7 +139,12 @@ body[data-oc-narrow] .ch-history__head { padding: 8px 10px; }
 body[data-oc-narrow] .ch-status__text {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
 }
-body[data-oc-narrow] .ch-pickers { flex-wrap: wrap; }
+/* Narrow composer: the segments stay one row each, with less padding. */
+body[data-oc-narrow] .ch-pickers { row-gap: 4px; }
+body[data-oc-narrow] .ch-seg__opt { padding: 2px 6px; }
+body[data-oc-narrow] .ch-header .oc-logo,
+body[data-oc-narrow] .ch-latency { display: none; }
+body[data-oc-narrow] .ch-header__title { font-size: 14px; }
 body[data-oc-narrow] .ch-folder,
 body[data-oc-narrow] .ch-model { flex: 1 1 140px; max-width: 100%; }
 

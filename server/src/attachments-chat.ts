@@ -1,13 +1,14 @@
 /* Attachments on the chat path (docs/PROTOCOL-v7-attachments.md "LLM に渡す内容").
    Turns the attachments of user messages into the text notes / image parts the model receives.
    A message without attachments is never touched: its body stays the plain string. */
-import { isAgentBridgeKind } from "./agent-kinds.js";
+import { isAgentBridgeKind, isVscodeBridgeKind } from "./agent-kinds.js";
 import type { ContentPart } from "./providers/index.js";
 import { attachmentsForMessage, loadAttachmentForModel, type AttachmentRecord } from "./attachments.js";
 import { readAttachmentSettings } from "./attachments-settings.js";
 import { visionSupport, type VisionSupport } from "./vision.js";
 import { getSettings } from "./projects.js";
 import { modelsForUser } from "./models.js";
+import { getUsableProviderRow } from "./shared-providers.js";
 import { estimateTokens } from "./tokens.js";
 
 /** Images of one request: the newest ones win. */
@@ -38,12 +39,15 @@ const canSendImages = (vision: VisionSupport, kind: string): boolean => vision =
 /**
  * Wire form of every history item that has attachments. `recsOf(id)` gives the records (default: the stored ones);
  * `getVision` is called only when an image is present. Items without attachments are not in the map.
+ * `imageKind` is the kind of the provider that really reads the images (a vscode-bridge turn: the conversation's real
+ * model; the default is `providerKind`). Images go out for openai-compatible models with vision, on chat and vscode-bridge.
  */
 export async function buildWire(
   items: WireInput[],
   recsOf: (id: string) => AttachmentRecord[],
   getVision: () => Promise<VisionSupport>,
   providerKind: string,
+  imageKind: string = providerKind,
 ): Promise<Map<string, WireItem>> {
   const out = new Map<string, WireItem>();
   const recs = new Map<string, AttachmentRecord[]>();
@@ -60,7 +64,8 @@ export async function buildWire(
   const bridge = isAgentBridgeKind(providerKind);
   // Code: the whole message's document text is held to the same limit as one document (extractMaxChars).
   const codeBudget = bridge ? readAttachmentSettings().extractMaxChars : 0;
-  const sendImages = hasImage && !bridge && canSendImages(await getVision(), providerKind);
+  const imagesAllowed = !bridge || isVscodeBridgeKind(providerKind); // dsh-bridge stays document-only
+  const sendImages = hasImage && imagesAllowed && canSendImages(await getVision(), imageKind);
 
   // Which images go out: the newest MAX_IMAGES that can still be read.
   const sendSet = new Set<string>();
@@ -132,6 +137,21 @@ export function codeDocumentNote(r: AttachmentRecord, budget: number, spend: (n:
   if (take > 0) n += `\n${full.slice(0, take)}`;
   if (take < total) n += `\n(以下省略: 全 ${total} 文字中 ${take} 文字)`;
   return n;
+}
+
+/** The real model of a vscode-bridge conversation: "<providerId>::<model>" -> the provider row this user may use (or undefined) and the model id. */
+export function realModelOf(userId: string, ref: string | null | undefined): { prov: any; model: string } {
+  const i = typeof ref === "string" ? ref.indexOf("::") : -1;
+  if (i <= 0) return { prov: undefined, model: "" };
+  return { prov: getUsableProviderRow(userId, ref!.slice(0, i)), model: ref!.slice(i + 2) };
+}
+
+/** Can the real model of a "<providerId>::<model>" ref read images? "unknown" when the ref is not usable. Images go out only for openai-compatible models. */
+export async function visionOfModelRef(userId: string, ref: string | null | undefined): Promise<VisionSupport> {
+  const { prov, model } = realModelOf(userId, ref);
+  if (!prov || prov.deleted || !model) return "unknown";
+  if (prov.kind !== "openai-compatible") return "no";
+  return resolveVision(userId, prov, model);
 }
 
 /** Can the model read images? Looks at the (cached) model list of the provider and the user's own override. "unknown" on any failure. */

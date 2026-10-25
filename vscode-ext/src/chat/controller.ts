@@ -4,11 +4,15 @@
  * Every request frame is tracked by requestId with a timer (pending.ts), so a server that never
  * answers resets the state and shows an error instead of spinning forever.
  * Pure: frames go out through `send`, and changes are reported to `onChange`. No `vscode` import.
+ * The send path (guard, queue, interrupt) lives in sendPath.ts.
  */
-import type { ApprovalModeId } from "../protocol/chat-frames";
+import type { ApprovalModeId, SearchMode } from "../protocol/chat-frames";
 import type { Frame } from "../protocol/frames";
-import { CHAT_S_TYPES, handleInbound, settle } from "./inbound";
+import { CHAT_S_TYPES, expireRequest, handleInbound, throttledResync } from "./inbound";
 import { createRequestTracker, createRunTracker, type PendingRequest } from "./pending";
+import { createSendPath } from "./sendPath";
+import { createExtraRequests } from "./requests";
+import { createCheckpointRequests } from "./checkpointRequests";
 import type { ChatController, ChatControllerOptions, ChatErrorCode, ChatSnapshot, ServerInfo } from "./controllerTypes";
 import { createState, currentItems, type ChatState } from "./state";
 import { chatSupport, type ChatSupport } from "./support";
@@ -22,15 +26,18 @@ export type {
   ListState,
   ServerInfo,
 } from "./controllerTypes";
+export { MAX_QUEUE } from "./sendPath";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_PROMPT_ACK_TIMEOUT_MS = 15_000;
 const DEFAULT_RUN_START_TIMEOUT_MS = 30_000;
+/** Quiet time before the context meter is refreshed after a draft change. */
+const CONTEXT_DEBOUNCE_MS = 800;
 
 export function createChatController(opts: ChatControllerOptions): ChatController {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const promptAckTimeoutMs = opts.promptAckTimeoutMs ?? DEFAULT_PROMPT_ACK_TIMEOUT_MS;
   const st: ChatState = createState();
+  let draftTimer: ReturnType<typeof setTimeout> | null = null;
 
   const nextId = (prefix: string): string => `${prefix}${++st.seq}`;
   const emit = (): void => opts.onChange();
@@ -46,13 +53,24 @@ export function createChatController(opts: ChatControllerOptions): ChatControlle
     emit();
   };
 
-  const pending = createRequestTracker((requestId: string, request: PendingRequest) => {
-    settle(st, request.kind, request.conversationId, requestId, { code: "timeout" });
-    emit();
-  });
+  const pending = createRequestTracker((requestId: string, request: PendingRequest) => expireRequest(st, requestId, request, emit));
   const runs = createRunTracker(opts.runStartTimeoutMs ?? DEFAULT_RUN_START_TIMEOUT_MS, () => {
     st.error = { code: "timeout" };
     emit();
+  });
+  const sendPath = createSendPath({
+    st,
+    send: opts.send,
+    clock: opts.now ?? Date.now,
+    emit,
+    fail,
+    nextId,
+    currentCwd,
+    effectiveModel,
+    support,
+    pending,
+    runs,
+    promptAckTimeoutMs: opts.promptAckTimeoutMs ?? DEFAULT_PROMPT_ACK_TIMEOUT_MS,
   });
 
   /** Clears everything in flight (the connection went away, or the view was disposed). */
@@ -94,18 +112,36 @@ export function createChatController(opts: ChatControllerOptions): ChatControlle
     return true;
   };
 
+  const extras = createExtraRequests({ st, send: opts.send, pending, nextId, timeoutMs, support, emit });
+  const checkpoints = createCheckpointRequests({ st, send: opts.send, pending, nextId, timeoutMs, support, emit });
+  const requestContext = (): void => extras.context();
+
   const refreshConversations = (): void => {
     const dir = currentCwd();
     if (dir !== null) requestConversations(dir);
   };
 
-  const inboundDeps = { pending, runs, refreshConversations };
+  const resync = throttledResync(requestConversation, opts.now ?? Date.now);
+  const inboundDeps = { pending, runs, refreshConversations, resync, ensureSettings: extras.settings.ensureSettings };
 
   return {
     handleFrame(frame: Frame) {
       if (!CHAT_S_TYPES.has(frame.type)) return false;
+      const wasRunning = runs.active();
       const consumed = handleInbound(frame, st, inboundDeps);
-      if (consumed) emit();
+      if (consumed) {
+        if (wasRunning && !runs.active()) {
+          requestContext(); // a finished run changes the usage
+          sendPath.drain();
+        } else if (frame.type === "models") {
+          sendPath.drain();
+        } else if (frame.type === "transcript" && frame.reset === true && frame.conversationId === st.conversationId) {
+          requestContext(); // the open conversation was (re)loaded
+        } else if (frame.type === "compacted") {
+          requestContext(); // the usage changed
+        }
+        emit();
+      }
       return consumed;
     },
     setOnline(next) {
@@ -117,6 +153,7 @@ export function createChatController(opts: ChatControllerOptions): ChatControlle
         resetInFlight();
         st.modelsState = "idle";
         st.conversationsState = "idle";
+        st.devices = { state: "idle", items: [] };
       }
       emit();
     },
@@ -153,45 +190,29 @@ export function createChatController(opts: ChatControllerOptions): ChatControlle
         modelsState: st.modelsState,
         conversationsState: st.conversationsState,
         loadingConversation: st.loadingConversation,
+        searchMode: st.searchMode,
+        queue: st.queue.map((q) => ({ id: q.id, text: q.text })),
+        context: st.context,
+        devices: st.devices, ...extras.view(),
+        checkpoints: st.checkpoints,
       };
     },
-    sendPrompt(text: string) {
-      const body = text.trim();
-      const dir = currentCwd();
-      if (body === "") return false;
-      if (!st.online || dir === null) {
-        fail("not_ready");
-        return false;
-      }
-      if (support() === "unsupported") {
-        fail("unsupported");
-        return false;
-      }
-      const modelRef = effectiveModel();
-      if (modelRef === null) {
-        fail(st.modelsState === "ready" && st.models.length === 0 ? "no_models" : "no_model");
-        return false;
-      }
-      const requestId = nextId("p");
-      const sent = opts.send({
-        type: "prompt",
-        requestId,
-        cwd: dir,
-        text: body,
-        ...(st.conversationId ? { conversationId: st.conversationId } : {}),
-        model: modelRef,
-        approvalMode: st.approvalMode,
-        ...(st.approvalMode === "full" && st.fullConfirmed ? { confirmFull: true } : {}),
-      });
-      if (!sent) {
-        fail("send_failed");
-        return false;
-      }
-      pending.track(requestId, { kind: "prompt" }, promptAckTimeoutMs);
-      st.awaitingAck = requestId;
-      st.error = null;
+    sendPrompt: sendPath.sendPrompt,
+    checkpoints,
+    cancelQueued(id: string) {
+      st.queue = st.queue.filter((q) => q.id !== id);
       emit();
-      return true;
+    },
+    setSearchMode(mode: SearchMode | null) {
+      st.searchMode = mode;
+      emit();
+    },
+    draftChanged() {
+      if (draftTimer !== null) clearTimeout(draftTimer);
+      draftTimer = setTimeout(() => {
+        draftTimer = null;
+        requestContext();
+      }, CONTEXT_DEBOUNCE_MS);
     },
     stop() {
       if (st.conversationId && support() !== "unsupported") {
@@ -203,14 +224,19 @@ export function createChatController(opts: ChatControllerOptions): ChatControlle
       if (st.awaitingAck !== null) pending.untrack(st.awaitingAck);
       st.awaitingAck = null;
       st.loadingConversation = false;
+      st.context = null;
       st.error = null;
       emit();
     },
     openConversation(id: string) {
       st.conversationId = id;
       st.error = null;
+      st.context = null;
       const known = st.conversations.find((c) => c.id === id);
-      if (known) st.approvalMode = known.approvalMode;
+      if (known) {
+        st.approvalMode = known.approvalMode;
+        st.searchMode = known.searchMode ?? null;
+      }
       if (support() === "unsupported") {
         fail("unsupported");
         return;
@@ -251,6 +277,7 @@ export function createChatController(opts: ChatControllerOptions): ChatControlle
       st.cwd = next;
       st.conversationId = null;
       st.loadingConversation = false;
+      st.context = null;
       st.conversations = [];
       st.conversationsState = "idle";
       if (st.online) requestLists();
@@ -260,7 +287,12 @@ export function createChatController(opts: ChatControllerOptions): ChatControlle
       st.error = null;
       emit();
     },
+    requestDevices: extras.devices, ...extras.settings,
+    compact: extras.compact,
+    refreshContext: (onUsage) => extras.context(onUsage),
     dispose() {
+      if (draftTimer !== null) clearTimeout(draftTimer);
+      draftTimer = null;
       resetInFlight();
     },
   };

@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { ApiKeyCreated, ApiKeyInfo, AuthResponse, ContextOverflow, ContextUsage, Conversation, DebugInfo, Device, Effort, LocalServer, ModelsResponse, Project, PromptPreset, Provider, ProviderModelsResponse, SamplingParams, Settings, StatsResponse, SyncResponse, SystemMode } from './protocol';
+import type { ApiKeyCreated, ApiKeyInfo, AuthResponse, ChatFolder, ContextOverflow, ContextUsage, Conversation, DebugInfo, Device, Effort, LocalServer, ModelsResponse, Project, PromptPreset, Provider, ProviderModelsResponse, SamplingParams, Settings, StatsResponse, SyncResponse, SystemMode } from './protocol';
 
 import type { CompactResult, UsageChats, UsageDaily, UsageModels, UsageSummary } from './protocol';
 import type { SearchBackendId, SearchConfig, SearchConfigPatch, SearchMode, SearchOptions, SearchResult, SearchStatus, ToolInfo } from './protocol';
@@ -220,6 +220,9 @@ export const api = {
   deleteProject: (id: string) => req<Project>('DELETE', `/projects/${id}`),
   putPreset: (id: string, b: { name?: string; text?: string }) => req<PromptPreset>('PUT', `/presets/${id}`, b),
   deletePreset: (id: string) => req<PromptPreset>('DELETE', `/presets/${id}`),
+  putFolder: (id: string, b: { name?: string; mode?: 'chat' | 'code' }) => req<ChatFolder>('PUT', `/folders/${id}`, b),
+  /** the server moves the folder's chats to unclassified and broadcasts them */
+  deleteFolder: (id: string) => req<ChatFolder>('DELETE', `/folders/${id}`),
   putSettings: (b: Partial<{ systemPrompt: string | null; effort: Effort | null; params: SamplingParams | null; devMode: boolean; contextOverflow: ContextOverflow; contextLimits: Record<string, number> | null; tools: string[] | null; searchMode: SearchMode; autoTitle: boolean; titleEvery: number; titleModel: string | null; modelParams: Record<string, SP3> | null; defaultContextLength: number | null; contextCompressAt: number | null; contextCompressTarget: number; ephemeralIdleMinutes: number; search: Partial<SearchOptions> }>) =>
     req<Settings>('PUT', '/settings', b),
   messageDebug: (id: string) => req<DebugInfo>('GET', `/messages/${encodeURIComponent(id)}/debug`),
@@ -233,6 +236,8 @@ export const api = {
     projectId?: string | null; systemPrompt?: string | null; systemMode?: SystemMode; effort?: Effort | null;
     params?: SamplingParams | null; headId?: string | null; tools?: string[] | null; searchMode?: SearchMode | null;
     contextOverflow?: ContextOverflow | null;
+    /** chat folder; null = unclassified */
+    folderId?: string | null;
     pinned?: boolean;
     mode?: 'chat' | 'code';
     /** Code approval mode; `full` needs confirmFull:true (else 400 confirm_required) */

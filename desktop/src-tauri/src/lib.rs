@@ -15,6 +15,8 @@ use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
+mod biometric;
+mod pet;
 mod updater;
 
 const CONFIG_FILE: &str = "server.json";
@@ -327,9 +329,16 @@ fn set_app_icon(app: &AppHandle, id: &str, persist: bool) {
 
 /// Handle signals from the web UI on https://omnichat-desktop.invalid/...
 /// /icon/<id> sets the icon; /change-server returns to the launcher. Returns true if the URL was ours.
-fn handle_desktop_url(app: &AppHandle, u: &Url) -> bool {
+/// `from_pet` is true for the desktop pet window, which may only send /pet/... signals (see pet.rs).
+fn handle_desktop_url(app: &AppHandle, u: &Url, from_pet: bool) -> bool {
     if u.host_str() != Some(ICON_HOST) {
         return false;
+    }
+    if from_pet {
+        if let Some(call) = pet::parse_pet_call(u) {
+            pet::handle(app, call, true);
+        }
+        return true;
     }
     if u.path() == "/change-server" {
         go_launcher(app, "change=1");
@@ -339,6 +348,10 @@ fn handle_desktop_url(app: &AppHandle, u: &Url) -> bool {
         run_update_call(app, call);
     } else if let Some((id, target)) = parse_open_external(u) {
         run_open_external(app, id, target);
+    } else if let Some(call) = parse_bio_call(u) {
+        run_bio_call(app, call);
+    } else if let Some(call) = pet::parse_pet_call(u) {
+        pet::handle(app, call, false);
     }
     true
 }
@@ -457,19 +470,72 @@ fn run_open_external(app: &AppHandle, id: String, target: Url) {
     });
 }
 
+/// Longest reason the OS verification prompt shows.
+const MAX_BIO_REASON: usize = 120;
+
+/// A request from the web UI's biometric bridge: https://omnichat-desktop.invalid/bio/<op>?id=<n>[&v=<reason>].
+#[derive(Debug, PartialEq)]
+enum BioCall {
+    Available { id: String },
+    Verify { id: String, reason: String },
+}
+
+/// The reason only ever goes to the OS prompt (never into JS), so quotes are harmless; control characters are refused.
+fn parse_bio_call(u: &Url) -> Option<BioCall> {
+    let op = u.path().strip_prefix("/bio/")?;
+    let mut id = None;
+    let mut v = None;
+    for (k, val) in u.query_pairs() {
+        match k.as_ref() {
+            "id" => id = Some(val.to_string()),
+            "v" => v = Some(val.to_string()),
+            _ => {}
+        }
+    }
+    let id = id.filter(|s| !s.is_empty() && s.len() <= 9 && s.bytes().all(|b| b.is_ascii_digit()))?;
+    match op {
+        "available" => Some(BioCall::Available { id }),
+        "verify" => {
+            let reason = v?;
+            let valid = !reason.is_empty()
+                && reason.chars().count() <= MAX_BIO_REASON
+                && !reason.chars().any(char::is_control);
+            valid.then_some(BioCall::Verify { id, reason })
+        }
+        _ => None,
+    }
+}
+
+fn run_bio_call(app: &AppHandle, call: BioCall) {
+    let app = app.clone();
+    // Blocks on the OS prompt, so it runs off the navigation handler and the UI thread.
+    std::thread::spawn(move || {
+        let (id, result) = match call {
+            BioCall::Available { id } => (id, serde_json::to_value(biometric::available())),
+            BioCall::Verify { id, reason } => (id, serde_json::to_value(biometric::verify(&reason))),
+        };
+        reply_update(&app, &id, result.unwrap_or(serde_json::Value::Null));
+    });
+}
+
 /// Update bridge injected into every page of the main window (after window.__OMNICHAT_DESKTOP__ exists). Every call is a
 /// navigation to the intercepted signal host (the same mechanism as the app icon / change server); answers arrive via __resolve.
 /// No Tauri IPC is exposed to the remote page.
 const UPDATE_BRIDGE_JS: &str = r#"(function(){var d=window.__OMNICHAT_DESKTOP__;if(!d)return;var P={},n=0;
 d.__resolve=function(id,v){var p=P[id];if(p){delete P[id];clearTimeout(p.t);p.r(v);}};
-function call(op,q,ms,fb){return new Promise(function(res){var id=String(++n);
+function call(path,q,ms,fb){return new Promise(function(res){var id=String(++n);
 P[id]={r:res,t:setTimeout(function(){if(P[id]){delete P[id];res(fb);}},ms)};
-location.href='https://omnichat-desktop.invalid/'+(op==='open-external'?'':'update/')+op+'?id='+id+(q||'');});}
-d.checkUpdate=function(){return call('check','',60000,{status:'error',current:d.version,channel:'stable',canInstall:false,error:'timeout'});};
-d.openUpdate=function(){return call('open','',60000,false);};
-d.getUpdateChannel=function(){return call('channel-get','',10000,null);};
+location.href='https://omnichat-desktop.invalid/'+path+'?id='+id+(q||'');});}
+d.checkUpdate=function(){return call('update/check','',60000,{status:'error',current:d.version,channel:'stable',canInstall:false,error:'timeout'});};
+d.openUpdate=function(){return call('update/open','',60000,false);};
+d.getUpdateChannel=function(){return call('update/channel-get','',10000,null);};
 d.openExternal=function(u){return call('open-external','&u='+encodeURIComponent(String(u)),10000,{ok:false}).then(function(r){return r&&typeof r==='object'?r:{ok:false};});};
-d.setUpdateChannel=function(ch){return call('channel-set','&v='+encodeURIComponent(String(ch)),10000,null);};
+d.setUpdateChannel=function(ch){return call('update/channel-set','&v='+encodeURIComponent(String(ch)),10000,null);};
+d.biometricAvailable=function(){return call('bio/available','',10000,{available:false,kind:'none'});};
+d.biometricVerify=function(reason){var r=Array.from(String(reason||'').replace(/[\x00-\x1f\x7f]/g,' ')).slice(0,120).join('').trim();if(!r)return Promise.resolve({ok:false,error:'failed'});return call('bio/verify','&v='+encodeURIComponent(r),120000,{ok:false,error:'cancelled'});};
+d.petShow=function(o){var q='';if(o&&typeof o.x==='number'&&typeof o.y==='number'&&isFinite(o.x)&&isFinite(o.y))q='&x='+Math.round(o.x)+'&y='+Math.round(o.y);return call('pet/show',q,10000,{ok:false});};
+d.petHide=function(){return call('pet/hide','',10000,{ok:false});};
+d.petStatus=function(){return call('pet/status','',10000,{visible:false});};
 })();"#;
 
 /// Loopback names that reach the same machine count as one host.
@@ -643,7 +709,7 @@ pub fn run() {
 
             let nav_app = handle.clone();
             let win_app = handle.clone();
-            WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+            let main_win = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
                 .title("OmniChat")
                 .inner_size(1100.0, 760.0)
                 .min_inner_size(420.0, 480.0)
@@ -654,7 +720,7 @@ pub fn run() {
                 ))
                 .on_navigation(move |u| {
                     // Signals from the web UI (icon, change server): handled, never navigated.
-                    if handle_desktop_url(&nav_app, u) {
+                    if handle_desktop_url(&nav_app, u, false) {
                         return false;
                     }
                     if is_internal(u, current_server(&nav_app).as_ref()) {
@@ -665,7 +731,7 @@ pub fn run() {
                     }
                 })
                 .on_new_window(move |u, _features| {
-                    if !handle_desktop_url(&win_app, &u) {
+                    if !handle_desktop_url(&win_app, &u, false) {
                         if is_internal(&u, current_server(&win_app).as_ref()) {
                             // A popup on the server (e.g. a login window) stays in this window.
                             if let Some(w) = main_window(&win_app) {
@@ -678,6 +744,14 @@ pub fn run() {
                     NewWindowResponse::Deny
                 })
                 .build()?;
+            // The pet window must not outlive the main window (it would keep the app running).
+            let pet_app = handle.clone();
+            main_win.on_window_event(move |ev| {
+                if let tauri::WindowEvent::Destroyed = ev {
+                    let app = pet_app.clone();
+                    std::thread::spawn(move || pet::close(&app));
+                }
+            });
             if let Some(id) = load_key(&handle, "appIcon") {
                 set_app_icon(&handle, &id, false);
             }
@@ -709,6 +783,36 @@ mod tests {
         assert_eq!(p(&format!("{h}/update/check?id=1\"%29")), None);
         assert_eq!(p(&format!("{h}/update/check?id=1234567890")), None);
         assert_eq!(p(&format!("{h}/update/nope?id=1")), None);
+    }
+
+    #[test]
+    fn bio_call_parsing() {
+        let p = |s: &str| parse_bio_call(&Url::parse(s).unwrap());
+        let h = "https://omnichat-desktop.invalid/bio";
+        assert_eq!(p(&format!("{h}/available?id=5")), Some(BioCall::Available { id: "5".into() }));
+        assert_eq!(p(&format!("{h}/available")), None);
+        assert_eq!(p(&format!("{h}/available?id=5x")), None);
+        assert_eq!(p(&format!("{h}/available?id=1\"%29")), None);
+        assert_eq!(p(&format!("{h}/nope?id=1")), None);
+        assert_eq!(p(&format!("{h}/verify?id=6&v=Unlock%20Code")), Some(BioCall::Verify {
+            id: "6".into(),
+            reason: "Unlock Code".into(),
+        }));
+        // Quotes and markup are plain text for the OS prompt, not code.
+        assert_eq!(
+            p(&format!("{h}/verify?id=6&v=%22%3E%3Cx%3E")).map(|c| match c {
+                BioCall::Verify { reason, .. } => reason,
+                _ => String::new(),
+            }),
+            Some("\"><x>".to_string())
+        );
+        assert_eq!(p(&format!("{h}/verify?id=6")), None);
+        assert_eq!(p(&format!("{h}/verify?id=6&v=")), None);
+        assert_eq!(p(&format!("{h}/verify?id=6&v=a%0Ab")), None);
+        assert_eq!(p(&format!("{h}/verify?id=6&v=a%00b")), None);
+        assert_eq!(p(&format!("{h}/verify?id=x&v=ok")), None);
+        assert!(p(&format!("{h}/verify?id=6&v={}", "a".repeat(120))).is_some());
+        assert_eq!(p(&format!("{h}/verify?id=6&v={}", "a".repeat(121))), None);
     }
 
     #[test]

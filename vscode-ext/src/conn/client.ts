@@ -31,12 +31,25 @@ export interface ClientOptions {
   onFrame: (frame: Frame) => void;
   /** Called for an accepted welcome, before the status goes "online". */
   onWelcome?: (frame: WelcomeFrame) => void;
-  /** detail: reason (incompatible/unauthorized) or server version (online). */
-  onStatus: (status: ClientStatus, detail?: string) => void;
+  /**
+   * detail: reason (incompatible/unauthorized) or server version (online). retry: set on "offline"
+   * when a reconnect is scheduled (attempt counts the retries of this outage, from 1).
+   */
+  onStatus: (status: ClientStatus, detail?: string, retry?: RetryInfo) => void;
+  /** Round-trip time of each answered ping, in ms. */
+  onLatency?: (ms: number) => void;
   wsFactory?: (url: string) => WebSocket;
   timers?: Timers;
   /** Value in [0, 1); injected for deterministic jitter in tests. */
   random?: () => number;
+  /** Clock in ms (Date.now by default); injected for tests. */
+  now?: () => number;
+}
+
+/** A scheduled reconnect: which retry it is and the epoch ms it fires at. */
+export interface RetryInfo {
+  attempt: number;
+  nextRetryAt: number;
 }
 
 export interface Client {
@@ -50,7 +63,7 @@ export interface Client {
 
 const BACKOFF_MIN_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
-const PING_INTERVAL_MS = 20_000;
+const PING_INTERVAL_MS = 5_000;
 const CLOSE_NORMAL = 1000;
 const CLOSE_TOKEN_REVOKED = 4001;
 const OPEN = 1;
@@ -103,10 +116,12 @@ export function createClient(opts: ClientOptions): Client {
   let retryHandle: unknown = null;
   let pingHandle: unknown = null;
   let alive = false;
+  let pingSentAt: number | null = null;
+  const now = opts.now ?? Date.now;
 
-  const setStatus = (status: ClientStatus, detail?: string): void => {
+  const setStatus = (status: ClientStatus, detail?: string, retry?: RetryInfo): void => {
     try {
-      opts.onStatus(status, detail);
+      opts.onStatus(status, detail, retry);
     } catch {
       // host callback errors must not break the connection
     }
@@ -147,6 +162,7 @@ export function createClient(opts: ClientOptions): Client {
         checkpoints: true,
         transcript: true,
         chat: true,
+        transcriptDelta: true,
         tools: [...opts.tools],
       },
     };
@@ -160,6 +176,7 @@ export function createClient(opts: ClientOptions): Client {
   const startPing = (s: WebSocket): void => {
     stopPing();
     alive = true;
+    pingSentAt = null;
     pingHandle = timers.setInterval(() => {
       if (sock !== s) return;
       if (!alive) {
@@ -167,13 +184,16 @@ export function createClient(opts: ClientOptions): Client {
         return;
       }
       alive = false;
+      pingSentAt = now();
       s.ping();
     }, PING_INTERVAL_MS);
   };
 
-  const scheduleRetry = (): void => {
+  /** Schedules the next connect with backoff and reports it (status "offline" plus the retry info). */
+  const scheduleRetry = (detail?: string): void => {
     const delay = backoffDelay(attempt, random);
     attempt += 1;
+    setStatus("offline", detail, { attempt, nextRetryAt: now() + delay });
     retryHandle = timers.setTimeout(() => {
       retryHandle = null;
       connect();
@@ -235,7 +255,6 @@ export function createClient(opts: ClientOptions): Client {
       setStatus("unauthorized", "token revoked");
       return;
     }
-    setStatus("offline");
     scheduleRetry();
   };
 
@@ -246,15 +265,24 @@ export function createClient(opts: ClientOptions): Client {
     try {
       s = makeSocket(url);
     } catch {
-      setStatus("offline", "connect failed");
-      scheduleRetry();
+      scheduleRetry("connect failed");
       return;
     }
     sock = s;
     s.on("open", guard(() => sock === s && onOpen(s)));
     s.on("message", guard((data: RawData) => sock === s && onMessage(s, data)));
     s.on("pong", () => {
-      if (sock === s) alive = true;
+      if (sock !== s) return;
+      alive = true;
+      if (pingSentAt !== null) {
+        const rtt = Math.max(0, now() - pingSentAt);
+        pingSentAt = null;
+        try {
+          opts.onLatency?.(rtt);
+        } catch {
+          // host callback errors must not break the connection
+        }
+      }
     });
     // Required so ws does not throw on unhandled 'error'; the close event follows.
     s.on("error", () => undefined);

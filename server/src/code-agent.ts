@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { ChatMessage, StreamToolCall } from "./providers/index.js";
+import type { ChatMessage, StreamToolCall, ToolDef } from "./providers/index.js";
 import { createProvider } from "./providers/index.js";
 import { decryptSecret } from "./secret.js";
 import { setMessageTools } from "./db.js";
 import type { ToolCall } from "./tools/types.js";
+import { ToolSession } from "./tools/exec.js";
+import { getTool, toolsReady } from "./tools/registry.js";
 import { broadcast } from "./hub.js";
 import { PhaseTracker } from "./phases.js";
 import { getUsableProviderRow, modelDenied } from "./shared-providers.js";
@@ -11,10 +13,14 @@ import { quotaRefusal, recordQuotaUsage } from "./quota.js";
 import { getSettings } from "./projects.js";
 import { discoverLimit } from "./context.js";
 import { estimateTokens, MSG_OVERHEAD } from "./tokens.js";
+import { planSearch, rawQuery } from "./search/plan.js";
+import { newRuntime } from "./search/pipeline.js";
+import { phaseLabel, injectSearch, planAskOf, searchModelOf, searchModeFor, saveGuardNotice } from "./search/turn.js";
 import { openRun, closeRun, VscodeBridgeError, type VscodeRun } from "./vscode-bridge.js";
 import { CODE_TOOLS, CODE_TOOL_NAMES, codeSystemPrompt, formatToolResult, displayArgs, callSummary, clip } from "./code-tools.js";
 import { RunSupport, currentApprovalMode } from "./code-run-hooks.js";
 import { beginTranscript, type TranscriptFeed } from "./vscode-transcript.js";
+import { logCodeDiag } from "./code-diag.js";
 
 /**
  * Entry point for one turn of a `vscode-bridge` conversation (docs/design/VSCODE-BRIDGE.md S5).
@@ -64,7 +70,7 @@ function codeMaxMs(): number {
 /** The model backend of a Code turn, from the conversation model ref. Throws a readable Error when it cannot be used. */
 export function resolveCodeModel(userId: string, ref: string): { prov: any; model: string } {
   const i = typeof ref === "string" ? ref.indexOf("::") : -1;
-  if (i <= 0 || i + 2 >= ref.length) throw new Error("Choose a model for this Code chat (a provider and a model); the VS Code bridge itself has none.");
+  if (i <= 0 || i + 2 >= ref.length) throw new Error("この Code の会話にはモデルが選ばれていません。モデルを選んでから送信してください。");
   const row = getUsableProviderRow(userId, ref.slice(0, i));
   if (!row || row.deleted) throw new Error("The provider of the chosen model is not available.");
   const model = ref.slice(i + 2);
@@ -136,12 +142,13 @@ async function runTurn(a: VscodeTurnArgs, feed: TranscriptFeed): Promise<void> {
   const effort = a.effort && typeof a.effort === "object" ? (a.effort as Record<string, unknown>) : typeof a.effort === "string" ? a.effort : null;
 
   const support = new RunSupport({ userId, conversationId, assistantMessageId, bridge, cwd, roots: [cwd], signal });
-  const calls: ToolCall[] = [];
+  // one tool list for the message: bridge calls and server-side web_search calls (ToolSession keeps and saves both)
+  const session = new ToolSession(userId, conversationId, assistantMessageId, signal);
+  const calls: ToolCall[] = session.calls;
   const phases = new PhaseTracker(userId, conversationId, assistantMessageId);
   const emit = (call: ToolCall) => {
     feed.tool(call);
-    feed.tool(call);
-    try { setMessageTools(assistantMessageId, calls, null); } catch (e) { console.error("tool trace save failed", e); }
+    try { setMessageTools(assistantMessageId, calls, session.turn.sources); } catch (e) { console.error("tool trace save failed", e); }
     broadcast(userId, { type: "tool", messageId: assistantMessageId, conversationId, call: { ...call } });
   };
 
@@ -152,7 +159,9 @@ async function runTurn(a: VscodeTurnArgs, feed: TranscriptFeed): Promise<void> {
     support.run = run;
     feed.setRunId(run.runId);
     const offered = new Set(run.tools.length ? run.tools.filter((t) => CODE_TOOL_NAMES.has(t)) : CODE_TOOL_NAMES);
-    const defs = CODE_TOOLS.filter((d) => offered.has(d.function.name));
+    const defs: ToolDef[] = CODE_TOOLS.filter((d) => offered.has(d.function.name));
+    logCodeDiag({ conversationId, providerKind: target.prov.kind, providerName: target.prov.name, model: target.model, tools: defs.map((d) => d.function.name), cwd });
+    if (!defs.length) throw new Error("VS Code から使えるツールがありません（拡張のバージョン・フォルダの信頼設定・選んだフォルダが VS Code で開かれているかを確認してください）");
 
     // system message: the conversation's own system text first, then the Code rules
     const sys = codeSystemPrompt(cwd, run.roots);
@@ -160,7 +169,38 @@ async function runTurn(a: VscodeTurnArgs, feed: TranscriptFeed): Promise<void> {
     if (wire[0]?.role === "system") wire[0] = { ...wire[0], content: `${wire[0].content}\n\n${sys}` };
     else wire.unshift({ role: "system", content: sys });
 
-    const limit = (await discoverLimit(getSettings(userId), target.prov, target.model).catch(() => ({ limit: null }))).limit;
+    // the context limit is looked up while the web-search planning below runs (it is awaited after that block)
+    const limitP = discoverLimit(getSettings(userId), target.prov, target.model).catch(() => ({ limit: null }));
+
+    // web search, as in chat: always (or smart with a search model) searches once before round 0 and injects the results
+    // into the last user message; smart without a search model offers web_search to the model instead; off does nothing
+    await toolsReady().catch(() => undefined);
+    const sopts = getSettings(userId).search;
+    const sm = searchModelOf(userId, sopts);
+    const planAsk = planAskOf(sm, target.prov, target.model, signal);
+    session.turn.search = newRuntime(sopts, sm ? planAsk : null, null);
+    const searchMode = searchModeFor(userId, a.conversation);
+    const searchUp = !!getTool("web_search")?.available;
+    const webTools = new Set<string>();
+    if (searchMode === "smart" && !sm && searchUp) {
+      const t = getTool("web_search")!;
+      defs.push({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } });
+      webTools.add("web_search");
+    }
+    if ((searchMode === "always" || (searchMode === "smart" && !!sm)) && (searchUp || searchMode === "always")) {
+      const lastUserText = [...wire].reverse().find((m) => m.role === "user")?.content ?? "";
+      phases.start("searching", phaseLabel(lastUserText));
+      const history = wire.filter((m) => m.role === "user" || m.role === "assistant").slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
+      const plan = searchUp ? await planSearch(planAsk, history, lastUserText, searchMode === "smart") : { search: true, query: rawQuery(lastUserText), source: "fallback" as const };
+      if (plan.search) {
+        phases.end("searching");
+        phases.start("searching", phaseLabel(plan.query));
+        wire = (await injectSearch(session, wire, plan.query)).messages;
+      }
+      phases.end("searching");
+    }
+
+    const limit = (await limitP).limit;
     const maxRounds = codeMaxRounds();
     const started = Date.now();
     const wallMs = codeMaxMs();
@@ -226,6 +266,12 @@ async function runTurn(a: VscodeTurnArgs, feed: TranscriptFeed): Promise<void> {
 
     /** One tool call: policy / approval, then the extension. Never throws except for a lost connection. */
     async function executeCall(c: StreamToolCall): Promise<string> {
+      if (webTools.has(c.name)) {
+        // server-side search: no bridge, no extension approval; ToolSession keeps the trace and the sources
+        const parsedWeb = parseArgs(c.arguments);
+        phases.start("searching", callSummary(c.name, parsedWeb.ok ? parsedWeb.args : {}), c.id);
+        try { return (await session.execute(c.id, c.name, c.arguments, webTools)).text; } finally { phases.end("searching", c.id); }
+      }
       const call: ToolCall = { id: c.id, name: c.name, arguments: {}, status: "running", startedAt: Date.now() };
       calls.push(call);
       const parsed = parseArgs(c.arguments);
@@ -274,7 +320,9 @@ async function runTurn(a: VscodeTurnArgs, feed: TranscriptFeed): Promise<void> {
       }
     }
   } finally {
+    feed.setSources(session.turn.sources);
     phases.closeAll();
+    saveGuardNotice(assistantMessageId, session.turn.search);
     if (usedTokens > 0) { try { recordQuotaUsage(userId, target.prov, usedTokens); } catch { /* ignore */ } }
     if (run) {
       const done = await closeRun(run);

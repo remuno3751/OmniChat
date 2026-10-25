@@ -348,9 +348,11 @@ function Act({ icon, label, onPress, active = false, t }: {
   );
 }
 
+// Web: each flex box between the side panel and a preview's ScrollView keeps minHeight 0, so the ScrollView gets a
+// bounded height (and the wheel scrolls it) instead of growing to its content.
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  fill: { flex: 1 },
+  root: { flex: 1, minHeight: 0 },
+  fill: { flex: 1, minHeight: 0 },
   pad: { padding: 16 },
   mono: { fontFamily: MONO, fontSize: 13, lineHeight: 19 },
   note: { fontSize: 13, marginBottom: 8 },

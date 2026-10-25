@@ -14,10 +14,12 @@ interface Props {
   options: string[];
   cwd: string | null;
   onCwd: (cwd: string | null) => void;
+  /** VS Code PC: the folder open in VS Code, shown as the default chip (instead of the DSH "default") */
+  defaultCwd?: string;
 }
 
 /** New Code chat: choose the PC (when there are several) and the working folder before the first message. */
-export default function WorkspacePicker({ devices, providerId, onDevice, showWorkspaces, options, cwd, onCwd }: Props) {
+export default function WorkspacePicker({ devices, providerId, onDevice, showWorkspaces, options, cwd, onCwd, defaultCwd }: Props) {
   const t = useTheme();
   const tr = useT();
   const chip = (key: string, label: string, on: boolean, onPress: () => void, hint?: string, dot?: boolean) => (
@@ -46,8 +48,12 @@ export default function WorkspacePicker({ devices, providerId, onDevice, showWor
       {showWorkspaces && (
         <View style={styles.line}>
           <Text style={[styles.label, { color: t.sub }]}>{tr('code.pick.workspace')}</Text>
-          {chip('default', tr('code.pick.default'), !cwd, () => onCwd(null), tr('code.pick.defaultHint'))}
-          {options.map((o) => chip(o, cwdLabel(o), !!cwd && normCwd(cwd) === normCwd(o), () => onCwd(o), o))}
+          {defaultCwd
+            ? chip('default', cwdLabel(defaultCwd), !cwd || normCwd(cwd) === normCwd(defaultCwd), () => onCwd(defaultCwd), defaultCwd)
+            : chip('default', tr('code.pick.default'), !cwd, () => onCwd(null), tr('code.pick.defaultHint'))}
+          {options
+            .filter((o) => !defaultCwd || normCwd(o) !== normCwd(defaultCwd))
+            .map((o) => chip(o, cwdLabel(o), !!cwd && normCwd(cwd) === normCwd(o), () => onCwd(o), o))}
         </View>
       )}
     </View>

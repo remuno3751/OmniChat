@@ -2,11 +2,24 @@ import { TIPS_EN } from '../tips/content';
 import { ADMIN_EN } from './adminStringsIndex';
 import { en as SHARED_EN } from './sharedStrings';
 import { en as SLIDE_EN } from './slideStrings';
+import { en as C56S_EN } from './v056cSlideStrings';
+import { en as C56F_EN } from './v056cFolderStrings';
+import { en as C56P_EN } from './v056cPetStrings';
+import { en as C56A_EN } from './v056cArtifactStrings';
+import { en as C56D_EN } from './v056dStrings';
+import { en as C56E_EN } from './v056eStrings';
+import { en as C56H_EN } from './v056hStrings';
+import { en as C56F_DESK_EN } from './v056fStrings';
+import { en as C56G_EN } from './v056gStrings';
+import { en as C56I_EN } from './v056iStrings';
 import { en as CODE_PREVIEW_EN } from './codePreviewStrings';
 import { en as ATTACH_EN } from './attachStrings';
 import { en as PLUGINS_EN } from './pluginsAdminStrings';
 import { en as QUOTA_EN } from './quotaStrings';
 import { en as DESKTOP_EN } from './desktopStrings';
+import { en as FOLDER_EN } from './folderStrings';
+import { en as BIO_EN } from './bioStrings';
+import { en as TIP_EN } from './tipStrings';
 // English strings. Reference language: every key here should exist in ja.ts too.
 const messages: Record<string, string> = {
   'settings.title': 'Settings',
@@ -285,16 +298,12 @@ const messages: Record<string, string> = {
   'integ.vscode.step1.title': 'Install the extension',
   'integ.vscode.step1.hint': 'Install {file} in VS Code (run this in a terminal where the file is, or use "Install from VSIX...").',
   'integ.vscode.step2.title': 'Pair VS Code with this server',
-  'integ.vscode.step2.hint': 'Create a pairing code for this PC, then paste it in VS Code with "OmniChat: Pair with Server", or open the link.',
+  'integ.vscode.step2.hint': 'Create a pairing code for this PC, then paste it in VS Code with "OmniChat: Pair with Server".',
   'integ.vscode.field.name': 'PC name',
   'integ.vscode.field.nameHint': 'Shown in the Code tab. Use one name per PC.',
   'integ.vscode.createCode': 'Create pairing code',
   'integ.vscode.codeLabel': 'Pairing code',
   'integ.vscode.codeOnce': 'The code contains a device token and is shown only now. Revoke the device under Settings > Devices to unpair.',
-  'integ.vscode.openLink': 'Open in VS Code',
-  'integ.vscode.linkLabel': 'Pairing link',
-  'integ.vscode.openFailed': 'Could not open VS Code. Copy the pairing code instead.',
-  'integ.vscode.openHint': 'If nothing opens, copy the code and paste it into the VS Code command palette: "OmniChat: Pair with Server".',
   'integ.vscode.step3.title': 'Connection',
   'integ.vscode.none': 'No VS Code extension has connected yet.',
   'integ.vscode.version': 'Extension {version}',
@@ -1772,6 +1781,7 @@ const messages: Record<string, string> = {
   'update.check': 'Check for updates',
   'update.checking': 'Checking...',
   'update.checkFailed': 'Could not check for updates.',
+  'update.retry': 'Retry',
   'update.latest': 'Latest: {version}',
   'update.prerelease': 'Pre-release',
   'update.upToDate': 'You are up to date.',
@@ -1870,11 +1880,14 @@ const messages: Record<string, string> = {
   'maint.unsupported': 'This server does not support maintenance mode.',
   ...TIPS_EN,
   ...ADMIN_EN,
-  ...SHARED_EN, ...SLIDE_EN, ...CODE_PREVIEW_EN,
+  ...SHARED_EN, ...SLIDE_EN, ...C56S_EN, ...C56F_EN, ...C56P_EN, ...C56A_EN, ...C56D_EN, ...C56E_EN, ...C56H_EN, ...C56F_DESK_EN, ...C56G_EN, ...C56I_EN, ...CODE_PREVIEW_EN,
   ...ATTACH_EN,
   ...PLUGINS_EN,
   ...QUOTA_EN,
   ...DESKTOP_EN,
+  ...FOLDER_EN,
+  ...BIO_EN,
+  ...TIP_EN,
   "guard.blocked.title": "Blocked a prompt injection attempt",
   "guard.blocked.lead": "The following text from the web was removed and was not given to the model.",
   "guard.blocked.more": "+{n} more",
@@ -1912,6 +1925,29 @@ const messages: Record<string, string> = {
   "search.opts.allowPrivate": "Allow private and local addresses",
   "search.opts.allowPrivateHint": "Lets searches open addresses on your local network (for example 192.168.x.x or localhost).",
   "search.opts.allowPrivateWarn": "Warning: with this on, web search can reach your internal network and local services. Turn it on only if you trust every search.",
+  // v0.5.6 session A
+  "code.pickModelFirst": "Choose a model first (from the model picker at the bottom right).",
+  "code.brokenConv": "This chat is not connected to a PC.",
+  "code.reattach": "Reattach to a PC",
+  "general.aboutVersionPlain": "OmniChat {version}",
+  "update.prereleaseInUse": "Using a pre-release (latest stable: {version})",
+  "notify.osTitle": "OS notifications",
+  "notify.osHint": "Allow notifications in your OS settings (Windows: Settings → System → Notifications).",
+  "notify.permLine": "Notification permission: {perm}",
+  "notify.perm.granted": "Allowed",
+  "notify.perm.denied": "Denied",
+  "notify.perm.default": "Not set",
+  "devices.revokeStale": "Revoke stale devices",
+  "devices.staleConfirm": "Revoke {n} device(s) not seen for 30 days or more?",
+  "devices.convsTitle": "Conversations on this device",
+  "devices.convsMsg": "{n} conversation(s) use this device. Keep them, or hide this device from the list?",
+  "devices.convsKeep": "Keep",
+  "devices.convsHide": "Hide",
+  "devices.revokeSomeFailed": "{n} device(s) could not be revoked",
+  "attach.hint": "You can also attach files by dragging and dropping, or pasting (Ctrl+V).",
+  "wait.waiting": 'Waiting for a response… {s} s',
+  "wait.processing": 'Processing the prompt… {s} s',
+  "wait.slow": 'Processing the prompt (loading the model or a long input can take a while)… {s} s',
 };
 
 export default messages;

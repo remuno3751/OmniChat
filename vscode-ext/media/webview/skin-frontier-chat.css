@@ -132,7 +132,7 @@
 
 /* ---------- Thinking block: hairline dashed rule and a caps summary ---------- */
 :root[data-oc-theme="frontier"] .cc-think {
-  border-radius: 0; border-left: var(--oc-bw-base) dashed var(--oc-border-strong); padding-left: 10px;
+  border-radius: 0; border-left: 0; padding-left: 0;
 }
 :root[data-oc-theme="frontier"] .cc-think__summary {
   font-size: 9.5px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase; color: var(--oc-sub);
@@ -155,3 +155,24 @@
     animation: none !important; transition: none !important;
   }
 }
+
+/* ---------- Tool-run timeline: hairline rule, square markers, caps meta; icon copy buttons ---------- */
+:root[data-oc-theme="frontier"] .cc-tl { border-left: var(--oc-bw-base) solid var(--oc-border-strong); }
+:root[data-oc-theme="frontier"] .cc-tl__mark { border-radius: 0; }
+:root[data-oc-theme="frontier"] .cc-tl__item--denied .cc-tl__mark { border-width: var(--oc-bw-base); border-style: dashed; }
+:root[data-oc-theme="frontier"] .cc-tl__sum { border-radius: 0; font-size: 11.5px; }
+:root[data-oc-theme="frontier"] .cc-tl__dur,
+:root[data-oc-theme="frontier"] .cc-tl__meta {
+  font-size: 9.5px; letter-spacing: var(--oc-label-tracking); text-transform: uppercase;
+}
+:root[data-oc-theme="frontier"] .cc-tl__body { border-left: var(--oc-bw-base) dashed var(--oc-border-strong); }
+:root[data-oc-theme="frontier"] .cc-tl__chip { border-radius: 0; text-transform: none; font-size: 10px; }
+:root[data-oc-theme="frontier"] .cc-tl__path:hover,
+:root[data-oc-theme="frontier"] .oc-md-path:hover { color: var(--oc-accent-ink); }
+:root[data-oc-theme="frontier"] .oc-md-path { text-decoration-thickness: var(--oc-bw-base); }
+:root[data-oc-theme="frontier"] .cc-think__summary { gap: 10px; }
+:root[data-oc-theme="frontier"] .cc-think__dots .cm-typing span { width: 5px; height: 5px; }
+:root[data-oc-theme="frontier"] .oc-code__copy { border-radius: 0; border-color: var(--oc-border-strong); }
+:root[data-oc-theme="frontier"] .oc-code__copy:hover { border-color: var(--oc-accent); color: var(--oc-accent-ink); }
+:root[data-oc-theme="frontier"] .is-copied > .oc-ico--check { color: var(--oc-accent-ink); }
+:root[data-oc-theme="frontier"] .cm-action--icon { padding: 3px 6px; }

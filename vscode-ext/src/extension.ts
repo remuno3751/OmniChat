@@ -1,6 +1,6 @@
 /**
  * Extension entry point: wiring only (spec docs/design/VSCODE-BRIDGE.md §9).
- * Commands, the vscode:// pairing URI handler, the status bar, the connection session, and the
+ * Commands, the status bar, the connection session, and the
  * "OmniChat VS" activity-bar views (Chat, Settings).
  */
 import { randomUUID } from "node:crypto";
@@ -10,10 +10,12 @@ import { readConfig } from "./config";
 import { createVscodeHost } from "./host/vscode";
 import { checkPairing, type PairReason, type Pairing } from "./pairing";
 import { createTokenStore } from "./secrets";
-import { createSession, type Session } from "./session";
+import { createSession } from "./session";
+import { createLinkTracker } from "./chat/link";
 import { createActivityFeed } from "./ui/activityFeed";
 import { createActivityPanel } from "./ui/activityPanel";
 import { createChatController } from "./chat/controller";
+import { registerChatCommands } from "./ui/chatCommands";
 import { createChatView, CHAT_VIEW_ID } from "./ui/chatView";
 import { createSettingsView, SETTINGS_VIEW_ID } from "./ui/settingsView";
 import { createStatusItem, type StatusItem, type StatusState } from "./ui/status";
@@ -22,7 +24,7 @@ import { pickLang, stringsFor } from "./ui/strings";
 const INSTANCE_KEY = "omnichat.instanceId";
 const MAX_NAME_CHARS = 64;
 
-let session: Session | undefined;
+let teardown: (() => void) | undefined;
 
 /** Stable per-install id, so the server sees the same bridge across restarts. */
 function instanceId(context: vscode.ExtensionContext): string {
@@ -44,6 +46,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const lang = pickLang(vscode.env.language);
   let paired = false;
   let connection: StatusState = "unpaired";
+  const link = createLinkTracker(() => chat.update()); // round trip and reconnect, for the Chat view
   let pairing_ = false; // while true, configuration changes made by pairing do not reconnect on their own
   const version = String(context.extension.packageJSON.version ?? "0.0.0");
 
@@ -73,10 +76,12 @@ export function activate(context: vscode.ExtensionContext): void {
     getDecorations: () => settings().decorations,
     isPaired: () => paired,
     getStatus: () => connection,
+    getLink: () => link.info(), roots: () => host.roots,
+    toggleSettings: () => void vscode.commands.executeCommand(settingsView.handle.isVisible() ? "workbench.action.closeSidebar" : SETTINGS_VIEW_ID + ".focus"),
     pair: (code) => pairWithCode(code),
     onReply: (reply) => current.answerApproval(reply),
     focus: () => void vscode.commands.executeCommand(CHAT_VIEW_ID + ".focus"),
-    openSettings: () => void vscode.commands.executeCommand(SETTINGS_VIEW_ID + ".focus"),
+    openSettings: () => void vscode.commands.executeCommand(SETTINGS_VIEW_ID + ".focus"), globalState: context.globalState,
   });
   const settingsView = createSettingsView({
     vscode,
@@ -105,13 +110,9 @@ export function activate(context: vscode.ExtensionContext): void {
     pair: (code) => pairWithCode(code),
     runCommand: (id) => void vscode.commands.executeCommand(id),
   });
-  const refreshViews = (): void => {
-    chat.update();
-    settingsView.update();
-  };
-
+  const refreshViews = (): void => { chat.update(); settingsView.update(); };
   const host = createVscodeHost(vscode, { autoSave: () => settings().autoSave });
-  session = createSession({
+  const current = createSession({
     host,
     version,
     instance: instanceId(context),
@@ -129,17 +130,18 @@ export function activate(context: vscode.ExtensionContext): void {
       pendingChanged: (count) => status.setPending(count),
     },
     onWelcome: (frame) => controller.setServerInfo({ serverVersion: frame.serverVersion, features: frame.features }),
-    onStatus: (state, detail) => {
+    onLatency: link.onLatency,
+    onStatus: (state, detail, retry) => {
       // A run cannot outlive its connection: end it before the status bar is redrawn.
       if (state !== "online") feed.interrupt("disconnected");
       status.set(state, detail);
-      connection = state;
+      connection = state; link.onStatus(state, retry);
       controller.setOnline(state === "online");
       refreshViews();
       log(`connection: ${state}${detail ? ` (${detail.slice(0, 200)})` : ""}`);
     },
   });
-  const current = session;
+  teardown = () => { current.stop(); controller.dispose(); };
 
   /** Connects with the stored token and server URL, or shows "not paired". */
   const connectStored = async (): Promise<void> => {
@@ -189,6 +191,7 @@ export function activate(context: vscode.ExtensionContext): void {
     return null;
   };
 
+  registerChatCommands(vscode, context, chat);
   context.subscriptions.push(
     output,
     status,
@@ -204,9 +207,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("omnichat.showActivity", () => activity.reveal()),
 
     vscode.commands.registerCommand("omnichat.openChat", () => vscode.commands.executeCommand(CHAT_VIEW_ID + ".focus")),
-    vscode.commands.registerCommand("omnichat.openSettings", () =>
-      vscode.commands.executeCommand(SETTINGS_VIEW_ID + ".focus"),
-    ),
+    vscode.commands.registerCommand("omnichat.openSettings", () => vscode.commands.executeCommand(SETTINGS_VIEW_ID + ".focus")),
     vscode.commands.registerCommand("omnichat.newConversation", () => {
       controller.newConversation();
       return vscode.commands.executeCommand(CHAT_VIEW_ID + ".focus");
@@ -248,24 +249,6 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand("omnichat.showLog", () => output.show(true)),
 
-    vscode.window.registerUriHandler({
-      handleUri: async (uri: vscode.Uri) => {
-        const res = checkPairing(uri.toString());
-        if (!res.ok) {
-          void vscode.window.showErrorMessage(`OmniChat: ${stringsFor(lang).pairReasons[res.reason]}`);
-          return;
-        }
-        const pairing = res.pairing;
-        const choice = await vscode.window.showWarningMessage(
-          `Pair this VS Code window with the OmniChat server at ${new URL(pairing.serverUrl).host}? ` +
-            "OmniChat can then use the tools in this window, with your approval.",
-          { modal: true },
-          "Pair",
-        );
-        if (choice === "Pair") await pairWith(pairing);
-      },
-    }),
-
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
       current.refreshWorkspaces();
       controller.refresh();
@@ -293,6 +276,6 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  session?.stop();
-  session = undefined;
+  teardown?.();
+  teardown = undefined;
 }

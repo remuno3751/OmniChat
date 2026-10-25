@@ -76,6 +76,7 @@ export function AttachButton({ disabled, codeMode = false }: { disabled?: boolea
           <Pressable onPress={() => void run('file')} accessibilityRole="button" style={styles.menuItem}>
             <Text style={{ color: t.text }}>{tr('attach.pick.file')}</Text>
           </Pressable>
+          {Platform.OS === 'web' && <Text style={[styles.menuHint, { color: t.sub, borderColor: t.border }]}>{tr('attach.hint')}</Text>}
         </View>
       )}
       <Pressable
@@ -224,10 +225,12 @@ function ChipView({ c, t, tr, maxFileMB, codeRefused }: { c: Chip; t: ReturnType
 }
 
 const styles = StyleSheet.create({
-  btnWrap: { position: 'relative' },
+  // above the context bar and the chips: the menu opens upward into them
+  btnWrap: { position: 'relative', zIndex: 30, elevation: 30 },
   btn: { width: 40, height: 40, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  menu: { position: 'absolute', bottom: 46, left: 0, borderWidth: 1, borderRadius: 10, paddingVertical: 4, minWidth: 120, zIndex: 10 },
+  menu: { position: 'absolute', bottom: 46, left: 0, borderWidth: 1, borderRadius: 10, paddingVertical: 4, minWidth: 120, zIndex: 30, elevation: 30 },
   menuItem: { paddingHorizontal: 14, paddingVertical: 9 },
+  menuHint: { width: 240, paddingHorizontal: 14, paddingVertical: 8, marginTop: 4, borderTopWidth: 1, fontSize: 12, lineHeight: 17 },
   bar: { paddingHorizontal: 10, paddingTop: 8, gap: 4 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 10, paddingLeft: 6, paddingRight: 4, paddingVertical: 4, maxWidth: '100%', minWidth: 0 },

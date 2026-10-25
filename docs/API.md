@@ -16,6 +16,7 @@
 - [同期](#同期)
 - [会話・メッセージ](#会話メッセージ)
 - [プロジェクト・プリセット・設定](#プロジェクトプリセット設定)
+- [チャットフォルダー](#チャットフォルダー)
 - [プロバイダーとモデル](#プロバイダーとモデル)
 - [モデルのロゴ](#モデルのロゴ)
 - [ツール・Web 検索](#ツールweb-検索)
@@ -91,7 +92,7 @@ API キーは `/v1/*` 専用です。ハッシュのみ保存されます。
 
 | メソッド・パス | 認証 | 内容 |
 |---|---|---|
-| `GET /sync?since=N` | 端末 | `seq > N` の変更を返す。`{seq, conversations, messages, providers, projects, presets, settings?}`。`settings` は変更があったときだけ入る |
+| `GET /sync?since=N` | 端末 | `seq > N` の変更を返す。`{seq, conversations, messages, providers, projects, presets, folders, settings?}`。`settings` は変更があったときだけ入る |
 | `GET /ping` | なし | `{t}`(サーバーの時刻。WebSocket が使えないときの RTT 計測用) |
 | `GET /version` | なし | `{name: "omnichat-server", version, webUi, searxng}`。`searxng` は `SEARXNG_URL` が設定されているかの真偽値 |
 | `GET /healthz` | なし | 本文 `ok` |
@@ -127,6 +128,21 @@ API キーは `/v1/*` 専用です。ハッシュのみ保存されます。
 | `DELETE /presets/:id` | 端末 | 論理削除 |
 | `GET /settings` | 端末 | 全体設定 |
 | `PUT /settings` | 端末 | 部分更新。`systemPrompt`, `effort`, `params`, `devMode`, `tools`, `searchMode` (`off`/`smart`/`always`。`auto` は `smart` の別名), `search` (Web 検索の詳細設定 `searchModel`、`maxSites`、`maxSearches`、`allowDomains`、`denyDomains`、`readPages`、`readImages`、`maxImages`、`visionModel`、`guard` (`off`/`standard`/`strict`)、`allowPrivateUrls`。部分更新。詳しくは [SEARCH.md](SEARCH.md)。`searchMode` の `auto` は `smart` として読まれる), `autoTitle`, `titleModel` (`"<providerId>::<model>"`), `modelParams`(キーは `"<providerId>::<model>"`), `contextOverflow` (`truncate`/`summarize`/`stop`), `contextLimits`、フェーズ 5 の `contextCompressAt` (50〜95、`null` で自動圧縮オフ、既定 80)、`contextCompressTarget` (20〜80、既定 50)、`defaultContextLength` (256〜10000000、`null` で未設定。モデル読み込み時の既定値と、バックエンドが上限を返さないときの想定上限) |
+
+---
+
+## チャットフォルダー
+
+チャットを分類するフォルダーです。プロジェクトとは別で、システムプロンプトや既定の設定は持ちません。
+
+| メソッド・パス | 認証 | 内容 |
+|---|---|---|
+| `PUT /folders/:id` | 端末 | 作成または更新。`{name?, mode?}`。`name` は前後の空白を除いて 100 文字まで(既定 `"New folder"`)。`mode` (`chat`/`code`) は作成時だけ指定できる。`ChatFolder` を返す。他の人のフォルダーは 403 |
+| `DELETE /folders/:id` | 端末 | 論理削除。所属する会話は「未分類」(`folderId: null`)に移る。会話は削除されない。`ChatFolder` を返す |
+
+- 会話は `PUT /conversations/:id` の `folderId` (フォルダー ID または `null`)で移動します。存在しない・削除済み・他の人のフォルダーは 400 (`Unknown folder`)。エフェメラル会話は必ず `null` です。
+- 会話の `conversation` には `folderId` が入ります。
+- 変更は WebSocket の `upsert` で `folders`(と影響した `conversations`)として届きます。同期では `GET /sync` の `folders` に入ります。`ChatFolder` は `{id, name, mode, createdAt, updatedAt, deleted, seq}` です。
 
 ---
 
@@ -277,8 +293,8 @@ WebSocket サーバー → クライアントの追加: `phase`(`thinking/search
 
 - ツール呼び出しは既存の WS `tool`(`messages.toolCalls`)で見え、`decidedBy` は `rule:<id>` / `mode:<mode>` / `user` / `timeout` / `abort`。承認は既存の WS `tool_approval`(vscode では保護項目に `protected:true` と `reasons` が付き、「常に許可」は無効)と `tool_approval_reply`。
 - 環境変数: `OMNICHAT_CODE_MAX_ROUNDS`(1 送信あたりの最大ラウンド。既定 50、最大 200)、`TOOL_APPROVAL_TIMEOUT_MS`(承認待ち。既定 120000)。
-- 拡張 ⇄ サーバーのフレーム(`/bridge?kind=vscode&instance=<uuid>`)。拡張 → サーバー: `ready` `workspaces` `run_ack` `checkpoint` `event`(`tool_progress`)`tool_result` `approval` `approval_decision` `changes` `done` `rewound`。サーバー → 拡張: `welcome` `run` `tool_call`(`approval:{by,protectedOk}` 付き)`cancel` `approval_reply` `approval_pending` `approval_settled` `run_end` `rewind`。
-- VS Code 内チャット(0.5.4 以降、`ready.capabilities.chat` と `transcript` が true のとき): 拡張 → サーバー `prompt` `models_request` `conversations_request` `conversation_request` `set_approval_mode` `stop`、サーバー → 拡張 `prompt_ack` `models` `conversations` `transcript` `approval_mode` と `error {code:"rate_limited"}`(毎秒 30 フレームまで)。詳細は [VSCODE.md](VSCODE.md)。
+- 拡張 ⇄ サーバーのフレーム(`/bridge?kind=vscode&instance=<uuid>`)。拡張 → サーバー: `ready` `workspaces` `run_ack` `checkpoint` `event`(`tool_progress`)`tool_result` `approval` `approval_decision` `changes` `done` `rewound`。サーバー → 拡張: `welcome` `run` `tool_call`(`approval:{by,protectedOk,outsideOk?}` 付き。`outsideOk` はフルアクセス、または範囲外アクセスをユーザーが承認したときだけ `true`)`cancel` `approval_reply` `approval_pending` `approval_settled` `run_end` `rewind`。
+- VS Code 内チャット(0.5.4 以降、`ready.capabilities.chat` と `transcript` が true のとき): 拡張 → サーバー `prompt`(`searchMode`、`interrupt` 付き可、`replaceLast: true` で最後のユーザーメッセージとその後を会話から消してから送る。実行中は `busy`、`conversationId` 必須)`models_request` `conversations_request` `conversation_request` `set_approval_mode` `stop` `context_request` `devices_request` `compact_request` `conversation_settings_request` `conversation_settings_set` `history_search_request` `checkpoints_request {requestId, conversationId}`(0.5.6 以降)`checkpoint_restore {requestId, conversationId, checkpointId, removeNew?}`(0.5.6 以降)、サーバー → 拡張 `prompt_ack` `models`(項目に `contextLength`・`vision` が付く場合あり)`conversations`(`searchMode` 付き)`transcript` `approval_mode` `context`(`used`・`reasoning`・`last?` 付き)`devices`(`{name, kind: vscode|dsh, online, self, workspaces}` の配列。このユーザーのオンライン端末のみ、`self` は問い合わせ元)`compacted`(`ok:true` は `before` `after` トークン数。`compacted` `ok:false` `reason:"too_short"` は圧縮対象なし)`conversation_settings`(`systemPrompt` `systemMode` `effort` `title`)`conversation_settings_ack`(`ok`。失敗時は `error`(`invalid_frame` `not_found`)と `message`。成功時は `settings` `title`)`history_search`(`results` は最大 30 件。この端末の Code 会話の一致だけ)と `error {code:"rate_limited"}`(毎秒 30 フレームまで)。 0.5.6 以降のサーバー → 拡張: `checkpoints {requestId, conversationId, items}`(新しい順、最大 50。項目は `{id, createdAt, dirty, restorable, prompt, files, messageId}`。`prompt` は直前のユーザー依頼の 1 行(120 文字まで)、`files` は変更ファイル数、`restorable` は Git の時点として戻せるか)`checkpoint_restored {requestId, conversationId, checkpointId, ok, error?, message?}`(`error` は `busy` `unavailable` `not_found` `dirty_editors` `failed`。戻す前の状態は `refs/omnichat/checkpoints/pre-rewind-<時刻>` に残る)。`transcript` の assistant 項目は、最終フレームと `conversation_request` の履歴に `sources?: [{title, url, host}]`(最大 8。http/https のみ、ユーザー情報とフラグメントは除く)を持つことがある。`ready.capabilities.transcriptDelta` が true のときは、実行中の `assistant` が `from` 付きの差分で届き、`tool` 項目には `diff` が付く(0.5.5 以降)。詳細は [VSCODE.md](VSCODE.md)。
 
 ---
 
@@ -317,7 +333,7 @@ ws(s)://<サーバー>/ws?token=<端末トークン>
 |---|---|
 | `hello` | 上記 |
 | `snapshot` | `{"type":"snapshot","messages":[{"id":"…","conversationId":"…","content":"…","reasoning":null,"status":"streaming","toolCalls":null,"sources":null,"guardBlocked":null}]}`。受け取った側は内容を置き換える。`guardBlocked` は、検索の安全装置(`search.guard`)が取り除いた本文の一覧(無ければ `null`) |
-| `upsert` | `{"type":"upsert","messages":[…]}` ほか `conversations` / `projects` / `presets` / `providers` / `settings`。完了したメッセージの `status` は `done` / `stopped` / `error` |
+| `upsert` | `{"type":"upsert","messages":[…]}` ほか `conversations` / `projects` / `presets` / `folders` / `providers` / `settings`。完了したメッセージの `status` は `done` / `stopped` / `error` |
 | `delta` | `{"type":"delta","messageId":"…","conversationId":"…","text":"こん"}`。`"kind":"reasoning"` が付けば思考過程、付かなければ本文 |
 | `tool` | ツール呼び出しの状態変化。`{"type":"tool","messageId":"…","conversationId":"…","call":{id,name,arguments,status,result?,error?,durationMs?}}` |
 | `tool_approval` | 承認要求。`{"type":"tool_approval","approvalId":"…","messageId":"…","conversationId":"…","tool":"fetch_url","arguments":{…},"permissions":["network"]}`。120 秒以内に回答がなければ拒否扱い |

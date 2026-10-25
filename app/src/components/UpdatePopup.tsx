@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, ScrollView, Text, View } from 'react-native';
+import { Linking, Platform, ScrollView, Text, View } from 'react-native';
 import { api } from '../api';
 import { useT } from '../i18n';
 import { useStore } from '../store';
@@ -7,6 +7,7 @@ import { useTheme, useThemeDef } from '../theme';
 import { Btn, Hint, Sheet } from '../ui/kit';
 import { toast } from '../ui/toast';
 import { decidePopup, failureDismissKey, serverVersionChanged } from '../updateState';
+import { canInstallFromHere, isNativeUpdatePlatform, nextUpdatePollMs } from '../updateTypes';
 import type { UpdateStatus } from '../updateTypes';
 import {
   getDeviceUpdateState,
@@ -21,8 +22,6 @@ import { CopyBlock } from './IntegrationParts';
 import { ApplyFailure, ApplyProgress, failureOf } from './UpdatesSection';
 import { dismissApplyFailure, fetchServerVersion, isApplyActive, startApply, useApplyView } from './useApplyUpdate';
 
-/** Re-check the server status while the app stays open. */
-const STATUS_EVERY_MS = 6 * 3600_000;
 /** Web only: GET /version while the page is open (detects a server update made elsewhere). */
 const VERSION_EVERY_MS = 60_000;
 /** Characters of the release notes shown in the popup. */
@@ -30,14 +29,16 @@ const NOTES_PREVIEW = 600;
 
 /**
  * Background checks for the update popup and the reload banner (one hook, mounted once with the popup):
- * - device state + GET /update/status on mount (login), then every 6 h;
+ * - device state + GET /update/status on mount (login), then every 6 h, or 15 min after a failed load or a server error;
  * - web: GET /version every 60 s and on socket reconnect; a changed version shows the reload banner;
  * - the last seen server version is kept per device (lastSeenServerVersion) so a change made while the
  *   app was closed is noticed on the next start.
- * Errors are ignored: the popup simply does not appear.
+ * A failed load never shows the popup (it stays closed); the Settings > Updates section shows the error and a Retry.
  */
 function useUpdateWatch() {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
+  /** n counts finished loads; failed means the last load threw or the server reported lastError */
+  const [poll, setPoll] = useState({ failed: false, n: 0 });
   const [serverChanged, setServerChanged] = useState(false);
   const connected = useStore((s) => s.connected);
   const apply = useApplyView();
@@ -50,8 +51,10 @@ function useUpdateWatch() {
       const prev = getDeviceUpdateState().lastSeenServerVersion;
       if (!isApplyActive() && serverVersionChanged(prev, s.current)) setServerChanged(true);
       setLastSeenServerVersion(s.current);
+      setPoll((p) => ({ failed: s.lastError !== null, n: p.n + 1 }));
     } catch {
-      // offline, or not logged in any more: keep the last known status
+      // offline, or not logged in any more: keep the last known status, retry in 15 min
+      setPoll((p) => ({ failed: true, n: p.n + 1 }));
     }
   }, []);
 
@@ -65,13 +68,18 @@ function useUpdateWatch() {
     }
   }, []);
 
-  // mount (login): device state, then the status; then every 6 h
+  // mount (login): device state, then the status
   useEffect(() => {
     let alive = true;
     void loadDeviceUpdateState().finally(() => { if (alive) void refresh(); });
-    const h = setInterval(() => { void refresh(); }, STATUS_EVERY_MS);
-    return () => { alive = false; clearInterval(h); };
+    return () => { alive = false; };
   }, [refresh]);
+
+  // next status load: every 6 h, or 15 min after a failure (each finished load re-arms the timer)
+  useEffect(() => {
+    const h = setTimeout(() => { void refresh(); }, nextUpdatePollMs(poll.failed));
+    return () => clearTimeout(h);
+  }, [poll, refresh]);
 
   // web: version watch every 60 s
   useEffect(() => {
@@ -146,6 +154,11 @@ export default function UpdatePopup() {
     void refresh();
   };
 
+  const openRelease = () => {
+    if (!upd) return;
+    Linking.openURL(upd.htmlUrl).catch(() => toast(tr('update.openFailed'), 'error'));
+  };
+
   const applyNow = () => {
     if (!upd || !status) return;
     void startApply(upd.version, status.current);
@@ -186,7 +199,9 @@ export default function UpdatePopup() {
     title = tr('update.failed.title');
     body = <ApplyFailure message={failureText} onOk={() => { void onFailureOk(); }} />;
   } else if (upd && status) {
-    const canSelf = status.selfUpdate && status.bundleAssetFound;
+    // native phones only link to the release page; the self-install buttons are never shown there
+    const canSelf = canInstallFromHere(Platform.OS, status.selfUpdate && status.bundleAssetFound);
+    const native = isNativeUpdatePlatform(Platform.OS);
     const isDocker = status.installType === 'docker';
     const notes = upd.notes || '';
     const preview = notes.length > NOTES_PREVIEW ? `${notes.slice(0, NOTES_PREVIEW)}...` : notes;
@@ -210,6 +225,7 @@ export default function UpdatePopup() {
     footer = (
       <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
         {canSelf && <Btn primary label={tr('update.apply')} onPress={applyNow} />}
+        {native && <Btn primary label={tr('update.apk.download')} onPress={openRelease} />}
         <Btn label={tr('update.skip')} onPress={() => { void skip(); }} />
         <Btn label={tr('update.popup.later')} onPress={later} />
       </View>

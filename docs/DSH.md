@@ -42,7 +42,7 @@ OmniChat から、自分の PC で動いている **DeepSeek Harness(dsh)** を�
 前提: 対象の PC に dsh と Node.js(`bridge/` の `npm install` が通るバージョン。サーバーと同じ Node 24 を推奨)があること。
 
 ```powershell
-cd C:\vibecording\omnichat\bridge
+cd <リポジトリのルート>\bridge
 npm install
 $env:OMNICHAT_PASSWORD = '<パスワード>'     # コマンドラインに書かず環境変数で渡す
 npm start -- --server https://chat.example.com --username alice --cwd C:\work\agent --name my-pc

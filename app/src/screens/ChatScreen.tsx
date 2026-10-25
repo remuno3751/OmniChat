@@ -1,5 +1,5 @@
 import { isNearBottom } from '../stickBottom';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { api, ApiError, getIsAdmin } from '../api';
 import MaintenanceBanner from '../components/MaintenanceBanner';
@@ -27,7 +27,10 @@ import CheckpointsBar from '../components/CheckpointsBar';
 import { ApprovalModeSwitch, FullAccessDialog, useApprovalMode } from '../components/ApprovalModeSwitch';
 import { approvalModeOfAction } from '../approvalMode';
 import { isAgentBridgeKind } from '../codeGroups';
-import { takePendingCodeStart } from '../vscodeBridge';
+import { codeErrorKey, codeStartSel, fromCodeSel, lastCodeSel, toCodeSel } from '../codeModels';
+import type { KindOf } from '../codeModels';
+import { takePendingCodeStart, type PendingCodeStart } from '../vscodeBridge';
+import { imeAfter, initialImeState, shouldSwallowEnter, type ImeState } from '../imeGuard';
 import LatencyBadge from '../components/LatencyBadge';
 import DebugSheet from '../components/DebugSheet';
 import type { DebugTab } from '../components/DebugSheet';
@@ -48,6 +51,7 @@ import type { ModelCandidate, ParsedSlash } from '../slashCommands';
 import { runSlashCommand, takeCarriedChat } from '../slashRun';
 import { activeProviders, applyUpsert, destroyEphemeralLocal, noteMaintenanceBlocked, setLastSel, useStore } from '../store';
 import type { ModelSel } from '../store';
+import { pendingFolderFor } from '../folders';
 import { useT } from '../i18n';
 import { useAppearance, useTheme, useThemeDef } from '../theme';
 import { Brackets, FourStar } from '../ui/decor';
@@ -60,7 +64,8 @@ import type { SlashEntry } from '../templates';
 import { Btn, Field, Sheet, useV3, webNoOutline } from '../ui/kit';
 import WorkspacePicker from '../components/WorkspacePicker';
 import { useBridges } from '../useBridges';
-import { changeDevice, codeDevices, cwdToSend, pickerAvailable, workspaceOptions } from '../codeWorkspace';
+import { changeDevice, codeDevices, cwdToSend, defaultCwdOf, defaultDevice, pickerAvailable, workspaceOptions } from '../codeWorkspace';
+import type { CodeDevice } from '../codeWorkspace';
 import type { WorkspaceChoice } from '../codeWorkspace';
 import { toast } from '../ui/toast';
 import { useLayoutEpoch } from '../ui/layoutEpoch';
@@ -77,6 +82,10 @@ interface Props {
   showMenu: boolean;
   onMenu: () => void;
   onCreated: (id: string) => void;
+  /** folder picked with a folder row "+" for this new chat; it is applied after the first send */
+  pendingFolder?: { id: string; folderId: string } | null;
+  /** removes the pending folder, so the chat goes to Unclassified */
+  onClearPendingFolder?: () => void;
   onSettings: () => void;
   /** slash action `/new`: start a fresh chat */
   onNewChat: () => void;
@@ -86,7 +95,7 @@ interface Props {
   onOpenModels?: () => void;
 }
 
-export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat', showMenu, onMenu, onCreated, onSettings, onNewChat, onOpenUsage, onOpenModels }: Props) {
+export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat', showMenu, onMenu, onCreated, pendingFolder = null, onClearPendingFolder, onSettings, onNewChat, onOpenUsage, onOpenModels }: Props) {
   const t = useTheme();
   const th = useThemeDef();
   const themed = th.def.id !== 'simple';
@@ -100,6 +109,8 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
   const maintView = maintenanceView(useStore((s) => s.maintenance), getIsAdmin() === true);
   /** ephemeral chat: nothing is kept (see docs/EPHEMERAL.md); id prefix eph_ */
   const eph = isEphemeralId(convId);
+  const foldersById = useStore((s) => s.folders);
+  const chipFolder = !conv && !eph ? pendingFolderFor(pendingFolder, convId, foldersById) : null;
   const ephBannerSeen = useDevice((s) => s.ephemeralBannerSeen);
   const msgMap = useStore((s) => s.messages[convId]);
   const providersMap = useStore((s) => s.providers);
@@ -174,32 +185,42 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
   const [pickerToken, setPickerToken] = useState(0);
   const approvalCtl = useApprovalMode(conv);
 
-  const sel: ModelSel | null = useMemo(() => {
-    if (conv) return conv.providerId ? { providerId: conv.providerId, model: conv.model } : null;
-    if (pending) return pending;
-    if (project?.defaultProviderId && providers.some((p) => p.id === project.defaultProviderId)) {
-      return { providerId: project.defaultProviderId, model: project.defaultModel };
-    }
-    if (!conv && draftMode === 'code') {
-      const bridge = providers.find((p) => isAgentBridgeKind(p.kind));
-      if (bridge) {
-        const g = groups?.find((x) => x.providerId === bridge.id);
-        return { providerId: bridge.id, model: g?.defaultModel ?? g?.models[0]?.id ?? (bridge.model || null) };
-      }
-    }
-    const lastP = lastSel ? providers.find((p) => p.id === lastSel.providerId) : undefined;
-    if (lastSel && lastP && (draftMode === 'code') === isAgentBridgeKind(lastP.kind)) return lastSel;
-    const p = (draftMode === 'code' ? providers[0] : providers.find((x) => !isAgentBridgeKind(x.kind))) ?? providers[0];
-    if (!p) return null;
-    const g = groups?.find((x) => x.providerId === p.id);
-    return { providerId: p.id, model: g?.defaultModel ?? g?.models[0]?.id ?? (p.model || null) };
-  }, [conv, pending, project, lastSel, providers, groups, draftMode]);
-  const provider = providers.find((p) => p.id === sel?.providerId) || null;
-  // Code: device badge and the workspace picker of a new chat (docs/design/CODE-WORKSPACES.md)
+  // Code: the bridge (device) of a selection stays; a model of a normal provider is stored as `<providerId>::<model>` (codeModels.ts)
   const isCode = conv ? conv.mode === 'code' : draftMode === 'code';
   const bridges = useBridges(isCode);
   const convsMap = useStore((s) => s.conversations);
   const devices = useMemo(() => codeDevices(providers, bridges), [providers, bridges]);
+  const kindOf = useCallback<KindOf>((id) => providersMap[id]?.kind, [providersMap]);
+  const lastCode = useMemo(() => lastCodeSel(Object.values(convsMap), kindOf), [convsMap, kindOf]);
+  /** the model a Code device's new chat starts with when no prior Code selection applies (only a DSH PC lists its own models) */
+  const ownModel = (d: CodeDevice | undefined): string | null => {
+    if (d?.kind !== 'dsh') return null;
+    const g = groups?.find((x) => x.providerId === d.providerId);
+    return g?.defaultModel ?? g?.models[0]?.id ?? null;
+  };
+
+  const sel: ModelSel | null = useMemo(() => {
+    if (conv) return conv.providerId ? { providerId: conv.providerId, model: conv.model } : null;
+    if (pending) return pending;
+    if (draftMode !== 'code' && project?.defaultProviderId && providers.some((p) => p.id === project.defaultProviderId)) {
+      return { providerId: project.defaultProviderId, model: project.defaultModel };
+    }
+    if (draftMode === 'code') {
+      // a new Code chat starts on an online PC; no PC known yet: no selection
+      const d = defaultDevice(devices);
+      return d ? codeStartSel(d.providerId, [lastSel, lastCode], kindOf, ownModel(d)) ?? { providerId: d.providerId, model: null } : null;
+    }
+    const lastP = lastSel ? providers.find((p) => p.id === lastSel.providerId) : undefined;
+    if (lastSel && lastP && !isAgentBridgeKind(lastP.kind)) return lastSel;
+    const p = providers.find((x) => !isAgentBridgeKind(x.kind)) ?? providers[0];
+    if (!p) return null;
+    const g = groups?.find((x) => x.providerId === p.id);
+    return { providerId: p.id, model: g?.defaultModel ?? g?.models[0]?.id ?? (p.model || null) };
+  }, [conv, pending, project, lastSel, lastCode, kindOf, devices, providers, groups, draftMode]);
+  const provider = providers.find((p) => p.id === sel?.providerId) || null;
+  /** the provider and model the picker and the labels show (the model behind a Code bridge selection) */
+  const dsel = useMemo(() => (isCode && sel ? fromCodeSel(sel, kindOf) : sel), [isCode, sel, kindOf]);
+  // Code: device badge and the workspace picker of a new chat (docs/design/CODE-WORKSPACES.md)
   const device = devices.find((d) => d.providerId === sel?.providerId);
   const wsOptions = useMemo(
     () => (isCode && device ? workspaceOptions(device.name, bridges, Object.values(convsMap), providersMap, device.kind) : []),
@@ -207,41 +228,65 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
   );
   const [draftCwd, setDraftCwd] = useState<string | null>(null);
   useEffect(() => { setDraftCwd(null); }, [convId]);
-  // Code tab "VS Code" section: a tapped workspace starts this draft on that PC (vscode-bridge provider) in that folder
+  // Code tab "VS Code" section (or a folder's "+"): a tapped workspace starts this draft on that PC in that folder.
+  // Taken once per draft into a ref, and applied when the provider is known (providers may still be loading).
+  const pendingCodeRef = useRef<PendingCodeStart | null>(null);
+  useEffect(() => { pendingCodeRef.current = takePendingCodeStart(); }, [convId]);
   useEffect(() => {
-    if (conv || draftMode !== 'code') return;
-    const start = takePendingCodeStart();
-    if (!start) return;
+    const start = pendingCodeRef.current;
+    if (!start || conv || draftMode !== 'code') return;
     const p = providers.find((x) => x.id === start.providerId);
     if (!p) return;
-    setPending({ providerId: p.id, model: p.model || null });
+    pendingCodeRef.current = null;
+    const d = devices.find((x) => x.providerId === p.id);
+    setPending(codeStartSel(p.id, [lastSel, lastCode], kindOf, ownModel(d)) ?? { providerId: p.id, model: null });
     setDraftCwd(start.cwd);
-  }, [convId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [convId, conv, draftMode, providers, devices, lastSel, lastCode, kindOf]);
   /** an ephemeral chat sent to a provider outside the local network: the provider may keep the text */
   // a shared provider has no URL here: it runs on the server for someone else, so it counts as remote
   const ephRemote = eph && !!provider && (provider.baseUrl ? isRemoteProviderUrl(provider.baseUrl) : provider.readOnly === true);
   const linear = isAgentBridgeKind(provider?.kind);
   const canBranch = v3 && !linear;
-  const unsupported = selectedModelInfo(groups, sel, provider?.model)?.effort === 'unsupported';
+  const unsupported = selectedModelInfo(groups, dsel, provider?.model)?.effort === 'unsupported';
   const chatEffort = conv ? conv.effort ?? null : draftEffort;
 
   /** picking another PC for a new Code chat: its default model; the folder stays only if that PC offers it */
   const chooseDevice = (providerId: string) => {
-    const p = providers.find((x) => x.id === providerId);
-    const g = groups?.find((x) => x.providerId === providerId);
     const d = devices.find((x) => x.providerId === providerId);
     const opts = d ? workspaceOptions(d.name, bridges, Object.values(convsMap), providersMap, d.kind) : [];
     const next: WorkspaceChoice = changeDevice({ providerId: sel?.providerId ?? null, cwd: draftCwd }, providerId, opts);
     setDraftCwd(next.cwd);
-    void choose({ providerId, model: g?.defaultModel ?? g?.models[0]?.id ?? (p?.model || null) });
+    void choose(codeStartSel(providerId, [sel, lastSel, lastCode], kindOf, ownModel(d)) ?? { providerId, model: null });
   };
 
+  /** a Code error text as the user sees it (the English server text and the not-a-PC code have Japanese texts) */
+  const codeErrText = (message: string, code?: string) => {
+    const k = codeErrorKey(message, code);
+    return k ? tr(k) : message;
+  };
+
+  /** a picked model in a Code chat keeps the bridge (toCodeSel); outside Code it is taken as it is */
   const choose = async (next: ModelSel) => {
-    setLastSel(next);
-    if (!conv) { setPending(next); return; }
+    const s = isCode ? toCodeSel(sel, next, kindOf) : next;
+    setLastSel(s);
+    if (!conv) { setPending(s); return; }
     try {
-      applyUpsert({ conversations: [await api.putConversation(convId, { providerId: next.providerId, model: next.model })] });
-    } catch (e: any) { setErr(e.message); }
+      applyUpsert({ conversations: [await api.putConversation(convId, { providerId: s.providerId, model: s.model })] });
+    } catch (e: any) { setErr(codeErrText(e.message, e?.code)); }
+  };
+
+  /** a broken Code chat (its provider is not a PC bridge, e.g. changed to a model provider): attach it to an online PC again */
+  const brokenCode = !!conv && conv.mode === 'code' && !eph && providers.length > 0 && !isAgentBridgeKind(provider?.kind);
+  const reattach = async () => {
+    const d = defaultDevice(devices);
+    if (!conv || !d) { toast(tr('code.notBridge'), 'error'); return; }
+    const old = conv.providerId && conv.model && providersMap[conv.providerId]
+      ? toCodeSel({ providerId: d.providerId, model: null }, { providerId: conv.providerId, model: conv.model }, kindOf)
+      : null;
+    const start = old ?? codeStartSel(d.providerId, [lastSel, lastCode], kindOf, ownModel(d)) ?? { providerId: d.providerId, model: null };
+    try {
+      applyUpsert({ conversations: [await api.putConversation(convId, { providerId: start.providerId, model: start.model })] });
+    } catch (e: any) { toast(e?.message || tr('code.notBridge'), 'error'); }
   };
 
   const pinEffort = async (e: Effort | null) => {
@@ -292,7 +337,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
   /** runs a slash command locally; its text is never sent to the model */
   const runSlash = (cmd: ParsedSlash) => runSlashCommand(cmd, {
     convId, conv, eph, mode: conv?.mode ?? draftMode, streaming: !!streaming, tr, settings, sel,
-    modelName: sel ? modelLabel(groups, sel, provider?.model) || null : null,
+    modelName: dsel ? modelLabel(groups, dsel, provider?.model) || null : null,
     chatSearch, chatEffort, candidates: modelCandidates, path, regenerate: regenerateFrom,
     pushCard, replaceCard, newChat: onNewChat, openUsage: onOpenUsage, chooseModel: choose, pinEffort,
     setPinned, openModelPicker: () => setPickerToken((n) => n + 1),
@@ -301,7 +346,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
 
   const loadBusy = useModelLoadBusy(convId);
   // Code conversations: images and audio are not sent (docs/design/ATTACHMENTS.md, "Code / DSH での添付").
-  const attachCode = conv ? conv.mode === 'code' : draftMode === 'code';
+  const attachCode = isCode;
   const send = async () => {
     // a slash command runs first (the send button and Enter both come here); unknown '/xxx' stays normal text
     const cmd = parseSlashCommand(text);
@@ -309,13 +354,14 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
     const content = text.trim();
     const atts = readyAttachmentIds();
     if ((!content && !atts.length) || streaming || loadBusy || maintView.blocksSend || !canSendAttachments(getChips()) || codeSendBlocked(getChips(), attachCode)) return;
+    if (isCode && !sel?.model) { toast(tr('code.pickModelFirst'), 'error'); setPickerToken((n) => n + 1); return; }
     setErr('');
     try {
       if (!(await ensureConv())) return;
       stageSendAttachments(atts);
-      const cwd = !conv ? cwdToSend({ providerId: sel?.providerId ?? null, cwd: draftCwd }, device, wsOptions) : undefined;
+      const cwd = !conv ? cwdToSend({ providerId: sel?.providerId ?? null, cwd: draftCwd }, device, wsOptions, bridges) : undefined;
       const e = sendUser({ convId, content, lastVisibleId: path.length ? path[path.length - 1].id : null, effort: unsupported ? null : oneShot, responseFormat: oneShotRF, ...(cwd ? { cwd } : {}) });
-      if (e) { stageSendAttachments([]); setErr(e); return; }
+      if (e) { stageSendAttachments([]); setErr(codeErrText(e)); return; }
       sendAccepted();
       setText('');
       setOneShot(null);
@@ -326,7 +372,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
       if (e instanceof ApiError && e.code === 'maintenance') { noteMaintenanceBlocked(e.message); return; }
       // PROTOCOL-v7: the model is not allowed for this user; the text stays in the composer
       if (e instanceof ApiError && e.code === 'model_not_allowed') { toast(tr('shared.modelNotAllowed'), 'error'); return; }
-      setErr(e.message || String(e));
+      setErr(codeErrText(e.message || String(e), e?.code));
     }
   };
 
@@ -388,18 +434,31 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
   };
 
   // IME: the Enter that confirms a conversion must not send. Safari/WebKit (Mac) fires compositionend before the key event, so isComposing is already false there.
-  const imeEnd = useRef(0);
+  // The decision is taken on the document keydown (capture, before React sees it); onKeyPress reads it.
+  const ime = useRef<ImeState>(initialImeState());
+  const imeSwallow = useRef(false);
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-    const end = () => { imeEnd.current = Date.now(); };
-    document.addEventListener('compositionend', end, true);
-    return () => document.removeEventListener('compositionend', end, true);
+    const onEnd = () => { ime.current = imeAfter(ime.current, 'compositionend', Date.now()); };
+    const onDown = (ev: KeyboardEvent) => {
+      imeSwallow.current = shouldSwallowEnter(ime.current, { key: ev.key, keyCode: ev.keyCode, isComposing: ev.isComposing, repeat: ev.repeat, time: Date.now() });
+      ime.current = imeAfter(ime.current, 'keydown', Date.now());
+    };
+    const onUp = () => { ime.current = imeAfter(ime.current, 'keyup', Date.now()); };
+    document.addEventListener('compositionend', onEnd, true);
+    document.addEventListener('keydown', onDown, true);
+    document.addEventListener('keyup', onUp, true);
+    return () => {
+      document.removeEventListener('compositionend', onEnd, true);
+      document.removeEventListener('keydown', onDown, true);
+      document.removeEventListener('keyup', onUp, true);
+    };
   }, []);
 
   const onKeyPress = (e: any) => {
     if (Platform.OS !== 'web') return;
     const k = e.nativeEvent.key;
-    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229 || (k === 'Enter' && Date.now() - imeEnd.current < 150)) return;
+    if (imeSwallow.current) { imeSwallow.current = false; return; }
     const shift = e.nativeEvent.shiftKey;
     // the menu takes these keys before the Enter-to-send logic below
     if (slashOpen) {
@@ -415,7 +474,8 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
     }
     if (k === 'Enter' && !shift) {
       e.preventDefault?.();
-      send();
+      // a held Enter does not send again and again
+      if (!e.nativeEvent.repeat) send();
     }
   };
 
@@ -441,6 +501,13 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
           {themed && ef && wide && <Tag>{tr(conv?.mode === 'code' ? 'sidebar.mode.code' : 'sidebar.mode.chat')}</Tag>}
           {themed && !ef && th.fx && <FourStar size={12} color={t.accent} />}
           <Text numberOfLines={1} style={[styles.title, { color: t.text }, themed && { flexShrink: 1 }]}>{eph ? tr('eph.title') : conv?.title || tr('sidebar.newChat')}</Text>
+          {!!chipFolder && (
+            <Pressable onPress={() => onClearPendingFolder?.()} hitSlop={6} accessibilityRole="button" accessibilityLabel={tr('folder.chipRemove')} style={[styles.folderChip, { borderColor: t.border }]}>
+              <Icon name="folder" size={12} color={t.sub} />
+              <Text numberOfLines={1} style={{ color: t.sub, fontSize: 11, flexShrink: 1 }}>{tr('folder.chip', { name: chipFolder.name })}</Text>
+              <Icon name="close" size={12} color={t.sub} />
+            </Pressable>
+          )}
           {!!project && <Text numberOfLines={1} style={{ color: t.sub, fontSize: 11 }}>{project.name}</Text>}
           {isCode && devices.length > 1 && !!device && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }} accessibilityLabel={`${device.name} ${tr(device.online ? 'code.device.online' : 'code.device.offline')}`}>
@@ -556,7 +623,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
               draft: text, headKey: last ? last.id + ':' + last.status : '', streaming: !!streaming,
               local: {
                 settings, projectPrompt: project?.systemPrompt, providerId: sel?.providerId ?? null, model: sel?.model ?? null,
-                backendLimit: selectedModelInfo(groups, sel, provider?.model)?.state?.contextLength ?? null, draft: text,
+                backendLimit: selectedModelInfo(groups, dsel, provider?.model)?.state?.contextLength ?? null, draft: text,
               },
             }}
           />
@@ -565,7 +632,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
           <View style={{ paddingHorizontal: 10, paddingTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             <EffortChip oneShot={oneShot} chat={chatEffort} unsupported={unsupported} onOneShot={setOneShot} onPin={pinEffort} />
             <SearchChip chat={chatSearch} project={project?.searchMode} onPin={pinSearch} />
-            <ComposerDevChips oneShot={oneShotRF} onOneShot={setOneShotRF} draft={text} providerId={sel?.providerId} model={sel?.model ?? provider?.model} />
+            <ComposerDevChips oneShot={oneShotRF} onOneShot={setOneShotRF} draft={text} providerId={dsel?.providerId} model={dsel?.model ?? provider?.model} />
           </View>
         )}
         {!conv && !eph && draftMode === 'code' && (
@@ -577,10 +644,17 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
             options={wsOptions}
             cwd={draftCwd}
             onCwd={setDraftCwd}
+            defaultCwd={defaultCwdOf(device, bridges)}
           />
         )}
+        {brokenCode && (
+          <View style={[styles.ephBar, { borderColor: t.border }]}>
+            <Text style={{ flexShrink: 1, flexGrow: 1, minWidth: 160, fontSize: 12, color: t.warn }}>{tr('code.brokenConv')}</Text>
+            <Btn small label={tr('code.reattach')} onPress={reattach} />
+          </View>
+        )}
         {slashOpen && <SlashMenu entries={slashEntries} active={slashSel} onPick={pickSlash} />}
-        <AttachChips providerId={sel?.providerId} model={sel?.model ?? provider?.model} listed={selectedModelInfo(groups, sel, provider?.model)?.vision} codeMode={attachCode} />
+        <AttachChips providerId={dsel?.providerId} model={dsel?.model ?? provider?.model} listed={selectedModelInfo(groups, dsel, provider?.model)?.vision} codeMode={attachCode} />
         <View style={styles.inputBar}>
           <AttachButton codeMode={attachCode} />
           <View style={{ flex: 1 }}>
@@ -668,6 +742,7 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   title: { fontSize: 16, fontWeight: '600' },
+  folderChip: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   ephBar: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, paddingHorizontal: 14, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth },
   ephWarn: { flexShrink: 1, flexGrow: 1, minWidth: 160, fontSize: 12 },
   list: { padding: 14, gap: 6, width: '100%', alignSelf: 'center' },

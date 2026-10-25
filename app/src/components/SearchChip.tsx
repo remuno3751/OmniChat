@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
 import Icon from './Icon';
+import Tip from './Tip';
 import type { SearchMode } from '../protocol';
 import { getIsAdmin } from '../api';
 import { useStore } from '../store';
@@ -48,20 +49,22 @@ export default function SearchChip({ chat, project, onPin }: { chat: SearchMode 
     : tr('composer.search.label', { mode: modeLabel(tr, r.mode) });
   return (
     <>
-      <Pressable
-        onPress={() => setOpen(true)}
-        accessibilityRole="button"
-        accessibilityLabel={tr('composer.search.a11y')}
-        accessibilityHint={tip}
-        style={[{ alignSelf: 'flex-start', borderWidth: 1, borderColor: on ? t.accent : t.border, paddingHorizontal: 10, paddingVertical: 4, opacity: st.configured ? 1 : 0.6 }, { borderRadius: th.r(14) }]}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Icon name="search" size={14} color={on ? t.accentInk : t.sub} />
-          <Text style={{ color: on ? t.accentInk : t.sub, fontSize: 12, fontWeight: '600' }}>
-            {chipText}
-          </Text>
-        </View>
-      </Pressable>
+      <Tip label={tr('composer.search.a11y')}>
+        <Pressable
+          onPress={() => setOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={tr('composer.search.a11y')}
+          accessibilityHint={tip}
+          style={[{ alignSelf: 'flex-start', borderWidth: 1, borderColor: on ? t.accent : t.border, paddingHorizontal: 10, paddingVertical: 4, opacity: st.configured ? 1 : 0.6 }, { borderRadius: th.r(14) }]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Icon name="search" size={14} color={on ? t.accentInk : t.sub} />
+            <Text style={{ color: on ? t.accentInk : t.sub, fontSize: 12, fontWeight: '600' }}>
+              {chipText}
+            </Text>
+          </View>
+        </Pressable>
+      </Tip>
       <Sheet visible={open} onClose={() => setOpen(false)} title={tr('sheet.search.title')} width={440}>
         {!st.configured && <Hint danger>{tr('sheet.search.noBackend')}</Hint>}
         {st.configured && st.reachable === false && <Hint danger>{st.error ? tr('sheet.search.unreachable', { error: st.error }) : tr('sheet.search.unreachableNoErr')}</Hint>}

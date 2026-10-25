@@ -13,6 +13,7 @@ if [ -n "$(git status --porcelain)" ]; then echo "refusing: working tree has unc
 INTERNAL=(
   docs/NIGHT-QUEUE.md
   docs/MAC-BUILD-PROMPT.md
+  docs/design/V056-TODO.md
 )
 
 mkdir -p "$OUT"

@@ -34,6 +34,11 @@ export function codeDevices(providers: Provider[], bridges: BridgeInfo[] | null)
   return out.sort((a, b) => a.name.localeCompare(b.name) || a.kind.localeCompare(b.kind));
 }
 
+/** The device a new Code chat starts on: the first ONLINE one (in list order), else the first known one; undefined when there is none. */
+export function defaultDevice(devices: CodeDevice[]): CodeDevice | undefined {
+  return devices.find((d) => d.online) ?? devices[0];
+}
+
 /**
  * Folders offered for a device: the ones its bridge reported (most recent first), then folders of its known conversations
  * (newest first; they also cover a bridge that is offline). Duplicates by normalized path are dropped.
@@ -50,7 +55,8 @@ export function workspaceOptions(device: string, bridges: BridgeInfo[] | null, c
   };
   const b = bridges?.find((x) => x.name === device && x.online && (!kind || (x.kind ?? 'dsh') === kind));
   for (const w of b?.workspaces ?? []) add(w);
-  for (const c of [...convs].sort((x, y) => y.updatedAt - x.updatedAt)) if (deviceOf(c, providers) === device) add(c.cwd);
+  // an online VS Code PC lists only the folders open in VS Code: folders of older chats cannot be started there
+  if (!b || kind !== 'vscode') for (const c of [...convs].sort((x, y) => y.updatedAt - x.updatedAt)) if (deviceOf(c, providers) === device) add(c.cwd);
   return out.slice(0, MAX_OPTIONS);
 }
 
@@ -62,8 +68,23 @@ export function pickerAvailable(device: CodeDevice | undefined): boolean {
   return !!device && device.online && device.workspaces;
 }
 
-/** The cwd to send with the first message: only a folder picked from the options of an online, workspace-aware bridge. */
-export function cwdToSend(choice: WorkspaceChoice, device: CodeDevice | undefined, options: string[]): string | undefined {
+/**
+ * The folder a new chat starts in when none is picked, for a VS Code device: the folder open in VS Code (the bridge's cwd,
+ * else its first open workspace). undefined for DSH devices (their bridge keeps its own default) or when unknown.
+ */
+export function defaultCwdOf(device: CodeDevice | undefined, bridges: BridgeInfo[] | null): string | undefined {
+  if (device?.kind !== 'vscode') return undefined;
+  const b = bridges?.find((x) => x.name === device.name && x.kind === 'vscode');
+  return b?.cwd || b?.workspaces?.[0] || undefined;
+}
+
+/**
+ * The cwd to send with the first message. A picked folder of a DSH device: only from the options of an online,
+ * workspace-aware bridge. A VS Code device: the picked folder (or the open one by default) is sent even when /bridges
+ * is not loaded yet; the server checks it.
+ */
+export function cwdToSend(choice: WorkspaceChoice, device: CodeDevice | undefined, options: string[], bridges: BridgeInfo[] | null = null): string | undefined {
+  if (device?.kind === 'vscode') return choice.cwd || defaultCwdOf(device, bridges);
   if (!choice.cwd || !pickerAvailable(device)) return undefined;
   const k = normCwd(choice.cwd);
   return options.some((o) => normCwd(o) === k) ? choice.cwd : undefined;

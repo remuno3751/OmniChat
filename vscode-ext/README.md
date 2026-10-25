@@ -15,7 +15,7 @@ OmniChat のサーバーから、この VS Code ウィンドウのツール(フ�
   ```
 - **ペアリング**:
   1. OmniChat アプリの「設定」→「VS Code」カードを開き、ペアリングコードを作成します。
-  2. VS Code でコマンドパレットを開き、**OmniChat: Pair with Server** を実行してコードを貼り付けます(`vscode://omnichat.omnichat-vscode/pair?code=…` のリンクからも可能)。
+  2. VS Code でコマンドパレットを開き、**OmniChat: Pair with Server** を実行してコードを貼り付けます。
   3. 接続状態はステータスバーに表示されます。
 - **承認モード**(会話ごとにアプリで切替):
   - `manual`(既定): 読み取り以外のすべて(編集・コマンド実行・git 書き込み)を確認します。
@@ -50,7 +50,7 @@ OmniChat for VS Code lets your self-hosted OmniChat server use this VS Code wind
   ```
 - **Pair**:
   1. In the OmniChat app, open Settings → the **VS Code** card and generate a pairing code.
-  2. In VS Code, open the Command Palette, run **OmniChat: Pair with Server**, and paste the code. (The `vscode://omnichat.omnichat-vscode/pair?code=…` link also works.)
+  2. In VS Code, open the Command Palette, run **OmniChat: Pair with Server**, and paste the code.
   3. The connection status appears in the status bar.
 - **Approval modes** (set per conversation in the app):
   - `manual` (default): asks before every edit, command, and git write. Reads inside the workspace are automatic.

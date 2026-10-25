@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Platform, View } from 'react-native';
 import { apiV4 } from '../apiV4';
 import { ensureNotificationPermission } from '../notifications';
+import { permissionWordKey } from '../notifyPermission';
+import { isDesktopShell } from './DesktopServerSwitch';
 import { useT } from '../i18n';
 import { patchSettingsLocal, useStore } from '../store';
 import { Btn, Check, Field, Hint } from '../ui/kit';
@@ -102,16 +104,27 @@ export default function NotifySettings() {
         </View>
       </View>
 
-      {Platform.OS === 'web' && (
-        <View style={{ marginTop: 14, gap: 6 }}>
-          <Btn
-            label={tr('code.browserNotify')}
-            onPress={() => { void enableBrowser(); }}
-            disabled={perm === 'unsupported' || perm === 'granted'}
-          />
-          <Hint>{perm === 'unsupported' ? tr('code.browserUnsupported') : tr('code.browserPerm', { perm })}</Hint>
-        </View>
-      )}
+      {Platform.OS === 'web' && (() => {
+        // the desktop app is the same web page inside the shell: it uses OS notifications, so the wording differs
+        const desktop = isDesktopShell();
+        const wk = permissionWordKey(perm);
+        const word = wk ? tr(wk) : perm;
+        return (
+          <View style={{ marginTop: 14, gap: 6 }}>
+            <Btn
+              label={tr(desktop ? 'notify.osTitle' : 'code.browserNotify')}
+              onPress={() => { void enableBrowser(); }}
+              disabled={perm === 'unsupported' || perm === 'granted'}
+            />
+            {desktop && <Hint>{tr('notify.osHint')}</Hint>}
+            <Hint>
+              {perm === 'unsupported'
+                ? tr('code.browserUnsupported')
+                : tr(desktop ? 'notify.permLine' : 'code.browserPerm', { perm: word })}
+            </Hint>
+          </View>
+        );
+      })()}
     </View>
   );
 }

@@ -160,7 +160,7 @@ describe("theme picker", () => {
   it("is included in the settings state, with the selected theme kept", () => {
     const state = buildSettingsState({
       lang: "en",
-      version: "0.2.6",
+      version: "0.3.0",
       paired: false,
       status: "unpaired",
       trusted: true,
@@ -192,8 +192,8 @@ describe("package.json theme setting", () => {
     expect(theme.enumItemLabels).toEqual(["Simple", "Frontier", "Astral"]);
   });
 
-  it("has version 0.2.6, matching the top CHANGELOG heading", () => {
-    expect(pkg.version).toBe("0.2.6");
+  it("has version 1.0.0, matching the top CHANGELOG heading", () => {
+    expect(pkg.version).toBe("1.0.0");
     const top = /^## (\S+)/m.exec(read("CHANGELOG.md"));
     expect(top?.[1]).toBe(pkg.version);
   });

@@ -42,7 +42,7 @@ test("parseShapes: limits clamp coordinates and cut elements to 60 and charts to
   assert.ok(spec);
   assert.equal(spec.elements.length, SHAPES_LIMITS.elements);
   const first = spec.elements[0] as ShapeBox;
-  assert.equal(first.x, 100);
+  assert.equal(first.x, 90, "clamped to 100, then pulled in so the box ends at the slide edge");
   assert.equal(first.y, 0);
   const chart = `  - {type: chart, kind: pie, categories: [a], series: [{name: s, values: [1]}], x: 1, y: 1, w: 10, h: 10}`;
   const charts = parseShapes(`elements:\n${Array.from({ length: 6 }, () => chart).join("\n")}\n`);
@@ -124,4 +124,11 @@ test("attachShapes leaves a broken block without spec", () => {
   const [b] = attachShapes(parseMarkdown("```shapes\nelements: [\n```\n"));
   assert.equal(b.kind, "shapes");
   assert.equal((b as any).spec, undefined);
+});
+
+test("parseShapes: a block that is only a layout (no elements) is valid", () => {
+  const spec = parseShapes("layout: cover");
+  assert.ok(spec);
+  assert.equal(spec!.layout, "cover");
+  assert.ok(spec!.elements.length > 0, "the cover decoration");
 });

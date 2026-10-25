@@ -6,10 +6,14 @@
 import type { Lang } from "./approvalModel";
 import type { PairReason } from "../pairing";
 import { chatEn, chatJa, type ChatStrings } from "./stringsChat";
+import { connEn, connJa, type ConnStrings } from "./stringsConn";
+import { inputEn, inputJa, type InputStrings } from "./stringsInput";
+import { v056dEn, v056dJa, type V056dStrings } from "./stringsV056d";
+import { v056eEn, v056eJa, type V056eStrings } from "./stringsV056e";
 
 export type { Lang };
 
-export interface Strings extends ChatStrings {
+export interface Strings extends ChatStrings, ConnStrings, InputStrings, V056dStrings, V056eStrings {
   chat: string;
   settings: string;
   // Chat
@@ -83,6 +87,10 @@ export interface Strings extends ChatStrings {
 
 const ja: Strings = {
   ...chatJa,
+  ...connJa,
+  ...inputJa,
+  ...v056dJa,
+  ...v056eJa,
   chat: "チャット",
   settings: "設定",
   placeholder: "OmniChat に依頼する(Enter で送信、Shift+Enter で改行)",
@@ -171,6 +179,10 @@ const ja: Strings = {
 
 const en: Strings = {
   ...chatEn,
+  ...connEn,
+  ...inputEn,
+  ...v056dEn,
+  ...v056eEn,
   chat: "Chat",
   settings: "Settings",
   placeholder: "Ask OmniChat (Enter to send, Shift+Enter for a new line)",

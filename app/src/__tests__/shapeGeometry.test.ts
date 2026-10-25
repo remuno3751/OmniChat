@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   arrowHead, arrowSegment, attachSpecs, boxMap, chartPrimitives, dashArray, formatTick, hasShapesBlock, legendEntries,
   niceTicks, previewKey, shapeOutline, shapeTexts, slideHasShapes, specsInOrder, toUnits, bodyRegion,
+  arrowLabelBox, isLightColor,
 } from '../shapeGeometry';
 
 // Reference values: server/src/shapes.ts arrowSegment, run on the same boxes (see the boxes below).
@@ -160,4 +161,45 @@ test('body regions: top, left, right, none', () => {
   assert.ok(bodyRegion('top'));
   assert.equal(bodyRegion('none'), null);
   assert.ok(bodyRegion('left').x < bodyRegion('right').x);
+});
+
+const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
+
+test('arrowLabelBox: a horizontal line puts the label above it, centered on the middle', () => {
+  const b = arrowLabelBox({ x1: 30, y1: 51, x2: 38, y2: 51 }, 'HTTPS', 12);
+  // 5 chars x 12 pt x 0.55 = 33 pt = 3.432 % wide; 12 x 1.5 x 0.185 = 3.33 % high
+  near(b.w, 3.432);
+  near(b.h, 3.33);
+  near(b.x, 34 - 3.432 / 2);
+  near(b.y, 51 - (3.33 / 2 + 0.5) - 3.33 / 2);
+});
+
+test('arrowLabelBox: a vertical line puts the label to the right of it', () => {
+  const b = arrowLabelBox({ x1: 50, y1: 15, x2: 50, y2: 40 }, 'A', 12);
+  near(b.w, 0.55 * 12 * 0.104);
+  near(b.x, 50 + (b.w / 2 + 0.5) - b.w / 2);
+  near(b.y, 27.5 - b.h / 2);
+});
+
+test('arrowLabelBox: a CJK character counts as a full em', () => {
+  const b = arrowLabelBox({ x1: 10, y1: 50, x2: 20, y2: 50 }, '日本', 12);
+  near(b.w, 2 * 12 * 1.0 * 0.104);
+});
+
+test('arrowLabelBox: the box stays inside the slide', () => {
+  const b = arrowLabelBox({ x1: 98, y1: 50, x2: 100, y2: 50 }, 'ABCDEFGHIJ', 12);
+  near(b.x + b.w, 100);
+  const top = arrowLabelBox({ x1: 50, y1: 0, x2: 50, y2: 1 }, 'x', 12);
+  assert.ok(top.y >= 0 && top.x >= 0);
+  const longWide = arrowLabelBox({ x1: 0, y1: 50, x2: 1, y2: 50 }, 'あ'.repeat(40), 12);
+  assert.ok(longWide.x >= 0 && longWide.x + longWide.w <= 100 + 1e-9);
+});
+
+test('isLightColor: brightness above one half, for #rgb and #rrggbb only', () => {
+  assert.equal(isLightColor('#ffffff'), true);
+  assert.equal(isLightColor('#fff'), true);
+  assert.equal(isLightColor('#1f2937'), false);
+  assert.equal(isLightColor('#000'), false);
+  assert.equal(isLightColor('white'), false);
+  assert.equal(isLightColor(undefined), false);
 });

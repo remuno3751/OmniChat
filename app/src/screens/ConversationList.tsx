@@ -5,15 +5,23 @@ import { api } from '../api';
 import { isEphemeralId } from '../ephemeral';
 import { isPinned, setPinned } from '../chatActions';
 import Icon from '../components/Icon';
+import Tip from '../components/Tip';
+import FolderSheet from '../components/FolderSheet';
 import ProjectSheet from '../components/ProjectSheet';
 import VscodeSection from '../components/VscodeSection';
 import type { ChatMode, Conversation } from '../protocol';
 import { useT } from '../i18n';
-import { activeProjects, activeProviders, applyUpsert, sortedConversations, toggleCollapsed, useStore } from '../store';
+import { canDropOn, folderDropPatch, groupByFolder } from '../folders';
+import { DragRow, DropZone, mousePressHeld } from '../components/FolderDnd';
+import { activeFolders, activeProjects, activeProviders, applyUpsert, sortedConversations, toggleCollapsed, useStore } from '../store';
 import { setDevice, useDevice } from '../deviceSettings';
 import { useBridges } from '../useBridges';
-import { codeDevices } from '../codeWorkspace';
-import { deviceOf, groupByDevice, groupByWorkspace, type CodeGroup } from '../codeGroups';
+import { codeDevices, pickerAvailable } from '../codeWorkspace';
+import { setPendingCodeStart, workspaceOpen } from '../vscodeBridge';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { HIDDEN_DEVICES_KEY } from './DevicesScreen';
+import { parseHiddenDevices } from '../deviceList';
+import { codeChatFolders, deviceOf, groupByDevice, groupByWorkspace, splitHiddenDeviceChats, startBlock, type CodeGroup, type StartBlock } from '../codeGroups';
 import { needsUnlock } from '../components/CodeLockGate';
 import { subscribeForget } from '../codeLock';
 import { useTheme, useThemeDef } from '../theme';
@@ -27,7 +35,8 @@ import { Barcode, Enter, NotifyBadge, tx, useFaces } from '../ui/skin';
 interface Props {
   activeId: string | null;
   onSelect: (id: string) => void;
-  onNew: (projectId?: string | null) => void;
+  /** a new chat; a project id or a folder id puts it in that project / folder (the folder's "+") */
+  onNew: (projectId?: string | null, folderId?: string | null) => void;
   /** starts an ephemeral chat (Chat tab only; the button is hidden in Code mode) */
   onNewEphemeral?: () => void;
   onSettings: () => void;
@@ -54,6 +63,7 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
   const v3 = useV3();
   const convs = useStore((s) => s.conversations);
   const projectsMap = useStore((s) => s.projects);
+  const foldersMap = useStore((s) => s.folders);
   const collapsed = useStore((s) => s.collapsed);
   const connected = useStore((s) => s.connected);
   const user = useStore((s) => s.user);
@@ -64,10 +74,15 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
   const pinnedList = useMemo(() => all.filter(isPinned).sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0)), [all]);
   const list = useMemo(() => all.filter((c) => !isPinned(c)), [all]);
   const projects = useMemo(() => activeProjects(projectsMap).filter((p) => (p.mode ?? 'chat') === mode), [projectsMap, mode]);
+  const folders = useMemo(() => (mode === 'chat' ? activeFolders(foldersMap).filter((f) => (f.mode ?? 'chat') === 'chat') : []), [foldersMap, mode]);
   const visibleProjectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
   const [menuFor, setMenuFor] = useState<Conversation | null>(null);
   const [moveFor, setMoveFor] = useState<Conversation | null>(null);
   const [sheet, setSheet] = useState<{ projectId: string | null } | null>(null);
+  const [folderSheet, setFolderSheet] = useState<{ folderId: string | null } | null>(null);
+  const [moveFolderFor, setMoveFolderFor] = useState<Conversation | null>(null);
+  /** the chat being dragged on the web (null = no drag); see FolderDnd.tsx */
+  const [dragId, setDragId] = useState<string | null>(null);
   const [footW, setFootW] = useState(280);
   const exp = useExportMenu(menuFor, v3);
   const faces = useFaces();
@@ -104,8 +119,20 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
         byProject.set(c.projectId, a);
       } else loose.push(c);
     }
-    return { byProject, loose };
-  }, [list, visibleProjectIds, v3]);
+    // folders only take chats that are not in a visible project (the project wins)
+    const f = groupByFolder(loose, folders, mode);
+    return { byProject, loose: f.loose, byFolder: f.byFolder };
+  }, [list, visibleProjectIds, v3, folders, mode]);
+
+  // Code: chats of devices hidden on the Devices screen (revoked with "hide") are left out until the bottom line shows them
+  const [hiddenDevs, setHiddenDevs] = useState<string[]>([]);
+  const [showHiddenChats, setShowHiddenChats] = useState(false);
+  useEffect(() => {
+    if (mode !== 'code') return;
+    AsyncStorage.getItem(HIDDEN_DEVICES_KEY).then((raw) => setHiddenDevs(parseHiddenDevices(raw)), () => {});
+  }, [mode]);
+  const hiddenSplit = useMemo(() => (mode === 'code' ? splitHiddenDeviceChats(groups.loose, providersMap, hiddenDevs) : { shown: groups.loose, hidden: [] }), [mode, groups.loose, providersMap, hiddenDevs]);
+  const looseShown = showHiddenChats ? groups.loose : hiddenSplit.shown;
 
   const togglePin = async (c: Conversation) => {
     try { await setPinned(c.id, !isPinned(c)); } catch (e: any) { toast(e.message || tr('chat.pinFailed'), 'error'); }
@@ -120,9 +147,27 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
   };
   const move = async (c: Conversation, projectId: string | null) => {
     try {
-      applyUpsert({ conversations: [await api.putConversation(c.id, { projectId })] });
+      applyUpsert({ conversations: [await api.putConversation(c.id, { projectId, ...(projectId ? { folderId: null } : {}) })] });
     } catch (e: any) { toast(e.message || tr('list.moveFailed'), 'error'); }
   };
+  /** moves a chat into a folder (null = Unclassified); the patch comes from folderDropPatch, so a no-op sends nothing */
+  const moveToFolder = async (c: Conversation, target: string | null) => {
+    const patch = folderDropPatch(c, target, folders);
+    if (!patch) return;
+    try {
+      applyUpsert({ conversations: [await api.putConversation(c.id, patch)] });
+    } catch (e: any) { toast(e.message || tr('list.moveFailed'), 'error'); }
+  };
+  /** drag & drop (web): whether the dragged chat may land on a target, and the drop itself */
+  const acceptsDrop = (id: string, target: string | null) => {
+    const c = convs[id];
+    return !!c && canDropOn(c, target, folders);
+  };
+  const dropOn = (id: string, target: string | null) => {
+    const c = convs[id];
+    if (c) void moveToFolder(c, target);
+  };
+  const dnd = mode === 'chat';
 
   const deviceBadge = (name: string) => {
     const on = bridgeOnline(name);
@@ -138,10 +183,11 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
     return deviceOf(c, providersMap);
   };
   const row = (c: Conversation, indent: boolean) => (
+    <DragRow key={c.id} convId={c.id} enabled={dnd} dragging={dragId === c.id} onStart={setDragId} onEnd={() => setDragId(null)}>
     <Enter key={c.id} skip={Date.now() - c.createdAt > 4000}><Pressable
       key={c.id}
       onPress={() => onSelect(c.id)}
-      onLongPress={() => setMenuFor(c)}
+      onLongPress={() => { if (dragId === null && !mousePressHeld()) setMenuFor(c); }}
       delayLongPress={350}
       accessibilityRole="button"
       style={({ hovered }: any) => [
@@ -157,9 +203,11 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
         <Icon name="more" size={18} color={t.sub} />
       </Pressable>
     </Pressable></Enter>
+    </DragRow>
   );
 
-  const header = (key: string, name: string, count: number, projectId: string | null, path?: string | null, extra?: React.ReactNode, depth = 0, folder = false) => (
+  /** onAdd: the "+" on the right (a new chat in this group); a project header gets its own "+" from projectId */
+  const header = (key: string, name: string, count: number, projectId: string | null, path?: string | null, extra?: React.ReactNode, depth = 0, folder = false, onAdd?: () => void, onMore?: () => void, addDim = false) => (
     <View key={'h' + key} style={[styles.groupHead, depth > 0 && { paddingLeft: 12 + 14 * depth }]}>
       <Pressable
         style={styles.groupToggle}
@@ -176,6 +224,12 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
         <Text style={[{ color: t.sub, fontSize: 12 }, faces.num]}>{count}</Text>
         {extra}
       </Pressable>
+      {onAdd && (
+        <Pressable onPress={onAdd} hitSlop={8} accessibilityLabel={tr('list.newChatIn', { name })} style={addDim && { opacity: 0.4 }}><Icon name="add" size={20} color={t.text} /></Pressable>
+      )}
+      {onMore && (
+        <Pressable onPress={onMore} hitSlop={8} accessibilityLabel={tr('folder.settings', { name })}><Icon name="more" size={18} color={t.sub} /></Pressable>
+      )}
       {projectId !== null && (
         <>
           <Pressable onPress={() => onNew(projectId)} hitSlop={8} accessibilityLabel={tr('list.newChatIn', { name })}><Icon name="add" size={20} color={t.text} /></Pressable>
@@ -192,19 +246,24 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
       ]
     : [];
 
+  const folderMoveItems: MenuEntry[] = moveFolderFor
+    ? [
+        ...(moveFolderFor.folderId || moveFolderFor.projectId ? [{ label: tr('list.unclassified'), onPress: () => moveToFolder(moveFolderFor, null) }] : []),
+        ...folders.filter((f) => f.id !== moveFolderFor.folderId).map((f) => ({ label: f.name, onPress: () => moveToFolder(moveFolderFor, f.id) })),
+      ]
+    : [];
+
   /** icon-only bottom button; the tooltip (web) and accessibilityLabel carry the text */
   const iconBtn = (name: 'newProject' | 'newChat' | 'ephemeral' | 'settings' | 'history' | 'tips' | 'pin' | 'openPanel', label: string, onPress: () => void) => (
-    <Pressable
-      key={name}
+    <Tip key={name} label={label}><Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
       hitSlop={6}
       style={({ hovered }: any) => [styles.iconBtn, { borderRadius: pillBtn ? 18 : th.r(8) }, themed && { borderWidth: th.bw, borderColor: t.border }, hovered && { backgroundColor: themed ? t.panel2 : t.border }]}
-      {...({ title: label } as any)}
     >
       <Icon name={name} size={20} color={t.text} />
-    </Pressable>
+    </Pressable></Tip>
   );
 
   // footer icons in display order; the low-priority ones move to the top row (beside the user name) when the sidebar is narrow
@@ -219,13 +278,31 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
   footerItems.push({ key: 'settings', prio: 0, node: iconBtn('settings', tr('sidebar.settings'), onSettings) });
   const footer = splitFooterItems(footerItems, footW);
 
-  const showUncl = v3 && projects.length > 0 && groups.loose.length > 0;
-  const wsGroup = (g: CodeGroup, depth: number) => (
+  // while a chat is dragged, Unclassified is shown too (a chat can go back there), even when it is normally hidden
+  const showUncl = (v3 && (projects.length > 0 || folders.length > 0) && groups.loose.length > 0) || (dnd && dragId !== null);
+  /**
+   * "+" of a workspace group (a folder with a PC): a new chat on its PC in that folder. Shown on every group with a path;
+   * when it cannot start (offline PC, folder not open in VS Code, no picker) it is dimmed and says why when pressed.
+   */
+  const groupStart = (g: CodeGroup): { block: StartBlock | null; start: () => void } | undefined => {
+    if (!g.path || !g.convs[0]) return undefined;
+    const name = g.device ?? deviceOf(g.convs[0], providersMap);
+    const dev = devices.find((d) => d.name === name);
+    const open = !!dev && dev.kind === 'vscode' && workspaceOpen(bridges?.find((b) => b.name === dev.name && b.kind === 'vscode'), g.path);
+    const cwd = g.path;
+    return { block: startBlock(dev, open), start: () => { if (dev) { setPendingCodeStart({ providerId: dev.providerId, cwd }); onNew(); } } };
+  };
+  const BLOCK_KEY: Record<StartBlock, string> = { offline: 'code.ws.addOffline', notOpen: 'code.ws.addNotOpen', unavailable: 'code.ws.addUnavailable' };
+  const wsGroup = (g: CodeGroup, depth: number) => {
+    const gs = groupStart(g);
+    const onAdd = gs && (() => (gs.block ? toast(tr(BLOCK_KEY[gs.block])) : gs.start()));
+    return (
     <View key={g.key}>
-      {header(g.key, g.path ? g.label : tr('code.ws.other'), g.convs.length, null, g.path, !multiDevice && devices.length === 1 && deviceOf(g.convs[0], providersMap) ? deviceBadge(deviceOf(g.convs[0], providersMap)!) : undefined, depth, true)}
+      {header(g.key, g.path ? g.label : tr('code.ws.other'), g.convs.length, null, g.path, !multiDevice && devices.length === 1 && deviceOf(g.convs[0], providersMap) ? deviceBadge(deviceOf(g.convs[0], providersMap)!) : undefined, depth, true, onAdd, undefined, !!gs?.block)}
       {!collapsed[g.key] && g.convs.map((c) => row(c, true))}
     </View>
-  );
+    );
+  };
   const codeLoose = (): React.ReactNode => {
     const toggle = multiDevice ? (
       <Pressable key="bydev" onPress={() => setDevice({ codeGroupByDevice: !byDeviceSetting })} accessibilityRole="checkbox" accessibilityState={{ checked: byDevice }} style={styles.toggleRow}>
@@ -234,7 +311,7 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
       </Pressable>
     ) : null;
     if (byDevice) {
-      return [toggle, ...groupByDevice(groups.loose, providersMap).map((d) => {
+      return [toggle, ...groupByDevice(looseShown, providersMap).map((d) => {
         const on = bridgeOnline(d.device);
         const name = d.device ?? tr('code.ws.other');
         const count = d.groups.reduce((n, g) => n + g.convs.length, 0);
@@ -246,7 +323,7 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
         );
       })];
     }
-    return [toggle, ...groupByWorkspace(groups.loose, providersMap, multiDevice).map((g) => wsGroup(g, 0))];
+    return [toggle, ...groupByWorkspace(looseShown, providersMap, multiDevice).map((g) => wsGroup(g, 0))];
   };
   return (
     <View style={[styles.root, { backgroundColor: t.panel, borderColor: t.border }]}>
@@ -313,9 +390,34 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
             </View>
           );
         })}
+        {folders.map((f) => {
+          const items = groups.byFolder.get(f.id) || [];
+          const head = header('f:' + f.id, f.name, items.length, null, null, undefined, 0, true, () => onNew(null, f.id), () => setFolderSheet({ folderId: f.id }));
+          return (
+            <View key={f.id}>
+              {dnd ? <DropZone target={f.id} dragId={dragId} accepts={acceptsDrop} onDrop={dropOn}>{head}</DropZone> : head}
+              {!collapsed['f:' + f.id] && items.map((c) => row(c, true))}
+              {!collapsed['f:' + f.id] && items.length === 0 && <Text style={{ color: t.sub, fontSize: 12, paddingLeft: 26, paddingVertical: 4 }}>{tr(dragId !== null && dnd ? 'folder.dropHere' : 'folder.empty')}</Text>}
+            </View>
+          );
+        })}
         {mode === 'code' && <VscodeSection bridges={bridges} onStart={() => onNew()} />}
-        {showUncl && header('', tr('list.unclassified'), groups.loose.length, null)}
+        {showUncl && (dnd ? <DropZone target={null} dragId={dragId} accepts={acceptsDrop} onDrop={dropOn}>{header('', tr('list.unclassified'), groups.loose.length, null)}</DropZone> : header('', tr('list.unclassified'), groups.loose.length, null))}
         {(!showUncl || !collapsed['']) && (mode === 'code' ? codeLoose() : groups.loose.map((c) => row(c, showUncl)))}
+        {mode === 'code' && hiddenSplit.hidden.length > 0 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 10 }}>
+            <Text style={{ color: t.sub, fontSize: 12 }}>{tr('code.hiddenChats', { n: hiddenSplit.hidden.length })}</Text>
+            <Pressable onPress={() => setShowHiddenChats((v) => !v)} accessibilityRole="button" hitSlop={8}>
+              <Text style={{ color: t.sub, fontSize: 12, textDecorationLine: 'underline' }}>{tr(showHiddenChats ? 'code.hiddenHide' : 'code.hiddenShow')}</Text>
+            </Pressable>
+          </View>
+        )}
+        {v3 && mode === 'chat' && (
+          <Pressable onPress={() => setFolderSheet({ folderId: null })} style={[styles.addFolder, { borderColor: t.border }]} accessibilityRole="button" accessibilityLabel={tr('folder.add')}>
+            <Icon name="add" size={16} color={t.sub} />
+            <Text style={{ color: t.sub, fontSize: 12 }}>{tr('folder.createBtn')}</Text>
+          </Pressable>
+        )}
       </ScrollView>
       )}
       <View style={[styles.footer, { borderColor: t.border }]} onLayout={(e) => setFootW(Math.round(e.nativeEvent.layout.width) - 20)}>
@@ -337,12 +439,15 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
         items={[
           { label: menuFor && isPinned(menuFor) ? tr('list.unpin') : tr('list.pin'), onPress: () => menuFor && togglePin(menuFor) },
           { label: tr('list.moveToProject'), hidden: !v3 || (projects.length === 0), onPress: () => { const c = menuFor; setTimeout(() => setMoveFor(c), 50); } },
+          { label: tr('folder.moveTo'), hidden: !v3 || mode !== 'chat' || folders.length === 0, onPress: () => { const c = menuFor; setTimeout(() => setMoveFolderFor(c), 50); } },
           ...exp.items,
           { label: tr('common.delete'), danger: true, onPress: () => menuFor && del(menuFor) },
         ]}
       />
       <MenuSheet visible={!!moveFor} onClose={() => setMoveFor(null)} title={tr('list.moveTo')} items={moveItems} />
+      <MenuSheet visible={!!moveFolderFor} onClose={() => setMoveFolderFor(null)} title={tr('folder.moveTo')} items={folderMoveItems} />
       {exp.sheet}
+      <FolderSheet visible={!!folderSheet} folderId={folderSheet?.folderId ?? null} onClose={() => setFolderSheet(null)} />
       <ProjectSheet visible={!!sheet} projectId={sheet?.projectId ?? null} onClose={() => setSheet(null)} mode={mode} />
     </View>
   );
@@ -369,6 +474,7 @@ const styles = StyleSheet.create({
   hbtn: { fontSize: 18, paddingHorizontal: 4 },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11, marginHorizontal: 6, gap: 8 },
   rowText: { flex: 1, fontSize: 15 },
+  addFolder: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginHorizontal: 10, marginTop: 6, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderStyle: 'dashed', borderRadius: 8 },
   empty: { textAlign: 'center', marginTop: 24 },
   footer: { gap: 4, paddingHorizontal: 10, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth },
   footRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },

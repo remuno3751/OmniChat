@@ -130,6 +130,26 @@ const samples: Frame[] = [
   },
 ];
 
+describe("tool_call approval.outsideOk", () => {
+  const frame = (approval: Record<string, unknown>): string =>
+    JSON.stringify({
+      type: "tool_call", runId: "r1", callId: "c1", tool: "read_file", args: { path: "/etc/hosts" },
+      approval, timeoutMs: 60000,
+    });
+
+  it("keeps a boolean outsideOk and accepts its absence", () => {
+    const yes = decode(frame({ by: "user", protectedOk: false, outsideOk: true })) as { approval?: { outsideOk?: boolean } } | null;
+    expect(yes?.approval?.outsideOk).toBe(true);
+    expect(decode(frame({ by: "user", protectedOk: false, outsideOk: false }))).not.toBeNull();
+    expect(decode(frame({ by: "user", protectedOk: false }))).not.toBeNull();
+  });
+
+  it("rejects a non-boolean outsideOk", () => {
+    expect(decode(frame({ by: "user", protectedOk: false, outsideOk: "yes" }))).toBeNull();
+    expect(decode(frame({ by: "user", protectedOk: false, outsideOk: 1 }))).toBeNull();
+  });
+});
+
 describe("codec", () => {
   it("covers all 21 frame types in samples", () => {
     const types = new Set(samples.map((f) => f.type));
@@ -211,5 +231,12 @@ describe("codec", () => {
     const text = '{"type":"cancel","runId":"r1","pad":"' + "あ".repeat(chars) + '"}';
     expect(text.length).toBeLessThan(MAX_FRAME_BYTES);
     expect(decode(text)).toBeNull();
+  });
+});
+
+describe("v0.5.5 frames", () => {
+  it("decodes context and context_request (they were dropped as unknown before)", () => {
+    expect(decode(JSON.stringify({ type: "context", requestId: "c1", total: 5, limit: 0, fits: true, estimated: true }))).not.toBeNull();
+    expect(decode(JSON.stringify({ type: "context_request", requestId: "c1", conversationId: "x" }))).not.toBeNull();
   });
 });

@@ -4,7 +4,7 @@
    `send`), so the app and other clients see the conversation and its streaming too. Only instances that advertise
    capabilities.chat and capabilities.transcript reach this module (vscode-bridge.ts). */
 import { randomUUID } from "node:crypto";
-import { db, nextSeq, toConversation, toProvider, getConversationRow, getMessageRow, getProviderRow } from "./db.js";
+import { db, nextSeq, toConversation, toProvider, getConversationRow, getMessageRow, getProviderRow, parseSearchMode } from "./db.js";
 import { broadcast } from "./hub.js";
 import { handleSend, isGenerating, stopConversation } from "./chat.js";
 import { allModels } from "./models.js";
@@ -15,6 +15,12 @@ import { isValidCwd, normCwd, setConversationCwd } from "./cwd.js";
 import { isAgentBridgeKind } from "./agent-kinds.js";
 import { checkRunnable, setVscodeChatHandler, VscodeBridgeError, type RawFrame, type VscodeChatPeer } from "./vscode-bridge.js";
 import { activeFeed, historyItems } from "./vscode-transcript.js";
+import { getAttachmentRow, deleteAttachment } from "./attachments.js";
+import { prepareAttachments } from "./vscode-chat-attach.js";
+import { onConversationSettings, onConversationSettingsSet, onHistorySearch } from "./vscode-chat-settings.js";
+import { ownConversation, onCompact, onContext, onDevices } from "./vscode-chat-extra.js";
+import { onCheckpointFrame } from "./vscode-chat-checkpoints.js";
+import { removeLastTurn } from "./vscode-chat-edit.js";
 
 export const VSCODE_PROMPT_MAX_BYTES = 100 * 1024;
 const MAX_MODELS = 200;
@@ -26,6 +32,9 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const idOf = (v: unknown): string | null => (typeof v === "string" && v.length >= 1 && v.length <= 100 ? v : null);
 const isMode = (v: unknown): v is Mode => typeof v === "string" && (MODES as readonly string[]).includes(v);
 const VSCODE_PROVIDER_NAME = "VS Code (PC bridge)";
+const SEARCH_MODES = ["off", "smart", "always"] as const;
+const isSearchMode = (v: unknown): v is (typeof SEARCH_MODES)[number] => typeof v === "string" && (SEARCH_MODES as readonly string[]).includes(v);
+const positiveInt = (v: unknown): number | undefined => (typeof v === "number" && Number.isInteger(v) && v > 0 ? v : undefined);
 
 /** Conversations / instances with a prompt in flight (covers the whole turn), against double starts before the run is open. */
 const inflightConv = new Set<string>();
@@ -34,14 +43,6 @@ const dirKey = (userId: string, bridge: string, cwd: string) => `${userId}\u0000
 
 function errorFrame(peer: VscodeChatPeer, code: string, message: string, requestId?: string | null): void {
   peer.reply({ type: "error", code, message, ...(requestId ? { requestId } : {}) });
-}
-
-/** The conversation when it is a live Code conversation of this user on a vscode-bridge provider named `bridge`. */
-function ownConversation(userId: string, bridge: string, id: string): any | null {
-  const row = getConversationRow(id);
-  if (!row || row.user_id !== userId || row.deleted || row.mode !== "code" || !row.provider_id) return null;
-  const prov = getProviderRow(row.provider_id);
-  return prov && prov.user_id === userId && prov.kind === "vscode-bridge" && String(prov.base_url ?? "").trim() === bridge ? row : null;
 }
 
 /** The user's vscode-bridge provider for this bridge name; created (same shape as the app creates) when missing. */
@@ -104,6 +105,9 @@ async function onPrompt(peer: VscodeChatPeer, m: RawFrame): Promise<void> {
   if (m.model !== undefined && (typeof m.model !== "string" || m.model.length > 600)) return fail("invalid_frame", "invalid model");
   if (m.approvalMode !== undefined && !isMode(m.approvalMode)) return fail("invalid_frame", "approvalMode must be manual, auto or full");
   if (m.approvalMode === "full" && m.confirmFull !== true) return fail("confirm_required", "approvalMode full needs confirmFull: true");
+  if (m.searchMode !== undefined && !isSearchMode(m.searchMode)) { errorFrame(peer, "invalid_frame", "searchMode must be off, smart or always", requestId); return; }
+  if (m.interrupt !== undefined && typeof m.interrupt !== "boolean") return fail("invalid_frame", "interrupt must be a boolean");
+  if ((m.replaceLast !== undefined && typeof m.replaceLast !== "boolean") || (m.replaceLast === true && typeof m.conversationId !== "string")) return fail("invalid_frame", "replaceLast needs a boolean and a conversationId");
 
   let row: any = null;
   if (typeof m.conversationId === "string") {
@@ -115,17 +119,28 @@ async function onPrompt(peer: VscodeChatPeer, m: RawFrame): Promise<void> {
   if (!modelRef) return fail("no_model", "No model is chosen and no default is configured. Add an OpenAI-compatible provider in the OmniChat app, then pick a model.");
   const mc = checkModel(userId, modelRef);
   if (!mc.ok) return fail(mc.error, mc.message);
+  const att = await prepareAttachments(userId, modelRef, m.attachments);
+  if (!att.ok) return fail(att.error, att.message);
+  const failA = (error: string, message: string): void => { dropAtt(); fail(error, message); };
+  const dropAtt = (): void => { for (const id of att.ids) { const r = getAttachmentRow(id); if (r) deleteAttachment(r); } };
 
   const dk = dirKey(userId, bridge, cwd);
-  if ((row && (isGenerating(row.id) || inflightConv.has(row.id))) || inflightDir.has(dk)) return fail("busy", "A run is already active in this conversation or VS Code window");
+  if (m.interrupt === true && row && (isGenerating(row.id) || inflightConv.has(row.id))) {
+    // stop the active run of this conversation, then wait (<= 5 s) until its locks are released
+    stopConversation(userId, row.id);
+    const t1 = Date.now();
+    while ((isGenerating(row.id) || inflightConv.has(row.id) || inflightDir.has(dk)) && Date.now() - t1 < 5_000) await sleep(5);
+  }
+  if ((row && (isGenerating(row.id) || inflightConv.has(row.id))) || inflightDir.has(dk)) return failA("busy", "A run is already active in this conversation or VS Code window");
   try { checkRunnable(userId, bridge, cwd); } catch (e) {
     if (e instanceof VscodeBridgeError) {
       const code = e.code === "offline" ? "workspace_not_open" : e.code === "protocol" ? "outdated" : e.code;
-      return fail(code, e.message);
+      return failA(code, e.message);
     }
-    return fail("internal", "Cannot start a run");
+    return failA("internal", "Cannot start a run");
   }
 
+  if (m.replaceLast === true && row) { const rl = removeLastTurn(userId, row.id); if (!rl.ok) return failA(rl.error, rl.message); }
   // conversation: create or update
   const prov = ensureProvider(userId, bridge);
   let created = false;
@@ -135,14 +150,15 @@ async function onPrompt(peer: VscodeChatPeer, m: RawFrame): Promise<void> {
     if (row.model !== modelRef) db.prepare("UPDATE conversations SET model = ?, seq = ? WHERE id = ?").run(modelRef, nextSeq(), row.id);
     if (!row.cwd) setConversationCwd(row.id, cwd);
     if (m.approvalMode !== undefined) db.prepare("UPDATE conversations SET approval_mode = ?, seq = ? WHERE id = ?").run(m.approvalMode === "manual" ? null : m.approvalMode, nextSeq(), row.id);
+    if (m.searchMode !== undefined) db.prepare("UPDATE conversations SET search_mode = ?, seq = ? WHERE id = ?").run(m.searchMode, nextSeq(), row.id);
     upsertConversation(userId, row.id);
   } else {
     created = true;
     conversationId = "c" + randomUUID();
     const now = Date.now();
     db.prepare(
-      "INSERT INTO conversations (id, user_id, title, provider_id, model, created_at, updated_at, deleted, seq, system_mode, mode, cwd, approval_mode) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?)",
-    ).run(conversationId, userId, "New chat", prov.id, modelRef, now, now, nextSeq(), "append", "code", cwd, m.approvalMode && m.approvalMode !== "manual" ? m.approvalMode : null);
+      "INSERT INTO conversations (id, user_id, title, provider_id, model, created_at, updated_at, deleted, seq, system_mode, mode, cwd, approval_mode, search_mode) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?)",
+    ).run(conversationId, userId, "New chat", prov.id, modelRef, now, now, nextSeq(), "append", "code", cwd, m.approvalMode && m.approvalMode !== "manual" ? m.approvalMode : null, isSearchMode(m.searchMode) ? m.searchMode : null);
     upsertConversation(userId, conversationId);
   }
 
@@ -152,7 +168,7 @@ async function onPrompt(peer: VscodeChatPeer, m: RawFrame): Promise<void> {
   const st: { err: { code?: string; message: string } | null; finished: boolean } = { err: null, finished: false };
   inflightDir.add(dk);
   inflightConv.add(conversationId);
-  const p = handleSend(userId, { conversationId, content: text, userMessageId, assistantMessageId }, (f: any) => {
+  const p = handleSend(userId, { conversationId, content: text, userMessageId, assistantMessageId, ...(att.ids.length ? { attachmentIds: att.ids } : {}) }, (f: any) => {
     if (f?.type === "error" && !st.err) st.err = { code: typeof f.code === "string" ? f.code : undefined, message: String(f.message ?? "Rejected") };
   }).catch((e) => { if (!st.err) st.err = { message: e instanceof Error ? e.message : String(e) }; })
     .finally(() => { st.finished = true; inflightDir.delete(dk); inflightConv.delete(conversationId); });
@@ -168,7 +184,7 @@ async function onPrompt(peer: VscodeChatPeer, m: RawFrame): Promise<void> {
     }
     const c = e?.code ?? "";
     const code = c === "model_not_allowed" ? "forbidden_model" : c.startsWith("quota") ? "quota" : c || "rejected";
-    return fail(code, e?.message ?? "The message was not accepted");
+    return failA(code, e?.message ?? "The message was not accepted");
   }
   ack(true, { conversationId });
 }
@@ -178,14 +194,16 @@ async function onPrompt(peer: VscodeChatPeer, m: RawFrame): Promise<void> {
 async function onModels(peer: VscodeChatPeer, m: RawFrame): Promise<void> {
   const requestId = idOf(m.requestId);
   if (!requestId) { errorFrame(peer, "invalid_frame", "models_request needs a requestId"); return; }
-  const items: { ref: string; label: string; provider: string }[] = [];
+  const items: { ref: string; label: string; provider: string; contextLength?: number; vision?: "yes" | "no" | "unknown" }[] = [];
   try {
     const { groups } = await allModels(peer.userId, false, false);
     for (const g of groups) {
       if (g.kind !== "openai-compatible") continue; // models that can do tool calls; the bridges themselves have none
       for (const mo of g.models) {
         if (items.length >= MAX_MODELS) break;
-        items.push({ ref: `${g.providerId}::${mo.id}`, label: mo.name || mo.id, provider: g.providerName });
+        // context window as the app's /v1 list reports it (omni-models.ts); image input when the list says
+        const cw = positiveInt(mo.state?.contextLength) ?? positiveInt(mo.state?.loadedContextLength);
+        items.push({ ref: `${g.providerId}::${mo.id}`, label: mo.name || mo.id, provider: g.providerName, ...(cw ? { contextLength: cw } : {}), ...(mo.vision ? { vision: mo.vision } : {}) });
       }
     }
   } catch { /* an unreachable provider list: answer with what we have */ }
@@ -207,7 +225,7 @@ function onConversations(peer: VscodeChatPeer, m: RawFrame): void {
   ).all(peer.userId, peer.bridge) as any[];
   const items = rows.filter((r) => typeof r.cwd === "string" && related(r.cwd, m.cwd)).slice(0, MAX_CONVERSATIONS).map((r) => {
     const c = toConversation(r);
-    return { id: c.id, title: c.title, updatedAt: c.updatedAt, approvalMode: c.approvalMode, cwd: c.cwd };
+    return { id: c.id, title: c.title, updatedAt: c.updatedAt, approvalMode: c.approvalMode, searchMode: parseSearchMode(c.searchMode) ?? "smart", cwd: c.cwd };
   });
   peer.reply({ type: "conversations", requestId, items });
 }
@@ -252,6 +270,13 @@ export function handleVscodeChatFrame(peer: VscodeChatPeer, m: RawFrame): void {
       case "conversation_request": onConversation(peer, m); return;
       case "set_approval_mode": onSetMode(peer, m); return;
       case "stop": onStop(peer, m); return;
+      case "context_request": onContext(peer, m).catch(fatal); return;
+      case "devices_request": onDevices(peer, m); return;
+      case "compact_request": onCompact(peer, m).catch(fatal); return;
+      case "conversation_settings_request": onConversationSettings(peer, m); return;
+      case "conversation_settings_set": onConversationSettingsSet(peer, m); return;
+      case "history_search_request": onHistorySearch(peer, m); return;
+      case "checkpoints_request": case "checkpoint_restore": onCheckpointFrame(peer, m); return;
     }
   } catch (e) { fatal(e); }
 }

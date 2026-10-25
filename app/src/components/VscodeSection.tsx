@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { BridgeInfo } from '../api';
 import { api } from '../api';
-import { cwdLabel } from '../codeGroups';
+import { codeChatFolders, cwdLabel, normCwd } from '../codeGroups';
 import { activeProviders, applyUpsert, toggleCollapsed, useStore } from '../store';
 import { refreshModels } from '../ModelPicker';
 import { useT } from '../i18n';
@@ -27,7 +27,10 @@ export default function VscodeSection({ bridges, onStart }: { bridges: BridgeInf
     () => vscodeSection(bridges, activeProviders(providersMap), Object.values(convsMap).filter((c) => !c.deleted), providersMap),
     [bridges, providersMap, convsMap],
   );
+  // a folder that already has Code chats is a workspace group on the Code tab (its "+" starts a chat): not listed twice here
+  const taken = useMemo(() => codeChatFolders(Object.values(convsMap).filter((c) => !c.deleted), providersMap), [convsMap, providersMap]);
   if (devices.length === 0) return null;
+  const free = (device: string, w: string) => !taken.get(device)?.has(normCwd(w));
 
   const start = async (d: VscodeDevice, cwd: string) => {
     const target = startTarget(d, cwd);
@@ -58,17 +61,21 @@ export default function VscodeSection({ bridges, onStart }: { bridges: BridgeInf
           <Text style={{ color: t.sub, fontSize: 12 }}>{devices.length}</Text>
         </Pressable>
       </View>
-      {!collapsed[key] && devices.map((d) => (
+      {!collapsed[key] && devices.map((d) => {
+        const workspaces = d.workspaces.filter((w) => free(d.name, w));
+        const closed = d.closed.filter((w) => free(d.name, w));
+        const hidden = workspaces.length < d.workspaces.length || closed.length < d.closed.length;
+        return (
         <View key={d.name} style={{ paddingLeft: 12 }}>
           <View style={styles.dev} accessibilityLabel={`${d.name} ${tr(d.online ? 'code.device.online' : 'code.device.offline')}`}>
             <View style={[styles.dot, { backgroundColor: d.online ? t.accent : t.border }]} />
             <Text numberOfLines={1} style={{ color: t.text, fontSize: 13, fontWeight: '600', flexShrink: 1 }}>{d.name}</Text>
             <Text style={{ color: t.sub, fontSize: 11 }}>{tr(d.online ? 'code.device.online' : 'code.device.offline')}</Text>
           </View>
-          {d.workspaces.length === 0 && (
+          {d.workspaces.length === 0 && !hidden && (
             <Text style={{ color: t.sub, fontSize: 12, paddingLeft: 26, paddingVertical: 2 }}>{tr(d.online ? 'code.vscode.noWorkspace' : 'code.vscode.offlineHint')}</Text>
           )}
-          {d.workspaces.map((w) => (
+          {workspaces.map((w) => (
             <Pressable
               key={w}
               onPress={() => start(d, w)}
@@ -82,8 +89,21 @@ export default function VscodeSection({ bridges, onStart }: { bridges: BridgeInf
               <Icon name="add" size={16} color={t.sub} />
             </Pressable>
           ))}
+          {closed.map((w) => (
+            <View
+              key={'closed:' + w}
+              accessibilityState={{ disabled: true }}
+              accessibilityLabel={cwdLabel(w)}
+              style={[styles.ws, { opacity: 0.45 }]}
+              {...({ title: w } as any)}
+            >
+              <Icon name="folder" size={15} color={t.sub} />
+              <Text numberOfLines={1} style={{ color: t.sub, fontSize: 13, flex: 1 }}>{cwdLabel(w)}</Text>
+            </View>
+          ))}
         </View>
-      ))}
+        );
+      })}
     </View>
   );
 }

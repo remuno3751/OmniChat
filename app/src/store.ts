@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Conversation, Maintenance, Message, PhaseName, Project, ToolCall, PromptPreset, Provider, Settings, SyncResponse, Template, UpsertPayload } from './protocol';
+import type { ChatFolder, Conversation, Maintenance, Message, PhaseName, Project, ToolCall, PromptPreset, Provider, Settings, SyncResponse, Template, UpsertPayload } from './protocol';
 import { normalizeSearchMode } from './searchOptions';
 import { dropEphemeralFrom, ephemeralConvIds, isEphemeralId, isEphemeralRow, stripEphemeral } from './ephemeral';
 
@@ -12,6 +12,8 @@ export interface State {
   providers: Record<string, Provider>;
   projects: Record<string, Project>;
   presets: Record<string, PromptPreset>;
+  /** chat folders (soft-deleted rows are kept; use activeFolders). */
+  folders: Record<string, ChatFolder>;
   /** v4: prompt/action templates (soft-deleted rows are kept; use activeTemplates). */
   templates: Record<string, Template>;
   settings: Settings | null;
@@ -35,7 +37,7 @@ export interface State {
 export interface ModelSel { providerId: string; model: string | null }
 
 const empty = (): State => ({
-  ready: false, user: null, conversations: {}, messages: {}, providers: {}, projects: {}, presets: {}, templates: {}, settings: null,
+  ready: false, user: null, conversations: {}, messages: {}, providers: {}, projects: {}, presets: {}, folders: {}, templates: {}, settings: null,
   v3: false, collapsed: {}, notice: '', lastSeq: 0, connected: false, lastSel: null, ephemeralSupported: false, maintenance: null, allowOwnProviders: undefined,
 });
 
@@ -66,10 +68,10 @@ function schedulePersist() {
   persistTimer = setTimeout(() => {
     persistTimer = null;
     if (!state.user) return;
-    const { providers, projects, presets, templates, settings, v3, lastSeq } = state;
+    const { providers, projects, presets, folders, templates, settings, v3, lastSeq } = state;
     // v7: ephemeral chats never reach the offline cache
     const { conversations, messages } = stripEphemeral({ conversations: state.conversations, messages: state.messages });
-    AsyncStorage.setItem(cacheKey(state.user.userId), JSON.stringify({ conversations, messages, providers, projects, presets, templates, settings, v3, lastSeq })).catch(() => {});
+    AsyncStorage.setItem(cacheKey(state.user.userId), JSON.stringify({ conversations, messages, providers, projects, presets, folders, templates, settings, v3, lastSeq })).catch(() => {});
   }, 500);
 }
 
@@ -93,6 +95,7 @@ export async function loadCache(user: { userId: string; username: string }) {
     providers: cached?.providers || {},
     projects: cached?.projects || {},
     presets: cached?.presets || {},
+    folders: cached?.folders || {},
     templates: cached?.templates || {},
     settings: cached?.settings ? fixSearchMode(cached.settings) : null,
     v3: !!cached?.v3,
@@ -181,7 +184,7 @@ function fixSearchMode<T extends { searchMode?: unknown }>(r: T): T {
 }
 
 export function applyUpsert(u: UpsertPayload, seq?: number) {
-  let { conversations, messages, providers, projects, presets, templates, settings, v3 } = state;
+  let { conversations, messages, providers, projects, presets, folders, templates, settings, v3 } = state;
   let maxSeq = Math.max(state.lastSeq, seq || 0);
   if (u.conversations?.length) {
     conversations = { ...conversations };
@@ -223,6 +226,26 @@ export function applyUpsert(u: UpsertPayload, seq?: number) {
       }
     }
   }
+  if (u.folders !== undefined) {
+    v3 = true;
+    if (u.folders.length) {
+      folders = { ...folders };
+      for (const f of u.folders) {
+        const old = folders[f.id];
+        if (!old || f.seq >= old.seq) folders[f.id] = f;
+        maxSeq = Math.max(maxSeq, f.seq);
+      }
+      // chats of a deleted folder are unclassified at once (the server sends them too, but may arrive later)
+      const gone = new Set(u.folders.filter((f) => folders[f.id].deleted).map((f) => f.id));
+      if (gone.size) {
+        conversations = { ...conversations };
+        for (const id of Object.keys(conversations)) {
+          const c = conversations[id];
+          if (c.folderId && gone.has(c.folderId)) conversations[id] = { ...c, folderId: null };
+        }
+      }
+    }
+  }
   if (u.templates !== undefined) {
     v3 = true;
     if (u.templates.length) {
@@ -251,7 +274,7 @@ export function applyUpsert(u: UpsertPayload, seq?: number) {
       if (!isEphemeralId(m.conversationId) && !isEphemeralId(m.id)) maxSeq = Math.max(maxSeq, m.seq);
     }
   }
-  set({ conversations, messages, providers, projects, presets, templates, settings, v3, lastSeq: maxSeq });
+  set({ conversations, messages, providers, projects, presets, folders, templates, settings, v3, lastSeq: maxSeq });
 }
 
 export function applySync(r: SyncResponse) {
@@ -390,6 +413,9 @@ export function activeProjects(p: Record<string, Project>): Project[] {
 }
 export function activePresets(p: Record<string, PromptPreset>): PromptPreset[] {
   return Object.values(p).filter((x) => !x.deleted).sort((a, b) => a.name.localeCompare(b.name));
+}
+export function activeFolders(f: Record<string, ChatFolder>): ChatFolder[] {
+  return Object.values(f).filter((x) => !x.deleted).sort((a, b) => a.createdAt - b.createdAt || a.name.localeCompare(b.name));
 }
 export function activeTemplates(t: Record<string, Template>): Template[] {
   return Object.values(t).filter((x) => !x.deleted).sort((a, b) => a.name.localeCompare(b.name));

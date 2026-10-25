@@ -3,9 +3,13 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import WebSocket from "ws";
 
 process.env.DB_PATH = ":memory:";
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "code-agent-test-")); // code-diag.log goes here
 const bridges = await import("./bridges.js");
 const auth = await import("./auth.js");
 const dbm = await import("./db.js");
@@ -111,13 +115,21 @@ before(async () => {
 });
 after(() => { ext?.close(); server.close(); server.closeAllConnections?.(); });
 
-function mkConv(over: { approvalMode?: string; model?: string | null; cwd?: string | null } = {}): string {
+function mkConv(over: { approvalMode?: string; model?: string | null; cwd?: string | null; provider?: string } = {}): string {
   const id = randomUUID();
   const now = Date.now();
   dbm.db.prepare(
     "INSERT INTO conversations (id, user_id, title, provider_id, model, created_at, updated_at, deleted, seq, system_mode, mode, cwd, approval_mode) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?)",
-  ).run(id, userId, "New chat", vsProvId, over.model === undefined ? `${modelProvId}::m1` : over.model, now, now, dbm.nextSeq(), "append", "code", over.cwd === undefined ? "/work/app" : over.cwd, over.approvalMode ?? null);
+  ).run(id, userId, "New chat", over.provider ?? vsProvId, over.model === undefined ? `${modelProvId}::m1` : over.model, now, now, dbm.nextSeq(), "append", "code", over.cwd === undefined ? "/work/app" : over.cwd, over.approvalMode ?? null);
   return id;
+}
+
+/** One handleSend without the turn helper: returns the frames sent back and the assistant message id. */
+async function sendRaw(conv: string, extra: Record<string, unknown> = {}) {
+  const got: any[] = [];
+  const userMessageId = randomUUID(), assistantMessageId = "m" + ++seqN + randomUUID().slice(0, 6);
+  await chat.handleSend(userId, { conversationId: conv, content: "do it", userMessageId, assistantMessageId, ...extra }, (f) => { got.push(f); });
+  return { got, userMessageId, assistantMessageId };
 }
 
 /** Sends one user message and waits for the assistant message to leave "streaming". */
@@ -243,13 +255,74 @@ test("model resolution: missing / unusable model refuses with a clear message; b
   resetExt();
   const a = await (await turn(mkConv({ approvalMode: "auto", model: null }), [["x"]])).done();
   assert.equal(a.status, "error");
-  assert.match(a.content, /Choose a model/);
+  assert.match(a.content, /この Code の会話にはモデルが選ばれていません/);
   const b = await (await turn(mkConv({ model: `${vsProvId}::m` }), [["x"]])).done();
   assert.equal(b.status, "error");
   assert.match(b.content, /cannot answer/);
   const c = await (await turn(mkConv({ cwd: null }), [["x"]])).done();
   assert.match(c.content, /No working folder/);
   assert.equal(requests.length, 0);
+});
+
+test("a Code chat whose provider is not a VS Code bridge is refused before anything is stored (no plain-chat fallback)", async () => {
+  resetExt();
+  const conv = mkConv({ provider: modelProvId });
+  const r = await sendRaw(conv);
+  assert.equal(r.got.length, 1);
+  assert.equal(r.got[0].type, "error");
+  assert.equal(r.got[0].code, "code_not_bridge");
+  assert.match(r.got[0].message, /VS Code の端末に接続されていません/);
+  assert.ok(!dbm.getMessageRow(r.assistantMessageId));
+  assert.ok(!dbm.getMessageRow(r.userMessageId));
+  assert.equal(requests.length, 0);
+  const diag = readFileSync(join(process.env.DATA_DIR!, "code-diag.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const line = diag.find((d) => d.conversationId === conv);
+  assert.ok(line, "refusal is logged");
+  assert.equal(line.providerKind, "scripted");
+  assert.deepEqual(line.tools, []);
+});
+
+test("a Code chat with a stored folder that is not open in the bridge is refused even when the client sends no folder", async () => {
+  resetExt();
+  const conv = mkConv({ cwd: "/not/open" });
+  const r = await sendRaw(conv); // no cwd in the command
+  assert.equal(r.got[0]?.type, "error");
+  assert.equal(r.got[0]?.code, "invalid_cwd");
+  assert.ok(!dbm.getMessageRow(r.assistantMessageId));
+  assert.equal(requests.length, 0);
+});
+
+test("no usable tools (none of the advertised names are Code tools): the turn stops with a clear error, the model is not called", async () => {
+  resetExt();
+  const provId = randomUUID();
+  dbm.db.prepare("INSERT INTO providers (id, user_id, name, kind, base_url, model, api_key, created_at, deleted, seq) VALUES (?,?,?,?,?,?,?,?,0,?)")
+    .run(provId, userId, "VS empty", "vscode-bridge", "pcEmpty", "", "", Date.now(), dbm.nextSeq());
+  const odd = await new Ext("pcEmpty", "i2").connect({
+    capabilities: { workspaces: true, fs: false, approval: true, checkpoints: true, transcript: false, tools: ["not_a_code_tool"] },
+  });
+  try {
+    const m = await (await turn(mkConv({ approvalMode: "auto", provider: provId }), [["x"]])).done();
+    assert.equal(m.status, "error");
+    assert.match(m.content, /VS Code から使えるツールがありません/);
+    assert.equal(requests.length, 0);
+  } finally { odd.close(); }
+});
+
+test("each Code turn appends a diagnostic line with the provider, model and offered tool names (no arguments)", async () => {
+  resetExt();
+  const conv = mkConv({ approvalMode: "auto" });
+  const m = await (await turn(conv, [["hi"]])).done();
+  assert.equal(m.status, "done");
+  const lines = readFileSync(join(process.env.DATA_DIR!, "code-diag.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const line = lines.findLast((d) => d.conversationId === conv);
+  assert.ok(line);
+  assert.equal(line.providerKind, "scripted");
+  assert.equal(line.model, "m1");
+  assert.equal(line.cwd, "/work/app");
+  assert.ok(line.tools.includes("read_file"));
+  assert.ok(typeof line.ts === "string" && !Number.isNaN(Date.parse(line.ts)));
+  assert.ok(!JSON.stringify(line).includes("do it"));
+  assert.ok(existsSync(join(process.env.DATA_DIR!, "code-diag.log")));
 });
 
 /* ---------------- approvals (S8) ---------------- */

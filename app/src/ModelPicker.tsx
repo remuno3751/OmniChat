@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { api } from './api';
 import type { ModelGroup, ModelInfo, ModelState } from './protocol';
-import { codeModelView } from './codeModels';
+import { codeModelView, fromCodeSel, type KindOf } from './codeModels';
 import type { ModelSel } from './store';
 import { useTheme, useThemeDef } from './theme';
 import { Brackets, DottedInner } from './ui/decor';
@@ -179,23 +179,28 @@ export default function ModelPicker({ sel, providerName, fallbackModel, hasProvi
     refreshModels();
   }, [openToken, hasProviders]);
 
-  const missing = useMemo(() => missingModel(groups, sel, fallbackModel), [groups, sel, fallbackModel]);
+  // Code: the selection is the bridge plus `<providerId>::<model>` for a model of a normal provider; show that model
+  const kindOf = useCallback<KindOf>((id) => groups?.find((g) => g.providerId === id)?.kind, [groups]);
+  const dsel = useMemo(() => (codeMode && sel ? fromCodeSel(sel, kindOf) : sel), [codeMode, sel, kindOf]);
+  // a Code device with no model yet is not a missing model (its list has only placeholders)
+  const missing = useMemo(() => (codeMode && !dsel?.model ? null : missingModel(groups, dsel, fallbackModel)), [codeMode, groups, dsel, fallbackModel]);
   const fetchedAt = useMemo(() => Math.max(0, ...(groups || []).map((g) => g.fetchedAt || 0)), [groups]);
   const ago = fetchedAt ? Math.max(0, Math.round((now - fetchedAt) / 1000)) : -1;
 
   const total = useMemo(() => (groups || []).reduce((n, g) => n + g.models.length, 0), [groups]);
   const view = useMemo(
-    () => (codeMode ? codeModelView(groups, sel ? sel.providerId : null, { current: tr('model.dshCurrent'), imported: tr('model.dshImported') }) : { groups, fallback: false }),
+    () => (codeMode ? codeModelView(groups, sel ? sel.providerId : null, { current: tr('model.dshCurrent'), imported: tr('model.dshImported') }) : { groups, fallback: false, dshNote: false }),
     [codeMode, groups, sel, tr],
   );
   const q = filter.trim().toLowerCase();
-  const effModel = sel ? sel.model || fallbackModel || '' : '';
+  const effModel = dsel ? dsel.model || fallbackModel || '' : '';
 
   const close = useCallback(() => { setOpen(false); setFilter(''); setCustomFor(null); setCustom(''); }, []);
   const pick = (providerId: string, model: string | null) => { onSelect({ providerId, model }); close(); };
 
-  const label = !hasProviders ? tr('model.addProvider') : sel ? modelLabel(groups, sel, fallbackModel) : tr('model.select');
-  const sub = hasProviders && sel ? providerName : '';
+  const label = !hasProviders ? tr('model.addProvider') : dsel ? modelLabel(groups, dsel, fallbackModel) : tr('model.select');
+  const subName = codeMode && dsel !== sel ? groups?.find((g) => g.providerId === dsel?.providerId)?.providerName ?? providerName : providerName;
+  const sub = hasProviders && dsel ? subName : '';
 
   const onButton = () => {
     if (!hasProviders) { onAddProvider(); return; }
@@ -234,7 +239,7 @@ export default function ModelPicker({ sel, providerName, fallbackModel, hasProvi
         />
       )}
       <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
-        {codeMode && view.fallback && <Text style={{ color: t.sub, fontSize: 12, padding: 12 }}>{tr('model.dshFallback')}</Text>}
+        {codeMode && view.dshNote && <Text style={{ color: t.sub, fontSize: 12, padding: 12 }}>{tr('model.dshFallback')}</Text>}
         {!!error && <Text style={[styles.err, { color: t.danger }]}>{error}</Text>}
         {groups === null && !error && <ActivityIndicator color={t.accentInk} style={{ margin: 16 }} />}
         {groups?.length === 0 && <Text style={{ color: t.sub, padding: 12 }}>{tr('model.noProviders')}</Text>}
@@ -246,7 +251,7 @@ export default function ModelPicker({ sel, providerName, fallbackModel, hasProvi
               <Text style={[styles.group, { color: t.sub }, faces.labelBold]}>{g.providerName}</Text>
               {!!g.error && <Text style={[styles.err, { color: t.danger }]} numberOfLines={3}>{g.error}</Text>}
               {models.map((m) => {
-                const on = !!sel && sel.providerId === g.providerId && effModel === m.id;
+                const on = !!dsel && dsel.providerId === g.providerId && effModel === m.id;
                 const key = g.providerId + '::' + m.id;
                 const st = m.state;
                 const line = stateLine(st);

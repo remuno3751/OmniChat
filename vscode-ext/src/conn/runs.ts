@@ -173,7 +173,8 @@ export function createRunManager(opts: RunManagerOptions): RunManager {
     };
     const execute = (): void => {
       if (call.state === "done") return; // cancelled or timed out while waiting for approval
-      const ctx: ToolContext = { host, root: r.root, roots: r.roots, cwd: r.cwd, signal: call.controller.signal };
+      const allowOutside = call.frame.approval?.outsideOk === true;
+      const ctx: ToolContext = { host, root: r.root, roots: r.roots, cwd: r.cwd, signal: call.controller.signal, allowOutside };
       registry.execute(call.frame, ctx).then(settle, () => settle(fail("internal", "tool failed unexpectedly")));
     };
     // The gate runs before execution; its approval wait pauses this call's timeout (see onWaiting).

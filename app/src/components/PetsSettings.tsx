@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import { apiV4 } from '../apiV4';
-import { setDevice, useDevice } from '../deviceSettings';
-import type { PetActivity } from '../deviceSettings';
+import { effectivePets, setDevice, useDevice } from '../deviceSettings';
+import type { PetActivity, PetMulti } from '../deviceSettings';
 import { useT } from '../i18n';
 import { buildPetUpload, pickPetFiles, pickPetFolder } from '../petImport';
+import { buildNativePetUpload, pickNativePetFiles } from '../petImportNative';
 import type { PetInfo } from '../protocol';
 import { patchSettingsLocal, useStore } from '../store';
 import { useTheme, useThemeDef } from '../theme';
 import { confirmDialog } from '../ui/confirm';
 import { Btn, Check, Hint, Label, Segmented } from '../ui/kit';
+import PetCreate from './PetCreate';
+import { desktopBridge, hideDesktopPet, showDesktopPet } from '../desktopPet';
 import { toast } from '../ui/toast';
 
 // Sprite sheet geometry: a frame cell is 192x208; the sheet is 8 columns wide,
@@ -20,29 +23,46 @@ const THUMB_W = 48;
 const THUMB_H = 52;
 const THUMB_SCALE = THUMB_W / CELL_W; // 0.25 (== THUMB_H / CELL_H)
 
-/** First idle frame (row 0, column 0) of a pet's sheet, cropped to a 48x52 thumbnail. */
-function PetThumb({ id, version }: { id: string; version: 1 | 2 }) {
+/**
+ * Preview of a pet in a 48x52 box: the first idle frame of a sprite sheet, or the idle image of a
+ * stills pet (fitted into the box).
+ */
+function PetThumb({ info }: { info: PetInfo }) {
   const t = useTheme();
   const th = useThemeDef();
   const [url, setUrl] = useState<string | null>(null);
+  const stills = info.kind === 'stills';
   useEffect(() => {
     let alive = true;
-    apiV4.petSheetBlobUrl(id).then((u) => { if (alive) setUrl(u); }, () => {});
+    const req = stills ? apiV4.petImageBlobUrl(info.id, 'idle') : apiV4.petSheetBlobUrl(info.id);
+    req.then((u) => { if (alive) setUrl(u); }, () => {});
     return () => { alive = false; };
-  }, [id]);
-  const sheetH = version === 1 ? 1872 : 2288;
+  }, [info.id, stills]);
+  const sheetH = info.spriteVersionNumber === 1 ? 1872 : 2288;
   return (
     <View style={[styles.thumb, { backgroundColor: t.input, borderColor: t.border, borderRadius: th.r(6) }]}>
-      {!!url && (
+      {!!url && (stills ? (
+        <Image
+          source={{ uri: url }}
+          resizeMode="contain"
+          accessibilityIgnoresInvertColors
+          style={{ position: 'absolute', left: 0, top: 0, width: THUMB_W, height: THUMB_H }}
+        />
+      ) : (
         <Image
           source={{ uri: url }}
           accessibilityIgnoresInvertColors
           style={{ position: 'absolute', left: 0, top: 0, width: 1536 * THUMB_SCALE, height: sheetH * THUMB_SCALE }}
         />
-      )}
+      ))}
     </View>
   );
 }
+
+const MULTIS: { value: PetMulti; label: string }[] = [
+  { value: 'pager', label: 'pets.multi.pager' },
+  { value: 'stack', label: 'pets.multi.stack' },
+];
 
 const ACTIVITIES: { value: PetActivity; label: string }[] = [
   { value: 'low', label: 'pets.activity.low' },
@@ -55,11 +75,16 @@ export default function PetsSettings() {
   const t = useTheme();
   const th = useThemeDef();
   const tr = useT();
-  const pets = useDevice((s) => s.pets);
+  const devicePets = useDevice((s) => s.pets);
   const activePetId = useStore((s) => s.settings?.activePetId ?? null);
+  // the pet and the switch in effect (a device that never chose one follows the synced active pet)
+  const eff = effectivePets(devicePets, activePetId);
+  const pets = devicePets;
   const [list, setList] = useState<PetInfo[] | null>(null);
   const [phase, setPhase] = useState<'reading' | 'uploading' | null>(null);
   const web = Platform.OS === 'web';
+  /** the desktop-window options only exist inside the desktop app */
+  const desktopOk = !!desktopBridge();
 
   useEffect(() => {
     let alive = true;
@@ -76,7 +101,7 @@ export default function PetsSettings() {
   };
 
   const select = async (id: string) => {
-    setDevice({ pets: { petId: id } });
+    setDevice({ pets: { petId: id, explicit: true } });
     try {
       await syncActive(id);
     } catch (e: any) {
@@ -85,12 +110,12 @@ export default function PetsSettings() {
   };
 
   /** `pick` is called synchronously from the press handler so the file dialog keeps the user gesture. */
-  const importWith = async (pick: () => Promise<File[]>) => {
+  const importWith = async (pick: () => Promise<any[]>) => {
     try {
       const files = await pick();
       if (!files.length) return;
       setPhase('reading');
-      const body = await buildPetUpload(files);
+      const body = web ? await buildPetUpload(files) : await buildNativePetUpload(files, tr);
       setPhase('uploading');
       const info = await apiV4.uploadPet(body);
       setList((prev) => [info, ...(prev || []).filter((p) => p.id !== info.id)]);
@@ -121,19 +146,40 @@ export default function PetsSettings() {
 
   return (
     <View style={{ gap: 6 }}>
-      <Check label={tr('pets.enabled')} value={pets.enabled} onChange={(v) => setDevice({ pets: { enabled: v } })} />
+      <Check label={tr('pets.enabled')} value={eff.enabled} onChange={(v) => setDevice({ pets: { enabled: v, explicit: true } })} />
+      {desktopOk && (
+        <>
+          <Check
+            label={tr('pets.desktop.label')}
+            value={pets.desktop}
+            onChange={(v) => {
+              setDevice({ pets: { desktop: v } });
+              if (v) showDesktopPet(); else hideDesktopPet();
+            }}
+          />
+          <Check label={tr('pets.desktop.inApp')} value={pets.inApp} onChange={(v) => setDevice({ pets: { inApp: v } })} />
+          <Label>{tr('pets.multi.label')}</Label>
+          <Segmented<PetMulti>
+            value={pets.multi}
+            onChange={(v) => setDevice({ pets: { multi: v } })}
+            options={MULTIS.map((o) => ({ value: o.value, label: tr(o.label) }))}
+          />
+        </>
+      )}
 
       <Label>{tr('pets.list')}</Label>
       {list !== null && list.length === 0 && <Hint>{tr('pets.none')}</Hint>}
       {(list || []).map((p) => {
-        const selected = pets.petId === p.id;
+        const selected = eff.petId === p.id;
         return (
           <View key={p.id} style={[styles.card, { borderColor: selected ? t.accent : t.border, backgroundColor: t.panel, borderRadius: th.r(10) }]}>
-            <PetThumb id={p.id} version={p.spriteVersionNumber} />
+            <PetThumb info={p} />
             <View style={{ flex: 1, minWidth: 140 }}>
               <Text numberOfLines={1} style={{ color: t.text, fontSize: 15, fontWeight: '600' }}>{p.name}</Text>
               {!!p.description && <Hint>{p.description}</Hint>}
-              <Text style={[styles.badge, { color: t.sub, borderColor: t.border, borderRadius: th.r(6) }]}>{tr('pets.version', { version: p.spriteVersionNumber })}</Text>
+              <Text style={[styles.badge, { color: t.sub, borderColor: t.border, borderRadius: th.r(6) }]}>
+                {p.kind === 'stills' ? tr('pets.kind.stills') : tr('pets.version', { version: p.spriteVersionNumber ?? 2 })}
+              </Text>
             </View>
             <View style={styles.row}>
               <Btn
@@ -149,17 +195,18 @@ export default function PetsSettings() {
         );
       })}
 
-      {web ? (
-        <>
-          <View style={[styles.row, { marginTop: 8 }]}>
-            <Btn small label={tr('pets.importFiles')} disabled={!!phase} onPress={() => importWith(pickPetFiles)} />
-            <Btn small label={tr('pets.importFolder')} disabled={!!phase} onPress={() => importWith(pickPetFolder)} />
-          </View>
-          {!!phase && <Hint>{tr(phase === 'reading' ? 'pets.reading' : 'pets.uploading')}</Hint>}
-        </>
-      ) : (
-        <Hint>{tr('pets.webOnly')}</Hint>
-      )}
+      <View style={[styles.row, { marginTop: 8 }]}>
+        <Btn
+          small
+          label={tr('pets.importFiles')}
+          disabled={!!phase}
+          onPress={() => importWith(web ? pickPetFiles : pickNativePetFiles)}
+        />
+        {/* folder pick needs webkitdirectory, so it exists on web only */}
+        {web && <Btn small label={tr('pets.importFolder')} disabled={!!phase} onPress={() => importWith(pickPetFolder)} />}
+      </View>
+      {!web && <Hint>{tr('pets.native.codexHint')}</Hint>}
+      {!!phase && <Hint>{tr(phase === 'reading' ? 'pets.reading' : 'pets.uploading')}</Hint>}
 
       <Label>{tr('pets.size')}</Label>
       <View style={styles.row}>
@@ -176,8 +223,21 @@ export default function PetsSettings() {
       />
 
       <Check label={tr('label.pets.clickThrough')} value={pets.clickThrough} onChange={(v) => setDevice({ pets: { clickThrough: v } })} />
+      <Hint>{tr(web ? 'pets.drag.hint' : 'pets.drag.hintNative')}</Hint>
+      <View style={styles.row}>
+        <Btn small label={tr('pets.drag.reset')} disabled={!pets.pos} onPress={() => setDevice({ pets: { pos: null } })} />
+      </View>
 
       <Hint>{tr('pets.note')}</Hint>
+
+      <View style={{ marginTop: 12 }}>
+        <PetCreate
+          onCreated={(info) => {
+            setList((prev) => [info, ...(prev || []).filter((p) => p.id !== info.id)]);
+            void select(info.id);
+          }}
+        />
+      </View>
     </View>
   );
 }

@@ -1,0 +1,214 @@
+/* OmniChat Chat input: attachments, drop overlay, slash popup, toast and tooltip. Colours come from --oc-* tokens. */
+
+/* The composer box is the anchor of its popups (slash list, toast, drop overlay). */
+.cm-composer { position: relative; }
+
+/* Attach button (paperclip) */
+.cm-attach {
+  flex: none;
+  width: 36px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--oc-sub);
+  cursor: pointer;
+}
+.cm-attach:hover { color: var(--oc-text); background: var(--oc-border); }
+.cm-attach:disabled { opacity: 0.5; cursor: default; background: transparent; }
+.cm-attach:focus-visible { outline: 2px solid var(--oc-accent-ink); outline-offset: 1px; }
+.cm-attach__icon { width: 18px; height: 18px; flex: none; display: inline-block; }
+
+/* Chips row above the composer */
+.cm-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+.cm-attach__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 3px 4px 3px 6px;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-sm);
+  background: var(--oc-panel);
+  color: var(--oc-text);
+  font-size: 12px;
+}
+.cm-attach__chip .cm-attach__icon { width: 14px; height: 14px; color: var(--oc-sub); }
+.cm-attach__thumb {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  object-fit: cover;
+  border-radius: var(--oc-r-xs);
+}
+.cm-attach__name {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cm-attach__size { flex: none; color: var(--oc-sub); font-size: 11px; }
+.cm-attach__x {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--oc-r-xs);
+  background: transparent;
+  color: var(--oc-sub);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cm-attach__x:hover { background: var(--oc-border); color: var(--oc-text); }
+.cm-attach__x:focus-visible { outline: 2px solid var(--oc-accent-ink); outline-offset: 1px; }
+
+/* Drop overlay: shown while files are dragged over the composer */
+.cm-drop {
+  display: none;
+  position: absolute;
+  inset: 6px;
+  z-index: 4;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--oc-accent-ink);
+  border-radius: 14px;
+  background: var(--oc-bg);
+  color: var(--oc-accent-ink);
+  font-weight: 600;
+  pointer-events: none;
+}
+.cm-composer--drop .cm-drop { display: flex; }
+
+/* Slash popup: opens above the textarea */
+.cm-slash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 3;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r-md);
+  background: var(--oc-panel);
+  color: var(--oc-text);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+.cm-slash__item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--oc-r-sm);
+  cursor: pointer;
+}
+.cm-slash__item[aria-selected="true"] {
+  background: var(--oc-panel2);
+  box-shadow: inset 2px 0 0 var(--oc-accent);
+}
+.cm-slash__name { flex: none; font-family: var(--oc-font-mono); font-weight: 600; }
+.cm-slash__desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--oc-sub);
+  font-size: 12px;
+}
+
+/* Toast above the composer (about 4 s) */
+.cm-toast {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 8px 12px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r-md);
+  background: var(--oc-panel);
+  color: var(--oc-text);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  animation: cm-toast-in var(--oc-dur-fast, 120ms) var(--oc-ease, ease);
+}
+.cm-toast[hidden] { display: none; }
+@keyframes cm-toast-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Tooltip: one shared element, positioned by tip.ts through CSSOM */
+.cm-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 50;
+  max-width: 240px;
+  padding: 4px 8px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r-xs);
+  background: var(--oc-panel);
+  color: var(--oc-text);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.cm-tip[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-toast { animation: none; }
+}
+
+@media (forced-colors: active) {
+  .cm-attach__chip,
+  .cm-slash,
+  .cm-toast,
+  .cm-tip {
+    border: 1px solid CanvasText;
+  }
+  .cm-slash__item[aria-selected="true"] { outline: 1px solid Highlight; }
+}
+
+/* ---------- Queue chip: run now (interruptQueued), beside the x ---------- */
+.cm-queue__run {
+  flex: none;
+  padding: 0 6px;
+  border: var(--oc-bw-base) solid var(--oc-border-strong);
+  border-radius: var(--oc-r-pill, 999px);
+  background: transparent;
+  color: var(--oc-accent-ink);
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cm-queue__run:hover { background: var(--oc-panel2); color: var(--oc-text); }
+.cm-queue__run:focus-visible { outline: 2px solid var(--oc-accent-ink); outline-offset: 1px; }
+
+/* ---------- Transcript: copy on user messages, shown on hover or focus like the assistant actions ---------- */
+.cm-row--user .cm-actions { justify-content: flex-end; }
+.cm-row--user:hover .cm-actions,
+.cm-row--user:focus-within .cm-actions { opacity: 1; }

@@ -7,8 +7,9 @@ const read = (rel: string): string => readFileSync(ROOT + rel, "utf8");
 const pkg = JSON.parse(read("package.json")) as {
   version: string;
   icon: string;
+  activationEvents: string[];
   contributes: {
-    viewsContainers: { activitybar: { id: string; title: string; icon: string }[] };
+    viewsContainers: { activitybar: { id: string; title: string; icon: string }[]; secondarySidebar?: { id: string; title: string; icon: string }[] };
     views: Record<string, { id: string; name: string; type: string }[]>;
     commands: { command: string; title: string }[];
     configuration: { properties: Record<string, unknown> };
@@ -19,8 +20,8 @@ const nls = JSON.parse(read("package.nls.json")) as Record<string, string>;
 const nlsJa = JSON.parse(read("package.nls.ja.json")) as Record<string, string>;
 
 describe("manifest", () => {
-  it("is version 0.2.6", () => {
-    expect(pkg.version).toBe("0.2.6");
+  it("is version 1.0.0", () => {
+    expect(pkg.version).toBe("1.0.0");
     expect(read("CHANGELOG.md")).toMatch(/^## 0\.2\.0/m);
   });
 
@@ -43,11 +44,32 @@ describe("manifest", () => {
       expect(nls[key], key).toBeTruthy();
       expect(nlsJa[key], key).toBeTruthy();
     }
-    expect(Object.keys(pkg.contributes.views)).toEqual(["omnichat"]);
+    expect(Object.keys(pkg.contributes.views).sort()).toEqual(["omnichat", "omnichatRight"]);
   });
 
-  it("has a handler registered in extension.ts for every contributed command", () => {
-    const source = read("src/extension.ts");
+  it("contributes the chat to the right (secondary) side bar as a view container", () => {
+    const container = pkg.contributes.viewsContainers.secondarySidebar?.find((c) => c.id === "omnichatRight");
+    expect(container?.title).toBe("OmniChat VS");
+    expect(existsSync(ROOT + (container?.icon ?? "missing"))).toBe(true);
+    const views = pkg.contributes.views.omnichatRight ?? [];
+    expect(views.map((v) => v.id)).toEqual(["omnichat.chatRight"]);
+    expect(views[0]?.type).toBe("webview");
+    expect(pkg.activationEvents).toContain("onView:omnichat.chatRight");
+    expect(read("src/ui/chatView.ts")).toContain('CHAT_RIGHT_VIEW_ID = "omnichat.chatRight"');
+    expect(read("src/ui/chatCommands.ts")).toContain("CHAT_RIGHT_VIEW_ID, chat.right.provider");
+  });
+
+  it("registers the right side bar command, which focuses the right view and falls back with a message", () => {
+    expect(pkg.contributes.commands.map((c) => c.command)).toContain("omnichat.moveToSecondarySideBar");
+    expect(read("src/ui/chatCommands.ts")).toContain("chat.focusRight()");
+    expect(read("src/ui/chatView.ts")).toContain("CHAT_RIGHT_VIEW_ID + \".focus\"");
+    expect(read("src/ui/chatView.ts")).toContain("s.rightDockUnsupported");
+    expect(nlsJa["omnichat.cmd.moveToSecondarySideBar"]).toContain("右のサイドバーで開く");
+    expect(nls["omnichat.cmd.moveToSecondarySideBar"]).toBe("OmniChat: Open Chat in the right side bar");
+  });
+
+  it("has a handler registered in extension.ts or chatCommands.ts for every contributed command", () => {
+    const source = read("src/extension.ts") + read("src/ui/chatCommands.ts");
     for (const { command } of pkg.contributes.commands) {
       expect(source, command).toContain(`registerCommand("${command}"`);
     }
@@ -62,6 +84,7 @@ describe("manifest", () => {
     const source = read("src/extension.ts");
     expect(source).toContain("registerWebviewViewProvider(CHAT_VIEW_ID");
     expect(source).toContain("registerWebviewViewProvider(SETTINGS_VIEW_ID");
+    expect(read("src/ui/chatCommands.ts")).toContain("registerWebviewViewProvider(CHAT_RIGHT_VIEW_ID");
     expect(read("src/ui/chatView.ts")).toContain('CHAT_VIEW_ID = "omnichat.chat"');
     expect(read("src/ui/settingsView.ts")).toContain('SETTINGS_VIEW_ID = "omnichat.settings"');
     for (const script of ["chat.js", "settings.js", "chat.css"]) {
@@ -79,6 +102,14 @@ describe("manifest", () => {
     const ignore = read(".vscodeignore");
     expect(ignore).toContain("!media/omnichat-activity.svg");
     expect(ignore).toContain("!package.nls*.json");
+  });
+
+  it("keeps the editor and dock buttons out of the webview header (the view title bar has them)", () => {
+    const header = read("src/webview/chat/header.ts");
+    expect(header).not.toContain("openInEditor");
+    expect(header).not.toContain("dockRight");
+    expect(header).toContain("tools.append(historyBtn, newBtn, settingsBtn)");
+    expect(read("media/webview/chat.css")).toMatch(/\.ch-header__title \{\s*flex: 1 1 0;/);
   });
 
   it("declares the decorations setting", () => {

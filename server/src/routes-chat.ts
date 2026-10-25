@@ -5,6 +5,7 @@ import { forbiddenOutboundUrl } from "./url-guard.js";
 import { db, nextSeq, toConversation, getConversationRow, getMessageRow, getProviderRow } from "./db.js";
 import { AuthError, authFromRequest } from "./auth.js";
 import { broadcast } from "./hub.js";
+import { toFolder, getFolderRow } from "./folders.js";
 import { toProject, toPreset, getProjectRow, getPresetRow, getSettings, saveSettings, CONTEXT_OVERFLOW, sanitizeContextLimits, sanitizeModelParams, sanitizeModelVision, intIn, COMPRESS_AT_RANGE, COMPRESS_TARGET_RANGE, DEFAULT_CONTEXT_RANGE, TITLE_EVERY_RANGE } from "./projects.js";
 import { SEARCH_MODES, TOOL_NAME_RE } from "./tools/types.js";
 import { GUARD_LEVELS, SEARCH_SITES_RANGE, SEARCH_CALLS_RANGE, SEARCH_IMAGES_RANGE } from "./search/options.js";
@@ -83,13 +84,14 @@ export function registerChatRoutes(app: FastifyInstance): void {
     if (existing && existing.userId !== userId) throw new AuthError("Forbidden", 403);
     if (!existing && b.ephemeral !== true) throw new AuthError("Ephemeral chat no longer exists", 410);
     if (!existing && b.projectId !== undefined && b.projectId !== null) throw bad("ephemeral chats cannot belong to a project");
+    if (!existing && b.folderId !== undefined && b.folderId !== null) throw bad("ephemeral chats cannot be in a folder");
     // provider: the explicit one, or on creation without one the user's default (what a send would resolve to)
     const pid = isStr(b.providerId) && b.providerId ? b.providerId : !existing ? defaultProviderId(userId) : undefined;
     const pkind = pid ? getUsableProviderRow(userId, pid)?.kind : undefined;
     if (pid && isAgentBridgeKind(pkind)) throw bad(`Ephemeral chats do not support ${pkind} providers`);
     if (!existing) registerEphemeral(userId, authFromRequest(req).deviceId, id);
     const created = !existing;
-    const nb: any = { ...b, title: "Ephemeral chat", pinned: false, mode: "chat", projectId: null };
+    const nb: any = { ...b, title: "Ephemeral chat", pinned: false, mode: "chat", projectId: null, folderId: null };
     delete nb.ephemeral;
     touchEphemeral(id);
     try {
@@ -113,6 +115,15 @@ export function registerChatRoutes(app: FastifyInstance): void {
         if (!p || p.user_id !== userId || p.deleted) throw bad("Unknown project");
         projectId = b.projectId;
       } else throw bad("projectId must be a string or null");
+    }
+    let folderId: string | null | undefined;
+    if (has(b, "folderId")) {
+      if (b.folderId === null) folderId = null;
+      else if (isStr(b.folderId)) {
+        const f = getFolderRow(b.folderId);
+        if (!f || f.user_id !== userId || f.deleted) throw bad("Unknown folder");
+        folderId = b.folderId;
+      } else throw bad("folderId must be a string or null");
     }
     const systemPrompt = has(b, "systemPrompt") ? promptOf(b.systemPrompt) : undefined;
     const systemMode = has(b, "systemMode") ? modeOf(b.systemMode) : undefined;
@@ -167,10 +178,10 @@ export function registerChatRoutes(app: FastifyInstance): void {
       const insertMode = convMode ?? (resolvedProviderId && isAgentBridgeKind(getUsableProviderRow(userId, resolvedProviderId)?.kind) ? "code" : "chat");
       if (approvalMode !== undefined && insertMode !== "code") throw bad("approvalMode is only for Code conversations");
       db.prepare(
-        "INSERT INTO conversations (id, user_id, title, provider_id, model, created_at, updated_at, deleted, seq, project_id, system_prompt, system_mode, effort, params, head_id, tools, search_mode, response_format, pinned, pinned_at, mode, context_overflow) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO conversations (id, user_id, title, provider_id, model, created_at, updated_at, deleted, seq, project_id, folder_id, system_prompt, system_mode, effort, params, head_id, tools, search_mode, response_format, pinned, pinned_at, mode, context_overflow) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       ).run(
         id, userId, isStr(b.title) && b.title ? b.title : "New chat", providerId, model, now, now, seq,
-        projectId ?? null, systemPrompt ?? null, systemMode ?? "append", effort ?? null, json(params), headId ?? null,
+        projectId ?? null, folderId ?? null, systemPrompt ?? null, systemMode ?? "append", effort ?? null, json(params), headId ?? null,
         json(tools), searchMode ?? null, json(responseFormat), pin ? 1 : 0, pin ? now : null, insertMode, ctxOverflow ?? null,
       );
     } else {
@@ -182,10 +193,11 @@ export function registerChatRoutes(app: FastifyInstance): void {
       const pinnedNow = pinned !== undefined ? pinned : !!row.pinned;
       const pinnedAt = !pinnedNow ? null : pinned === true && !row.pinned ? now : row.pinned_at ?? now;
       db.prepare(
-        "UPDATE conversations SET title = ?, provider_id = ?, model = ?, project_id = ?, system_prompt = ?, system_mode = ?, effort = ?, params = ?, head_id = ?, tools = ?, search_mode = ?, response_format = ?, pinned = ?, pinned_at = ?, mode = ?, context_overflow = ?, updated_at = ?, deleted = 0, seq = ? WHERE id = ?",
+        "UPDATE conversations SET title = ?, provider_id = ?, model = ?, project_id = ?, folder_id = ?, system_prompt = ?, system_mode = ?, effort = ?, params = ?, head_id = ?, tools = ?, search_mode = ?, response_format = ?, pinned = ?, pinned_at = ?, mode = ?, context_overflow = ?, updated_at = ?, deleted = 0, seq = ? WHERE id = ?",
       ).run(
         title, providerId, model,
         projectId !== undefined ? projectId : row.project_id ?? null,
+        folderId !== undefined ? folderId : row.folder_id ?? null,
         systemPrompt !== undefined ? systemPrompt : row.system_prompt ?? null,
         systemMode ?? row.system_mode ?? "append",
         effort !== undefined ? effort : row.effort ?? null,
@@ -311,6 +323,50 @@ export function registerChatRoutes(app: FastifyInstance): void {
     const p = toPreset(getPresetRow(id));
     broadcast(userId, { type: "upsert", presets: [p] });
     return p;
+  });
+
+  // ---- chat folders (separate from projects; see folders.ts) ----
+  app.put("/folders/:id", async (req) => {
+    const userId = authFromRequest(req).userId;
+    const id = (req.params as any).id as string;
+    const b = (req.body ?? {}) as any;
+    const row = getFolderRow(id);
+    if (row && row.user_id !== userId) throw new AuthError("Forbidden", 403);
+    const name = isStr(b.name) && b.name.trim() ? b.name.trim().slice(0, 100) : undefined;
+    const now = Date.now();
+    if (!row) {
+      const folderMode = has(b, "mode") ? chatModeOf(b.mode) : "chat"; // settable on create only
+      db.prepare("INSERT INTO chat_folders (id, user_id, name, mode, created_at, updated_at, deleted, seq) VALUES (?,?,?,?,?,?,0,?)")
+        .run(id, userId, name ?? "New folder", folderMode, now, now, nextSeq());
+    } else {
+      db.prepare("UPDATE chat_folders SET name = ?, updated_at = ?, deleted = 0, seq = ? WHERE id = ?")
+        .run(name ?? row.name, now, nextSeq(), id);
+    }
+    const f = toFolder(getFolderRow(id));
+    broadcast(userId, { type: "upsert", folders: [f] });
+    return f;
+  });
+
+  app.delete("/folders/:id", async (req) => {
+    const userId = authFromRequest(req).userId;
+    const id = (req.params as any).id as string;
+    const row = getFolderRow(id);
+    if (!row || row.user_id !== userId) throw new AuthError("Folder not found", 404);
+    const convIds = (db.prepare("SELECT id FROM conversations WHERE user_id = ? AND folder_id = ?").all(userId, id) as { id: string }[]).map((r) => r.id);
+    db.exec("BEGIN");
+    try {
+      db.prepare("UPDATE chat_folders SET deleted = 1, updated_at = ?, seq = ? WHERE id = ?").run(Date.now(), nextSeq(), id);
+      const mv = db.prepare("UPDATE conversations SET folder_id = NULL, seq = ? WHERE id = ?");
+      for (const cid of convIds) mv.run(nextSeq(), cid);
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+    const f = toFolder(getFolderRow(id));
+    const conversations = convIds.map((cid) => toConversation(getConversationRow(cid)));
+    broadcast(userId, { type: "upsert", folders: [f], ...(conversations.length ? { conversations } : {}) });
+    return f;
   });
 
   // ---- settings ----

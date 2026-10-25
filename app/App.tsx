@@ -9,10 +9,12 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { KeyboardAvoid, useInsets } from './src/ui/safe';
 import { api, loadConfig, saveAuth, setUnauthorizedHandler, uuid } from './src/api';
-import { clearAll, getState, loadCache, markReady, setNotice, useStore } from './src/store';
+import { applyUpsert, clearAll, getState, loadCache, markReady, setNotice, useStore } from './src/store';
 import type { ChatMode } from './src/protocol';
 import { toast } from './src/ui/toast';
-import { setDevice, useDeviceSetting } from './src/deviceSettings';
+import { getDevice, setDevice, useDeviceSetting } from './src/deviceSettings';
+import DesktopPetPage from './src/components/DesktopPetPage';
+import { isDesktopPetPage, showDesktopPet, usePublishPetState } from './src/desktopPet';
 import { CODE_LOCK_PIN_CLEARED, forgetUnlock } from './src/codeLock';
 import { AppLockGate, CodeLockGate } from './src/components/CodeLockGate';
 import { applyFavicon } from './src/appIcon';
@@ -49,6 +51,8 @@ import { requestComposerInsert } from './src/tips/composerBus';
 import type { TipAction } from './src/tips/types';
 
 export default function App() {
+  // The desktop pet window loads only the pet (see docs/design/V056-DESKTOP-PET.md).
+  if (isDesktopPetPage()) return <SafeAreaProvider><DesktopPetPage /></SafeAreaProvider>;
   return <SafeAreaProvider><AppInner /></SafeAreaProvider>;
 }
 
@@ -60,6 +64,8 @@ function AppInner() {
   const tr = useT();
   const [appIcon] = useDeviceSetting('appIcon');
   useEffect(() => applyFavicon(appIcon), [appIcon]);
+  // the desktop pet window is shown again on start when it was on (desktop app only; no-op elsewhere)
+  useEffect(() => { if (getDevice().pets.desktop) showDesktopPet(); }, []);
   const { width } = useWindowDimensions();
   const wide = width >= 800;
   /** web/desktop with a mouse: the wide sidebar can be pinned or hidden (SidebarShell); other layouts are unchanged */
@@ -177,7 +183,29 @@ function AppInner() {
     if (c) setMode(c.mode ?? 'chat');
     setActiveId(id); setDraftProject(null); setView('chat'); setDrawer(false);
   };
-  const newChat = (projectId?: string | null) => { dropEphemeral(); setActiveId(uuid()); setDraftProject(projectId ?? null); setView('chat'); setDrawer(false); };
+  // desktop pet: publishes the running and unread chats to the pet window (changes only); a pet click opens its chat
+  usePublishPetState(view === 'chat' ? activeId : null, select);
+  // a chat started from a folder's "+": it is moved into that folder once ChatScreen has created it (onDraftCreated)
+  const draftFolder = useRef<{ id: string; folderId: string } | null>(null);
+  // same value as the ref, kept in state so ChatScreen can show the folder chip and clear it
+  const [pendingFolder, setPendingFolder] = useState<{ id: string; folderId: string } | null>(null);
+  const newChat = (projectId?: string | null, folderId?: string | null) => {
+    dropEphemeral();
+    const id = uuid();
+    draftFolder.current = folderId ? { id, folderId } : null;
+    setPendingFolder(draftFolder.current);
+    setActiveId(id); setDraftProject(projectId ?? null); setView('chat'); setDrawer(false);
+  };
+  const onDraftCreated = (id: string) => {
+    const d = draftFolder.current;
+    if (!d || d.id !== id) return;
+    draftFolder.current = null;
+    setPendingFolder(null);
+    api.putConversation(id, { folderId: d.folderId, projectId: null })
+      .then((c) => applyUpsert({ conversations: [c] }))
+      .catch((e: any) => toast(e?.message || tNow('folder.saveFailed'), 'error'));
+  };
+  const clearPendingFolder = () => { draftFolder.current = null; setPendingFolder(null); };
   // Chat / Code tab: a different mode starts a fresh draft unless the active conversation already is that mode
   const changeMode = (next: ChatMode) => {
     setView('chat'); setDrawer(false);
@@ -299,7 +327,7 @@ function AppInner() {
           select(r.conversationId);
         }}
       />
-    : <CodeLockGate active={codeChat} onLogout={() => logout(true)}><ChatScreen convId={activeId} draftProjectId={draftProject} draftMode={mode} showMenu={!wide} onMenu={() => setDrawer(true)} onCreated={() => {}} onSettings={openSettings} onNewChat={() => newChat()} onOpenUsage={openUsage} onOpenModels={openModels} /></CodeLockGate>;
+    : <CodeLockGate active={codeChat} onLogout={() => logout(true)}><ChatScreen convId={activeId} draftProjectId={draftProject} draftMode={mode} showMenu={!wide} onMenu={() => setDrawer(true)} onCreated={onDraftCreated} pendingFolder={pendingFolder} onClearPendingFolder={clearPendingFolder} onSettings={openSettings} onNewChat={() => newChat()} onOpenUsage={openUsage} onOpenModels={openModels} /></CodeLockGate>;
 
   return (
     <AppLockGate onLogout={() => logout(true)}>

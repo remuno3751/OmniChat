@@ -77,6 +77,9 @@ export function normalizePath(input: string): string {
   return absolute ? `${prefix}/${body}` : body;
 }
 
+/** macOS default volumes are case-insensitive, so comparisons under them ignore case. */
+const MAC_FS_ROOT = /^\/(Users|Volumes)\//;
+
 function isWindowsStyle(normalized: string): boolean {
   return /^[A-Za-z]:/.test(normalized) || normalized.startsWith("//");
 }
@@ -84,7 +87,7 @@ function isWindowsStyle(normalized: string): boolean {
 /** True when `child` equals `root` or lies beneath it. Both must be normalised. */
 function isWithin(child: string, root: string): boolean {
   if (isWindowsStyle(child) !== isWindowsStyle(root)) return false;
-  const ci = isWindowsStyle(root);
+  const ci = isWindowsStyle(root) || MAC_FS_ROOT.test(root);
   const c = ci ? child.toLowerCase() : child;
   const r = ci ? root.toLowerCase() : root;
   if (c === r) return true;
@@ -129,6 +132,31 @@ async function resolveExisting(
     }
   }
   return real;
+}
+
+/**
+ * True when the real path of `abs` (a missing tail is appended to its resolved parent) lies inside
+ * the real path of `root`. Any error counts as false.
+ */
+async function resolvesInside(root: string, abs: string, realpath: RealpathFn): Promise<boolean> {
+  try {
+    const realRoot = normalizePath(await realpath(root));
+    let cur = abs;
+    const tail: string[] = [];
+    for (;;) {
+      try {
+        const real = normalizePath(tail.reduce((base, seg) => joinSegs(base, [seg]), normalizePath(await realpath(cur))));
+        return isWithin(real, realRoot);
+      } catch (err) {
+        const i = cur.lastIndexOf("/");
+        if (!isMissing(err) || i <= 0) return false;
+        tail.unshift(cur.slice(i + 1));
+        cur = cur.slice(0, i);
+      }
+    }
+  } catch {
+    return false;
+  }
 }
 
 function refuse(reason: PathRefusalReason, message: string): ResolveResult {
@@ -176,6 +204,9 @@ export async function resolveInWorkspace(
     : normalizePath(rootSlash + userPath);
 
   if (!isWithin(candidate, normRoot)) {
+    // A lexically outside path may still name a place inside the root once aliases resolve
+    // (case on macOS, /tmp -> /private/tmp, 8.3 names, symlinked roots). Any failure keeps the refusal.
+    if (await resolvesInside(normRoot, candidate, realpath)) return { ok: true, abs: candidate };
     return refuse("outside_workspace", "path is outside the workspace");
   }
 

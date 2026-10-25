@@ -1,0 +1,74 @@
+/* v0.5.6-E: checkpoint panel, sources card, edit banner. Colours come only from the --oc-* tokens. */
+
+/* Checkpoint panel (opens under the header; the shared .cm-pop frame is in chat-pop.css). */
+.cm-pop--cp { width: min(380px, calc(100vw - 16px)); }
+.cm-cp__head { flex: none; padding: 10px 12px 8px; border-bottom: var(--oc-bw-base) solid var(--oc-border); }
+.cm-cp__title { margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--oc-text); }
+.cm-cp__hint { margin: 2px 0 0; font-size: 11px; line-height: 16px; color: var(--oc-sub); }
+.cm-cp__status { flex: none; margin: 0; padding: 12px; font-size: 12px; color: var(--oc-sub); }
+.cm-cp__status[hidden], .cm-cp__reload[hidden], .cm-cp__list[hidden] { display: none; }
+.cm-cp__reload { flex: none; margin: 0 12px 12px; }
+.cm-cp__list {
+  flex: 1 1 auto; min-height: 0; margin: 0; padding: 4px; list-style: none; overflow-y: auto;
+}
+.cm-cp__row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: var(--oc-r-sm, 6px);
+}
+.cm-cp__row:hover { background: var(--oc-panel2); }
+.cm-cp__row--dim { opacity: 0.55; }
+.cm-cp__row.is-restoring { background: var(--oc-panel2); }
+.cm-cp__when { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; white-space: nowrap; }
+.cm-cp__time { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--oc-text); }
+.cm-cp__dirty {
+  padding: 0 6px; font-size: 10px; line-height: 14px; color: var(--oc-warn);
+  border: var(--oc-bw-base) solid var(--oc-warn); border-radius: var(--oc-r-pill);
+}
+.cm-cp__prompt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-cp__files { font-size: 11px; color: var(--oc-sub); white-space: nowrap; }
+.cm-cp__restore {
+  padding: 2px 8px; font: inherit; font-size: 11px; line-height: 16px; white-space: nowrap; cursor: pointer;
+  color: var(--oc-text); background: transparent;
+  border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-pill);
+}
+.cm-cp__restore:hover { background: var(--oc-panel); }
+.cm-cp__restore:focus-visible { outline: 2px solid var(--oc-accent-ink); outline-offset: 1px; }
+.cm-cp__restore[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; background: transparent; }
+
+/* Sources card under an answer. */
+.cm-sources { margin: 6px 0 2px; font-size: 12px; color: var(--oc-sub); }
+.cm-sources[hidden] { display: none; }
+.cm-sources__summary { cursor: pointer; padding: 2px 0; color: var(--oc-sub); }
+.cm-sources__summary:hover { color: var(--oc-text); }
+.cm-sources__list { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 0; padding: 0 0 0 1.6em; }
+.cm-sources__row { min-width: 0; }
+.cm-sources__item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; min-width: 0;
+  margin: 0; padding: 4px 6px; font: inherit; text-align: left; cursor: pointer;
+  color: var(--oc-accent-ink); background: transparent; border: 0; border-radius: var(--oc-r-sm, 6px);
+}
+.cm-sources__item:hover { background: var(--oc-panel2); }
+.cm-sources__item:focus-visible { outline: 2px solid var(--oc-accent-ink); outline-offset: 1px; }
+.cm-sources__title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.cm-sources__host { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--oc-sub); }
+
+/* Edit banner above the composer while the last prompt is being edited. */
+.cm-edit-banner {
+  display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 10px;
+  font-size: 11px; line-height: 16px; color: var(--oc-sub);
+  background: var(--oc-panel); border-top: var(--oc-bw-base) solid var(--oc-border);
+}
+.cm-edit-banner[hidden] { display: none; }
+.cm-edit-banner__text { flex: 1 1 auto; min-width: 0; }
+.cm-edit-banner__cancel {
+  flex: none; padding: 2px 8px; font: inherit; font-size: 11px; line-height: 16px; cursor: pointer;
+  color: var(--oc-text); background: transparent;
+  border: var(--oc-bw-base) solid var(--oc-border-strong); border-radius: var(--oc-r-pill);
+}
+.cm-edit-banner__cancel:hover { background: var(--oc-panel2); }
+.cm-edit-banner__cancel:focus-visible { outline: 2px solid var(--oc-accent-ink); outline-offset: 1px; }
+
+@media (forced-colors: active) {
+  .cm-cp__restore, .cm-edit-banner__cancel, .cm-sources__item { border-color: ButtonText; }
+  .cm-cp__restore[aria-disabled="true"] { opacity: 1; color: GrayText; border-color: GrayText; }
+}

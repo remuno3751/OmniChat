@@ -3,6 +3,26 @@
  * extension's webview bundles this very file. Rendering lives in Markdown.tsx (app) and the extension's own renderer.
  */
 
+/** The first body line of a fence that is really the artifact's opening: `artifact type=xlsx title="..."`. */
+export const ARTIFACT_LINE_RE = /^\s*artifact\s+type\s*=/i;
+
+/**
+ * Index of the line that closes an artifact fence opened just before `from` with `fence`, or -1. Models often open the
+ * artifact with three backticks although it holds ```shapes blocks: a fence line with an info string and the same
+ * length opens an inner block, and the bare fence that follows closes that block, not the artifact.
+ */
+export function artifactCloseIndex(lines: string[], from: number, fence: string): number {
+  let nested = false;
+  for (let j = from; j < lines.length; j++) {
+    const c = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(lines[j]);
+    if (!c || c[1][0] !== fence[0] || c[1].length < fence.length) continue;
+    if (c[2].trim() === '') {
+      if (nested) nested = false; else return j;
+    } else if (!nested && c[1].length === fence.length) nested = true;
+  }
+  return -1;
+}
+
 export type Align = 'left' | 'center' | 'right';
 
 export type Inline =
@@ -16,7 +36,7 @@ export type Block =
   | { k: 'p'; text: string }
   | { k: 'raw'; text: string }
   | { k: 'h'; level: number; text: string }
-  | { k: 'code'; lang: string; info?: string; body: string }
+  | { k: 'code'; lang: string; info?: string; body: string; open?: boolean }
   | { k: 'quote'; children: Block[] }
   | { k: 'list'; ordered: boolean; start: number; items: { task: boolean | null; children: Block[] }[] }
   | { k: 'table'; align: Align[]; head: string[]; rows: string[][] }
@@ -77,17 +97,30 @@ export function parseBlocks(lines: string[], streaming: boolean): Block[] {
     m = FENCE_RE.exec(line);
     if (m && !(m[1][0] === '`' && m[2].includes('`'))) {
       const fence = m[1];
-      const lang = (m[2].trim().split(/\s+/)[0] || '').toLowerCase();
+      let lang = (m[2].trim().split(/\s+/)[0] || '').toLowerCase();
+      let info = m[2].trim();
       const body: string[] = [];
       let j = i + 1;
       let closed = false;
-      for (; j < lines.length; j++) {
+      // A common slip: ```excel (or no language) with the artifact line as its first line. That line is the artifact's own opening.
+      if (lang !== 'artifact' && ARTIFACT_LINE_RE.test(lines[j] ?? '')) { lang = 'artifact'; info = lines[j].trim(); j++; }
+      if (lang === 'artifact') {
+        const from = j;
+        const e = artifactCloseIndex(lines, from, fence);
+        closed = e >= 0;
+        j = closed ? e : lines.length;
+        body.push(...lines.slice(from, j));
+      } else for (; j < lines.length; j++) {
         const c = CLOSE_FENCE_RE.exec(lines[j]);
         if (c && c[1][0] === fence[0] && c[1].length >= fence.length) { closed = true; break; }
         body.push(lines[j]);
       }
-      if (!closed && streaming) out.push({ k: 'raw', text: lines.slice(i).join('\n') });
-      else out.push({ k: 'code', lang, info: m[2].trim(), body: body.join('\n') });
+      if (!closed && streaming && lang !== 'artifact') out.push({ k: 'raw', text: lines.slice(i).join('\n') });
+      // An artifact still open while streaming is kept as a block (flag `open`) so the renderer can show a
+      // "generating" card instead of the raw body.
+      else out.push(closed
+        ? { k: 'code', lang, info, body: body.join('\n') }
+        : { k: 'code', lang, info, body: body.join('\n'), open: true });
       i = closed ? j + 1 : lines.length;
       continue;
     }
@@ -193,6 +226,14 @@ export function parseBlocks(lines: string[], streaming: boolean): Block[] {
     i = j;
   }
   return out;
+}
+
+/** Splits out artifact cards (```artifact fences) so the renderer can place them after the rest of the message. Order kept. */
+export function splitArtifactBlocks(blocks: Block[]): { body: Block[]; artifacts: Block[] } {
+  const body: Block[] = [];
+  const artifacts: Block[] = [];
+  for (const b of blocks) (b.k === 'code' && b.lang === 'artifact' ? artifacts : body).push(b);
+  return { body, artifacts };
 }
 
 function findClose(s: string, delim: string, from: number): number {

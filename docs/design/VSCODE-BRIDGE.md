@@ -64,6 +64,7 @@ E: connect → E: ready → S: welcome → (S: run → E: checkpoint → E: run_
 ### 2.4 意味論
 
 - **同時実行**: 1 instance につき run は 1 つ。実行中の `run` は `run_ack {ok:false,error:"busy"}`。run 内の tool_call は、読み取り系を最大 4 並列、write_file / edit_file / run_command / git_commit は到着順に直列化。`callId` は run 内で一意。
+- **outsideOk**(省略可): ワークスペース外のパスを許可する call だけ `true`。フルアクセスでは「範囲外」の確認だけを免除する(秘密ファイル・`.git`・rm・git push などは従来どおり確認)。manual/auto で範囲外をユーザーが承認した場合も `true`。拡張は `true` のとき、範囲外判定の保護項目で確認を出さず、ツールの範囲外拒否も外す(秘密/`.git` の検査は残る)。
 - **protectedOk**: サーバーが保護項目をユーザーに明示承認させた場合のみ `true`(その call 限り)。拡張が自前チェックで保護項目と判定し `protectedOk:false` のとき、実行せず `approval` を送って `approval_reply` を待つ(サーバーは `requestBridgeApproval` に流す。「常に許可」は不可)。`rejected` なら `tool_result {ok:false,error:{code:"denied"}}`。
 - **タイムアウト**: サーバーは `tool_call.timeoutMs`(既定 60 s、`run_command` は `timeoutMs + 10 s`)で待つ。承認待ちの時間は含めない。超過したらその call だけを `timeout` エラーとしてモデルに返す(run 全体の `cancel` は送らない)。拡張も `timeoutMs` 経過後に自分でその call を中止し、遅れて届いた `tool_result` はサーバーが捨てる。承認の待機は既存の `TOOL_APPROVAL_TIMEOUT_MS`(120 s)。
 - **cancel**: 実行中の全 call を中止(プロセスツリーを kill)、保留中の `approval` を破棄し、各 call に `cancelled` の `tool_result`、続けて `changes` → `done {ok:false,error:"cancelled"}`。
@@ -164,7 +165,7 @@ E: connect → E: ready → S: welcome → (S: run → E: checkpoint → E: run_
 ## 6. 配布・ペアリング
 
 - `.vsix` は `vscode-ext` の `npm run package`(`vsce package --no-dependencies`)で `omnichat-vscode-<version>.vsix`。`packaging/build-release.mjs` がビルドし GitHub Releases に添付、サーバー/アプリのリリースにも同梱(`omnichat-dsh-bridge-1.0.0.tgz` と同じ扱い)。Marketplace は**未公開**だが `package.json` は公開可能な形(`publisher` `icon` `repository` `license` `README.md` `CHANGELOG.md` `LICENSE` `categories` `engines.vscode`)。`extensionKind:["workspace"]`(Remote-SSH / WSL ではリモート側でツールが動く)。
-- **ペアリング**: 既存の `POST /bridges/token` を再利用(`{name, kind:"vscode"}` → デバイス名 `VS Code (<name>)`)。アプリの VS Code カードが**ペアリングコード**(base64url の `{s:<serverUrl>,t:<token>,n:<name>}`)と `vscode://omnichat.omnichat-vscode/pair?code=…` を表示。拡張はコマンド "OmniChat: Pair with Server" か URI ハンドラでコードを受け、token を **SecretStorage**(`omnichat.deviceToken`)、serverUrl/name を設定に保存。ログ・Output に token を出さない。解除 = アプリのデバイス一覧で失効 → 4001 で切断され、拡張は再ペアリングを促す。
+- **ペアリング**: 既存の `POST /bridges/token` を再利用(`{name, kind:"vscode"}` → デバイス名 `VS Code (<name>)`)。アプリの VS Code カードが**ペアリングコード**(base64url の `{s:<serverUrl>,t:<token>,n:<name>}`)を表示(v1.0 で `vscode://` リンクと URI ハンドラは廃止し、コードの貼り付けに一本化)。拡張はコマンド "OmniChat: Pair with Server" でコードを受け、token を **SecretStorage**(`omnichat.deviceToken`)、serverUrl/name を設定に保存。ログ・Output に token を出さない。解除 = アプリのデバイス一覧で失効 → 4001 で切断され、拡張は再ペアリングを促す。
 - 自動プロバイダー作成: アプリが `GET /bridges` で `kind:"vscode"` の bridge を見つけ、同名 `baseUrl` の `vscode-bridge` プロバイダーが無ければ作る(カードのスイッチ "Add provider automatically")。
 - インストール: `code --install-extension omnichat-vscode-<ver>.vsix` をカードに表示(コピー可)。
 
@@ -194,7 +195,7 @@ E: connect → E: ready → S: welcome → (S: run → E: checkpoint → E: run_
 | A2 | 承認モード切替 UI(Code 会話ヘッダー: 手動 / 自動 / フルアクセスの 3 段、現在値は常にサーバーの値)。`ChatScreen.tsx` の `chat.approvalModeNote` スタブ撤去、`approval_mode:ask|rules` は `manual|auto` の別名、`approval_mode:full` はダイアログ経由 | 純関数 `approvalModeActions` のテスト |
 | A3 | フルアクセスの警告ダイアログ(何が自動になるか / 保護項目は引き続き確認 / アプリ再起動で manual に戻る / チェックポイントは作られる、チェック必須の確認ボタン)、`confirmFull:true` を送る。i18n ja/en | ダイアログ状態の純関数 |
 | A4 | 承認カード: 保護バッジ + 理由、保護項目では「常に許可」を非表示、`decidedBy` 表示 | 表示条件の純関数 |
-| A5 | Settings に **VS Code** カード(`components/VscodeIntegration.tsx`): ペアリングコード生成(`POST /bridges/token`)・コピー・`vscode://` リンク、接続状態(`GET /bridges` の `kind:"vscode"`、version/compat 警告)、プロバイダー自動作成スイッチ、`code --install-extension …` のコピー、.vsix ダウンロード | コード生成/プロバイダー作成の純関数 |
+| A5 | Settings に **VS Code** カード(`components/VscodeIntegration.tsx`): ペアリングコード生成(`POST /bridges/token`)・コピー、接続状態(`GET /bridges` の `kind:"vscode"`、version/compat 警告)、プロバイダー自動作成スイッチ、`code --install-extension …` のコピー、.vsix ダウンロード | コード生成/プロバイダー作成の純関数 |
 | A6 | Code タブ: vscode bridge をデバイスに表示(アイコン/バッジ)、ワークスペースピッカーは `workspaces` から、オフライン/`workspace_not_open` のメッセージ | `codeGroups` 既存テストに追加 |
 | A7 | `.vsix` 名のヘルパー(`dshTgzName` と同形)と `updateTypes` | 名前解析テスト |
 | A8 | `themes/*.ts` が純データであることのテスト(`import type` 以外の import・関数を持たない)。`gen-tokens` の前提 | テスト |

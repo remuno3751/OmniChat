@@ -12,6 +12,7 @@ import { addApproval, dropApprovalsFor } from './toolState';
 import { applyDelta, applyEphemeralState, applyPhase, applySnapshot, applyToolCall, applySync, applyUpsert, destroyEphemeralLocal, failPending, getState, noteMaintenanceBlocked, patchSettingsLocal, setConnected, setEphemeralSupported, setMaintenance, setV3, setAllowOwnProviders, setSharedProviders } from './store';
 import { isMaintenanceCode, parseMaintenance } from './maintenance';
 import { codeBridgeErrorKey } from './vscodeBridge';
+import { codeErrorKey } from './codeModels';
 import { emitCheckpoint, emitNotify } from './v4Events';
 import { toast } from './ui/toast';
 import { applyBenchDone, applyBenchProgress, applyCompareComplete, applyCompareDelta, applyCompareDone, failCompare } from './devState';
@@ -172,8 +173,9 @@ function open() {
         if (m.conversationId) destroyEphemeralLocal(m.conversationId);
         toast(t('eph.gone'), 'error');
         if (m.conversationId) onEphemeralDestroyed?.(m.conversationId);
-      } else if (codeBridgeErrorKey(m.code)) {
-        toast(t(codeBridgeErrorKey(m.code)!), 'error');
+      } else if (codeBridgeErrorKey(m.code) || codeErrorKey(m.message, m.code)) {
+        // Code errors: the server text is English or Japanese; the mapped i18n text is shown instead
+        toast(t((codeBridgeErrorKey(m.code) ?? codeErrorKey(m.message, m.code))!), 'error');
       } else toast(m.message || t('socket.serverError'), 'error');
       restoreFailedSend(m.code);
       failPending(m.messageId);

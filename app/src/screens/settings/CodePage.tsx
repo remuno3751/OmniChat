@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ApprovalRules from '../../components/ApprovalRules';
 import { LockPrompt } from '../../components/CodeLockGate';
 import { BACKGROUND_LOCK_OPTIONS, RELOCK_OPTIONS, markUnlocked } from '../../codeLock';
@@ -6,8 +6,10 @@ import type { LockScope } from '../../codeLock';
 import { setDevice, useDevice } from '../../deviceSettings';
 import { Platform } from 'react-native';
 import { useLockMethod } from '../../codeLockAuth';
+import { desktopBioAvailable, desktopBioVerify } from '../../desktopBio';
 import { useT } from '../../i18n';
-import { Btn, Hint, Segmented, Sheet } from '../../ui/kit';
+import { Btn, Check, Hint, Segmented, Sheet } from '../../ui/kit';
+import { toast } from '../../ui/toast';
 import { PageFrame, Section } from './common';
 
 const RELOCK_LABEL: Record<number, string> = {
@@ -70,6 +72,19 @@ function CodeLockSection({ onLogout }: { onLogout: () => void }) {
     setSheet(null);
   };
 
+  // desktop biometrics (Touch ID / Windows Hello): offered only when the shell reports them available
+  const [bio, setBio] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void desktopBioAvailable().then((r) => { if (alive && r.available) setBio(r.kind); });
+    return () => { alive = false; };
+  }, []);
+  const toggleBio = async (on: boolean) => {
+    // turning it on proves once that it works, so the user is never locked into a prompt that cannot succeed
+    if (on && !(await desktopBioVerify(tr('codelock.bioEnable')))) { toast(tr('codelock.bioFailed'), 'error'); return; }
+    setDevice({ codeLock: { biometric: on } });
+  };
+
   const pickScope = (next: LockScope) => {
     if (next === lock.scope || method === null) return;
     if (SCOPE_RANK[next] < SCOPE_RANK[lock.scope]) { setTarget(next); openSheet('lower'); return; }
@@ -118,6 +133,9 @@ function CodeLockSection({ onLogout }: { onLogout: () => void }) {
               onPress={() => openSheet('change')}
               small
             />
+          )}
+          {method === 'pin' && bio && lock.pinHash !== null && (
+            <Check label={tr('codelock.bio', { kind: tr(bio === 'touchid' ? 'codelock.bio.touchid' : 'codelock.bio.hello') })} hint={tr('codelock.bioHint')} value={lock.biometric} onChange={toggleBio} />
           )}
           {method === 'os' && <Hint>{tr('codelock.osNote')}</Hint>}
           <Hint>{tr('codelock.recoveryNote')}</Hint>

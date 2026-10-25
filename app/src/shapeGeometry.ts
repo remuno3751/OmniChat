@@ -130,6 +130,42 @@ export function boxMap(elements: Shape[]): Map<string, ShapeBox> {
   return m;
 }
 
+/* ---- arrow labels ---- */
+
+const WIDE_CHAR = /[ᄀ-ᇿ⺀-鿿가-힯豈-﫿︰-﹏＀-￯]/;
+
+/**
+ * Box (percent of the slide) of an arrow label. Its width is the estimated text width (a CJK character is one em,
+ * other characters 0.55 em; 1 pt = 0.104 % of the slide width, 1 pt = 0.185 % of its height). The box is centered
+ * on the middle of the segment and moved off the line: above it when the line is mostly horizontal, right of it
+ * otherwise. The box is kept inside the slide.
+ */
+export function arrowLabelBox(seg: Segment, label: string, sizePt: number): Box {
+  let widthPt = 0;
+  for (const ch of label) widthPt += sizePt * (WIDE_CHAR.test(ch) ? 1.0 : 0.55);
+  const w = widthPt * 0.104;
+  const h = sizePt * 1.5 * 0.185;
+  const mx = (seg.x1 + seg.x2) / 2, my = (seg.y1 + seg.y2) / 2;
+  const dx = seg.x2 - seg.x1, dy = seg.y2 - seg.y1;
+  let cx = mx, cy = my;
+  // percent x 16 and percent y x 9 are the same units, so this compares the angle on the 16:9 slide
+  if (Math.abs(dx) * 16 >= Math.abs(dy) * 9) cy = my - (h / 2 + 0.5);
+  else cx = mx + (w / 2 + 0.5);
+  const clamp = (v: number, max: number): number => Math.min(Math.max(v, 0), Math.max(0, max));
+  return { x: clamp(cx - w / 2, 100 - w), y: clamp(cy - h / 2, 100 - h), w, h };
+}
+
+/* ---- colors ---- */
+
+/** True for a "#rgb" / "#rrggbb" color whose brightness is above one half (text of this color needs a dark background). */
+export function isLightColor(c: string | undefined): boolean {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c ?? '');
+  if (!m) return false;
+  const hex = m[1].length === 3 ? m[1].split('').map((ch) => ch + ch).join('') : m[1];
+  const r = parseInt(hex.slice(0, 2), 16), g = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5;
+}
+
 /** Arrowhead triangle at the tip (x2, y2), in units. `len` is the length of the head, `half` its half width. */
 export function arrowHead(x1: number, y1: number, x2: number, y2: number, len: number, half: number): [number, number][] {
   const dx = x2 - x1, dy = y2 - y1;
@@ -311,7 +347,7 @@ export function legendEntries(c: ShapeChart): { name: string; color: string }[] 
  * Drawing primitives of a chart, in units of the whole slide. The chart's own box (percent) is laid out as
  * title (top), plot, category labels, and a legend at the bottom when there is one.
  */
-export function chartPrimitives(c: ShapeChart): Prim[] {
+export function chartPrimitives(c: ShapeChart, ink: string = INK): Prim[] {
   const b = toUnits(c);
   const out: Prim[] = [];
   const titleH = c.title ? b.h * 0.13 : 0;
@@ -320,7 +356,7 @@ export function chartPrimitives(c: ShapeChart): Prim[] {
   const top = b.y + titleH;
   const bottom = b.y + b.h - legendH;
   const fsTick = 11 * PT, fsLabel = 12 * PT;
-  if (c.title) out.push({ k: 'text', x: b.x + b.w / 2, y: b.y + titleH * 0.7, text: c.title, size: 16 * PT, anchor: 'middle', fill: INK, bold: true });
+  if (c.title) out.push({ k: 'text', x: b.x + b.w / 2, y: b.y + titleH * 0.7, text: c.title, size: 16 * PT, anchor: 'middle', fill: ink, bold: true });
 
   if (c.kind === 'pie' || c.kind === 'doughnut') {
     const R = (Math.min(b.w, bottom - top) / 2) * 0.9;
@@ -348,16 +384,16 @@ export function chartPrimitives(c: ShapeChart): Prim[] {
     for (const t of ticks) {
       if (isBar) {
         out.push({ k: 'line', x1: vx(t), y1: py0, x2: vx(t), y2: py1, stroke: GRID, width: 1 * PT });
-        out.push({ k: 'text', x: vx(t), y: py1 + fsTick * 1.4, text: formatTick(t), size: fsTick, anchor: 'middle', fill: INK });
+        out.push({ k: 'text', x: vx(t), y: py1 + fsTick * 1.4, text: formatTick(t), size: fsTick, anchor: 'middle', fill: ink });
       } else {
         out.push({ k: 'line', x1: px0, y1: vy(t), x2: px1, y2: vy(t), stroke: GRID, width: 1 * PT });
-        out.push({ k: 'text', x: px0 - fsTick * 0.5, y: vy(t) + fsTick * 0.35, text: formatTick(t), size: fsTick, anchor: 'end', fill: INK });
+        out.push({ k: 'text', x: px0 - fsTick * 0.5, y: vy(t) + fsTick * 0.35, text: formatTick(t), size: fsTick, anchor: 'end', fill: ink });
       }
     }
     // category labels
     cats.forEach((name, i) => {
-      if (isBar) out.push({ k: 'text', x: px0 - fsLabel * 0.5, y: bandStart(i) + band / 2 + fsLabel * 0.35, text: name, size: fsLabel, anchor: 'end', fill: INK });
-      else out.push({ k: 'text', x: bandStart(i) + band / 2, y: py1 + fsLabel * 1.5, text: name, size: fsLabel, anchor: 'middle', fill: INK });
+      if (isBar) out.push({ k: 'text', x: px0 - fsLabel * 0.5, y: bandStart(i) + band / 2 + fsLabel * 0.35, text: name, size: fsLabel, anchor: 'end', fill: ink });
+      else out.push({ k: 'text', x: bandStart(i) + band / 2, y: py1 + fsLabel * 1.5, text: name, size: fsLabel, anchor: 'middle', fill: ink });
     });
     // axis at zero
     if (isBar) out.push({ k: 'line', x1: vx(0), y1: py0, x2: vx(0), y2: py1, stroke: AXIS, width: 1.5 * PT });
@@ -411,7 +447,7 @@ export function chartPrimitives(c: ShapeChart): Prim[] {
     let x = b.x + (b.w - legend.reduce((s, e) => s + itemW(e), 0)) / 2;
     for (const e of legend) {
       out.push({ k: 'rect', x, y: ly - 9 * PT, w: 9 * PT, h: 9 * PT, fill: e.color });
-      out.push({ k: 'text', x: x + 14 * PT, y: ly + fsTick * 0.35, text: e.name, size: fsTick, anchor: 'start', fill: INK });
+      out.push({ k: 'text', x: x + 14 * PT, y: ly + fsTick * 0.35, text: e.name, size: fsTick, anchor: 'start', fill: ink });
       x += itemW(e);
     }
   }

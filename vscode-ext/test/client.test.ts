@@ -186,6 +186,7 @@ describe("createClient (fake server over real ws)", () => {
     expect(ready.protocol).toBe(1);
     expect(ready.workspaces).toEqual(["/work/app"]);
     expect(ready.capabilities.tools).toEqual(["read_file", "list_dir"]);
+    expect(ready.capabilities.transcriptDelta).toBe(true);
     expect(statuses).not.toContain("online");
 
     server.send(WELCOME);

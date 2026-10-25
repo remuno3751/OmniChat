@@ -111,6 +111,31 @@ describe("escalation: when a gate asks", () => {
     expect(h.approvals()).toEqual([]);
   });
 
+  it("allows an outside-workspace call the server marked outsideOk without asking", async () => {
+    const h = harness();
+    const outside = call({ callId: "c1", args: { path: "/etc/hosts" }, approval: { by: "user", protectedOk: false, outsideOk: true } });
+    expect(await h.esc.gate(outside, signal().signal)).toEqual({ allow: true });
+    expect(h.approvals()).toEqual([]);
+  });
+
+  it("still asks for a secret path when outsideOk is set", async () => {
+    const h = harness();
+    const { done } = await start(h.esc, protectedCall("c1", { approval: { by: "user", protectedOk: false, outsideOk: true } }));
+    expect(h.approvals()).toHaveLength(1);
+    expect(h.approvals()[0].rule).toBe("P3-secret");
+    h.esc.handleReply(reply("a1", "rejected"));
+    expect((await done).allow).toBe(false);
+  });
+
+  it("asks for an outside-workspace call without outsideOk, as before", async () => {
+    const h = harness();
+    const { done } = await start(h.esc, call({ callId: "c1", args: { path: "/etc/hosts" } }));
+    expect(h.approvals()).toHaveLength(1);
+    expect(h.approvals()[0].rule).toBe("P1-outside");
+    h.esc.handleReply(reply("a1", "allowed-once"));
+    expect(await done).toEqual({ allow: true });
+  });
+
   it("asks for a protected call and allows it when the user allows once", async () => {
     const h = harness();
     const { done: pending } = await start(h.esc, protectedCall("c1"));
