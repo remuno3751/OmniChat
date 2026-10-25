@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- No functional change; the version follows the OmniChat 1.0.1 release.
+
 ## 1.0.0
 
 - Pairing is now copy and paste only: create the pairing code in the OmniChat app (Settings > VS Code), run **OmniChat: Pair with Server** and paste it. The `vscode://` link ("Open in VS Code") and its URI handler are removed, because VS Code rejected the link as an invalid pairing code on some setups.

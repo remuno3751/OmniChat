@@ -1,7 +1,7 @@
 import { isNearBottom } from '../stickBottom';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { api, ApiError, getIsAdmin } from '../api';
+import { api, ApiError, getIsAdmin, uuid } from '../api';
 import MaintenanceBanner from '../components/MaintenanceBanner';
 import { maintenanceView } from '../maintenance';
 import { type Artifact, ArtifactContext } from '../artifacts';
@@ -94,6 +94,9 @@ interface Props {
   /** opens Settings > Models (the first-run card); falls back to onSettings */
   onOpenModels?: () => void;
 }
+
+/** Messages that may wait behind a running reply. */
+const MAX_QUEUED = 5;
 
 export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat', showMenu, onMenu, onCreated, pendingFolder = null, onClearPendingFolder, onSettings, onNewChat, onOpenUsage, onOpenModels }: Props) {
   const t = useTheme();
@@ -347,12 +350,25 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
   const loadBusy = useModelLoadBusy(convId);
   // Code conversations: images and audio are not sent (docs/design/ATTACHMENTS.md, "Code / DSH での添付").
   const attachCode = isCode;
-  const send = async () => {
+  // Messages written while a reply is generated wait here and go out one by one when it ends (text only).
+  const [queueState, setQueueState] = useState<{ cid: string; list: { id: string; text: string }[] }>({ cid: convId, list: [] });
+  const queued = queueState.cid === convId ? queueState.list : [];
+  const drainLock = useRef(false);
+  const addQueued = (content: string, first: boolean) => setQueueState((s) => {
+    const list = s.cid === convId ? s.list : [];
+    const item = { id: uuid(), text: content };
+    return { cid: convId, list: first ? [item, ...list] : [...list, item] };
+  });
+  const send = async (fromQueue?: string) => {
     // a slash command runs first (the send button and Enter both come here); unknown '/xxx' stays normal text
-    const cmd = parseSlashCommand(text);
+    const cmd = fromQueue === undefined ? parseSlashCommand(text) : null;
     if (cmd) { setText(''); await runSlash(cmd); return; }
-    const content = text.trim();
-    const atts = readyAttachmentIds();
+    const content = (fromQueue ?? text).trim();
+    if (fromQueue === undefined && streaming) {
+      if (content && queued.length < MAX_QUEUED) { addQueued(content, false); setText(''); }
+      return;
+    }
+    const atts = fromQueue === undefined ? readyAttachmentIds() : [];
     if ((!content && !atts.length) || streaming || loadBusy || maintView.blocksSend || !canSendAttachments(getChips()) || codeSendBlocked(getChips(), attachCode)) return;
     if (isCode && !sel?.model) { toast(tr('code.pickModelFirst'), 'error'); setPickerToken((n) => n + 1); return; }
     setErr('');
@@ -363,7 +379,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
       const e = sendUser({ convId, content, lastVisibleId: path.length ? path[path.length - 1].id : null, effort: unsupported ? null : oneShot, responseFormat: oneShotRF, ...(cwd ? { cwd } : {}) });
       if (e) { stageSendAttachments([]); setErr(codeErrText(e)); return; }
       sendAccepted();
-      setText('');
+      if (fromQueue === undefined) setText('');
       setOneShot(null);
       setOneShotRF(null);
     } catch (e: any) {
@@ -383,8 +399,33 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
     onNewChat();
   };
 
-  const sendLabel = streaming ? tr('common.stop') : tr('common.send');
+  const stopMode = !!streaming && !text.trim();
+  const sendLabel = stopMode ? tr('common.stop') : streaming ? tr('chat.queue.add') : tr('common.send');
   const stop = () => { if (streaming && !wsSend({ type: 'stop', messageId: streaming.id })) toast(tr('chat.notConnected'), 'error'); };
+  /** Stops the running reply and sends the composer text next (it goes to the head of the queue). */
+  const interrupt = () => {
+    const content = text.trim();
+    if (!streaming || !content) return;
+    addQueued(content, true);
+    setText('');
+    stop();
+  };
+  useEffect(() => { if (streaming) drainLock.current = false; }, [!!streaming]);
+  useEffect(() => {
+    if (streaming || loadBusy || maintView.blocksSend || drainLock.current || !queued.length) return;
+    const head = queued[0];
+    drainLock.current = true;
+    setTimeout(() => { drainLock.current = false; }, 4000);
+    setQueueState((s) => ({ cid: s.cid, list: s.list.filter((q) => q.id !== head.id) }));
+    void send(head.text);
+  }, [!!streaming, queued.length, loadBusy, maintView.blocksSend]);
+  /** x on a waiting message: it goes back into the composer. */
+  const unqueue = (id: string) => {
+    const item = queued.find((q) => q.id === id);
+    if (!item) return;
+    setQueueState((s) => ({ cid: s.cid, list: s.list.filter((q) => q.id !== id) }));
+    setText(text.trim() ? text + String.fromCharCode(10) + item.text : item.text);
+  };
   const last = path.length ? path[path.length - 1] : null;
 
   // ---- slash menu: composer text that starts with '/' (single line) ----
@@ -475,7 +516,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
     if (k === 'Enter' && !shift) {
       e.preventDefault?.();
       // a held Enter does not send again and again
-      if (!e.nativeEvent.repeat) send();
+      if (!e.nativeEvent.repeat) { if (streaming && (e.nativeEvent.ctrlKey || e.nativeEvent.metaKey)) interrupt(); else send(); }
     }
   };
 
@@ -655,6 +696,19 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
         )}
         {slashOpen && <SlashMenu entries={slashEntries} active={slashSel} onPick={pickSlash} />}
         <AttachChips providerId={dsel?.providerId} model={dsel?.model ?? provider?.model} listed={selectedModelInfo(groups, dsel, provider?.model)?.vision} codeMode={attachCode} />
+        {queued.length > 0 && (
+          <View style={{ paddingHorizontal: 10, gap: 4 }}>
+            {queued.map((q) => (
+              <View key={q.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: t.border, borderRadius: th.r(8), paddingHorizontal: 8, paddingVertical: 4 }}>
+                <Text style={{ color: t.sub, fontSize: 11 }}>{tr('chat.queue.waiting')}</Text>
+                <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: t.text, fontSize: 13 }}>{q.text}</Text>
+                <Pressable onPress={() => unqueue(q.id)} accessibilityRole="button" accessibilityLabel={tr('chat.queue.remove')} hitSlop={8}>
+                  <Text style={{ color: t.sub, fontSize: 16 }}>×</Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
         <View style={styles.inputBar}>
           <AttachButton codeMode={attachCode} />
           <View style={{ flex: 1 }}>
@@ -669,24 +723,27 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
             />
             <Brackets inset={3} />
           </View>
+          {!!streaming && !!text.trim() && (
+            <Btn small label={tr('chat.queue.interrupt')} onPress={interrupt} />
+          )}
           <Pressable
-            onPress={streaming ? stop : send}
-            disabled={!streaming && (loadBusy || maintView.blocksSend)}
+            onPress={stopMode ? stop : () => { send(); }}
+            disabled={!stopMode && (loadBusy || maintView.blocksSend)}
             accessibilityRole="button"
             accessibilityLabel={sendLabel}
             {...({ title: sendLabel } as any)}
             style={({ pressed }: any) => [
-              styles.send, { backgroundColor: streaming ? t.danger : t.accent, opacity: !streaming && (!text.trim() && !chipCount || loadBusy || maintView.blocksSend) ? 0.5 : 1, borderRadius: themed ? 22 : th.r(12) },
+              styles.send, { backgroundColor: stopMode ? t.danger : t.accent, opacity: !stopMode && (!text.trim() && !chipCount || loadBusy || maintView.blocksSend) ? 0.5 : 1, borderRadius: themed ? 22 : th.r(12) },
               // Frontier: round icon button = thin ring on a dark disc; the ring turns accent when there is something to send
-              ef && !streaming && { backgroundColor: t.panel, borderWidth: 1, borderColor: text.trim() ? t.accentInk : t.borderStrong, opacity: 1 },
-              ef && streaming && { borderWidth: 1, borderColor: t.borderStrong },
+              ef && !stopMode && { backgroundColor: t.panel, borderWidth: 1, borderColor: text.trim() ? t.accentInk : t.borderStrong, opacity: 1 },
+              ef && stopMode && { borderWidth: 1, borderColor: t.borderStrong },
               // Astral: white pill (dark brown on light) with the icon
-              pillSend && !streaming && { width: 58, backgroundColor: th.dark ? '#ffffff' : '#564e45' },
+              pillSend && !stopMode && { width: 58, backgroundColor: th.dark ? '#ffffff' : '#564e45' },
               pressStyle(th, pressed),
             ]}
           >
-            {ef && !streaming && <View pointerEvents="none" style={[styles.ring, { borderColor: t.border }]} />}
-            <Icon name={streaming ? 'stop' : 'send'} size={22} color={streaming ? '#fff' : ef ? (text.trim() ? t.accentInk : t.sub) : pillSend ? (th.dark ? '#2a2827' : '#ffffff') : t.accentText} />
+            {ef && !stopMode && <View pointerEvents="none" style={[styles.ring, { borderColor: t.border }]} />}
+            <Icon name={stopMode ? 'stop' : 'send'} size={22} color={stopMode ? '#fff' : ef ? (text.trim() ? t.accentInk : t.sub) : pillSend ? (th.dark ? '#2a2827' : '#ffffff') : t.accentText} />
           </Pressable>
         </View>
       </View>

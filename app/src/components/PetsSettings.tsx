@@ -157,7 +157,6 @@ export default function PetsSettings() {
               if (v) showDesktopPet(); else hideDesktopPet();
             }}
           />
-          <Check label={tr('pets.desktop.inApp')} value={pets.inApp} onChange={(v) => setDevice({ pets: { inApp: v } })} />
           <Label>{tr('pets.multi.label')}</Label>
           <Segmented<PetMulti>
             value={pets.multi}

@@ -26,7 +26,7 @@ const MOVE_SCALE = 1.08;
  * or the pet's image cannot be loaded. The whole sprite can be dragged (web: with the mouse, even with
  * click-through on; the walking animation plays toward the drag direction). On native, a 450 ms long press on the pet enters
  * move mode and a short tap waves. The position is stored per device as fractions and kept inside the window.
- * While the desktop pet window shows this pet (pets.desktop on, pets.inApp off), the in-app overlay hides.
+ * While the desktop pet window shows the pet (pets.desktop on, in the desktop app), the in-app overlay hides so there is only one.
  */
 export default function PetOverlay({ convId }: { convId: string }) {
   const devicePets = useDevice((s) => s.pets);
@@ -44,7 +44,7 @@ export default function PetOverlay({ convId }: { convId: string }) {
   const tr = useT();
   const t = useTheme();
   const native = Platform.OS !== 'web';
-  const hiddenHere = desktop && !inApp && !!desktopBridge();
+  const hiddenHere = desktop && !!desktopBridge();
 
   // Position: the stored fractions (or the default spot), or the live drag position while dragging.
   const stills = pet?.info.kind === 'stills';

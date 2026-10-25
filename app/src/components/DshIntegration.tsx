@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, Text, View } from 'react-native';
 import { api, ApiError, getServerUrl, uuid } from '../api';
 import { refreshModels } from '../ModelPicker';
 import { activeProviders, applyUpsert, useStore } from '../store';
@@ -27,7 +27,8 @@ const DSH_PROVIDER_NAME = 'DeepSeek Harness (PC bridge)';
 const DSH_KIND = 'dsh-bridge';
 const DSH_MODEL = 'dsh';
 const POLL_MS = 10000;
-const TGZ = 'omnichat-dsh-bridge-1.0.0.tgz';
+const RELEASES_URL = 'https://github.com/remuno3751/OmniChat/releases/latest';
+const TGZ = 'omnichat-dsh-bridge-1.0.1.tgz';
 
 /** Name shown to the user in DSH when this app asks for approval. Not translated (it is a host name). */
 function pairClientName(): string {
@@ -398,12 +399,14 @@ export function DshIntegration() {
 
       <Step n={1} title={tr('integ.dsh2.step1.title')} done={pluginReachable ? true : undefined}>
         <Hint>{tr('integ.dsh2.step1.hint')}</Hint>
-        <CopyBlock text={'cd dsh-plugin\nnpm pack'} />
         <Hint>{`→ ${TGZ}`}</Hint>
+        <View style={{ alignSelf: 'flex-start' }}>
+          <Btn small primary label={tr('integ.dsh2.step1.download')} onPress={() => { Linking.openURL(RELEASES_URL).catch(() => {}); }} />
+        </View>
         <Hint>{tr('integ.dsh2.step1.install')}</Hint>
         <CopyBlock
-          label="desktop / web"
-          text={`dsh plugin --profile desktop add C:\\path\\to\\${TGZ}\ndsh plugin --profile web add C:\\path\\to\\${TGZ}`}
+          label="desktop / web (Command Prompt)"
+          text={`dsh plugin --profile desktop add "%USERPROFILE%\\Downloads\\${TGZ}"\ndsh plugin --profile web add "%USERPROFILE%\\Downloads\\${TGZ}"`}
         />
         <Hint>{tr('integ.dsh2.step1.closeGui')}</Hint>
         <Hint>{tr('integ.dsh2.step1.noEnv')}</Hint>

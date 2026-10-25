@@ -150,7 +150,7 @@ test('normalizeCodeLock: missing or broken values become the defaults', () => {
   assert.deepEqual(normalizeCodeLock('nope'), CODE_LOCK_DEFAULTS);
   assert.deepEqual(normalizeCodeLock({ scope: 'x', enabled: 'yes', backgroundLockSeconds: 7, relockSeconds: 42, failCount: -1, lockedUntil: 'x' }), CODE_LOCK_DEFAULTS);
   assert.deepEqual(normalizeCodeLock({ failCount: 1.5 }), CODE_LOCK_DEFAULTS);
-  assert.equal(normalizeCodeLock({}).relockSeconds, 300);
+  assert.equal(normalizeCodeLock({}).relockSeconds, -1);
 });
 
 test('normalizeCodeLock: a PIN salt or hash that is malformed is dropped, and a lone half is dropped too', () => {
@@ -166,7 +166,7 @@ test('normalizeCodeLock: a PIN salt or hash that is malformed is dropped, and a 
 
 test('normalizeCodeLock: only the listed relock options survive', () => {
   for (const rs of [0, 60, 300, 900, -1]) assert.equal(normalizeCodeLock({ relockSeconds: rs }).relockSeconds, rs);
-  for (const rs of [30, 120, 3600, '60', null]) assert.equal(normalizeCodeLock({ relockSeconds: rs }).relockSeconds, 300, String(rs));
+  for (const rs of [30, 120, 3600, '60', null]) assert.equal(normalizeCodeLock({ relockSeconds: rs }).relockSeconds, -1, String(rs));
 });
 
 test('device settings: a broken stored codeLock loads as the defaults (through the public module)', async () => {

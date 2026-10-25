@@ -3,7 +3,7 @@
     "name": "OmniChat",
     "slug": "omnichat",
     "scheme": "omnichat",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "default",
     "icon": "./assets/app-icons/simple-contrast.png",
     "userInterfaceStyle": "automatic",

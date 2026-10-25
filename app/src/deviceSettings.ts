@@ -113,7 +113,7 @@ export const DEVICE_DEFAULTS: DeviceSettings = {
   appIcon: 'simple-contrast',
   fontSize: 16,
   messageWidth: 820,
-  pets: { enabled: false, petId: null, size: 128, activity: 'normal', clickThrough: true, pos: null, desktop: false, inApp: true, multi: 'pager', explicit: false },
+  pets: { enabled: false, petId: null, size: 128, activity: 'normal', clickThrough: true, pos: null, desktop: false, inApp: false, multi: 'pager', explicit: false },
   modelLogosOnline: true,
   motionAmount: 'standard',
   streamAnim: 'smooth',

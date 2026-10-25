@@ -35,7 +35,8 @@ export interface CodeLockSettings {
 export const CODE_LOCK_DEFAULTS: CodeLockSettings = {
   scope: 'code',
   backgroundLockSeconds: 0,
-  relockSeconds: 300,
+  // until the app is closed; minimizing it engages the lock through backgroundLockSeconds (0)
+  relockSeconds: -1,
   pinSalt: null,
   pinHash: null,
   biometric: false,
