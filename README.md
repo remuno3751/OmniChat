@@ -1,3 +1,5 @@
+<p align="center"><img src="desktop/launcher/logo.png" alt="OmniChat" width="128" height="128"></p>
+
 # OmniChat
 
 **English** | [日本語](README.ja.md)
