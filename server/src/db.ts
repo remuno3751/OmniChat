@@ -19,6 +19,7 @@ import { migrate as migrateAttachments } from "./migrate-attachments.js";
 import { migrate as migratePlugins } from "./migrate-plugins.js";
 import { migrate as migrateQuota } from "./migrate-quota.js";
 import { migrate as migrateFolders } from "./migrate-folders.js";
+import { migrate as migrateVoice } from "./migrate-voice.js";
 import { encryptExistingKeys } from "./secret.js";
 import { parseResponseFormat } from "./structured.js";
 import type { ResponseFormat } from "./structured.js";
@@ -123,6 +124,7 @@ migrateAttachments(rawDb);
 migratePlugins(rawDb);
 migrateQuota(rawDb);
 migrateFolders(rawDb);
+migrateVoice(rawDb);
 // Stills pets (pets.ts): one row per state image, plus one meta row per pet.
 rawDb.exec(`
 CREATE TABLE IF NOT EXISTS pet_stills (
@@ -266,6 +268,8 @@ export interface Conversation {
   cwd: string | null;
   /** true iff the id starts with "eph_" (ephemeral chat, memory only) */
   ephemeral: boolean;
+  /** which kinds of messages the chat holds: "voice" = Aria call messages (messages.via), "chat" = anything else */
+  kinds: ("chat" | "voice")[];
 }
 export type CodeStatus = "idle" | "running" | "awaiting_approval" | "done" | "error";
 export const CODE_STATUSES: readonly CodeStatus[] = ["idle", "running", "awaiting_approval", "done", "error"];
@@ -285,6 +289,8 @@ export interface Message {
   phases: PhaseRecord[] | null;
   changes: FileChange[] | null;
   agents: AgentRecord[] | null;
+  /** "voice" = made during an Aria voice call; omitted otherwise */
+  via?: "voice";
   /** attachment metadata (no bytes, no text); omitted when the message has none */
   attachments?: { id: string; name: string; mime: string; kind: string; size: number; status: string }[];
 }
@@ -320,6 +326,14 @@ const parseJsonArray = (v: any): any[] | null => {
   if (typeof v !== "string" || !v) return null;
   try { const a = JSON.parse(v); return Array.isArray(a) && a.length ? a : null; } catch { return null; }
 };
+/** "voice" if any message came from a call, "chat" if any did not; an empty chat is ["chat"]. */
+function kindsOf(conversationId: string): ("chat" | "voice")[] {
+  try {
+    const r = db.prepare("SELECT SUM(CASE WHEN via = 'voice' THEN 1 ELSE 0 END) AS v, SUM(CASE WHEN via IS NULL OR via != 'voice' THEN 1 ELSE 0 END) AS c FROM messages WHERE conversation_id = ?").get(conversationId) as { v: number | null; c: number | null };
+    const v = Number(r?.v ?? 0) > 0, c = Number(r?.c ?? 0) > 0;
+    return v && c ? ["chat", "voice"] : v ? ["voice"] : ["chat"];
+  } catch { return ["chat"]; }
+}
 export const toConversation = (r: any): Conversation => ({
   id: r.id, title: r.title, providerId: r.provider_id ?? null, model: r.model ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at, deleted: !!r.deleted, seq: r.seq,
@@ -335,6 +349,7 @@ export const toConversation = (r: any): Conversation => ({
   codeStatus: CODE_STATUSES.includes(r.code_status) ? r.code_status : "idle",
   cwd: typeof r.cwd === "string" && r.cwd ? r.cwd : null,
   ephemeral: typeof r.id === "string" && r.id.startsWith("eph_"),
+  kinds: kindsOf(r.id),
 });
 export const toMetrics = (r: any): Metrics => ({
   providerId: r.provider_id ?? null, providerKind: r.provider_kind ?? null, model: r.model ?? null,
@@ -364,6 +379,7 @@ export const toMessage = (r: any): Message => {
     toolCalls: parseJsonArray(r.tool_calls), sources: parseJsonArray(r.sources), guardBlocked: parseJsonArray(r.guard_blocked),
     phases: parseJsonArray(r.phases), agents: parseJsonArray(r.agents),
     changes: (parseJsonArray(r.changes) as FileChange[] | null)?.map((c) => (typeof c.patch === "string" && c.patch.length > 20_000 ? { path: c.path, status: c.status, additions: c.additions, deletions: c.deletions } : c)) ?? null,
+    ...(r.via === "voice" ? { via: "voice" as const } : {}),
     ...(atts.length ? { attachments: atts } : {}),
   };
 };

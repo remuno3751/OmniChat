@@ -29,7 +29,12 @@ export async function startServer(env: Record<string, string> = {}, tmp = mkdtem
     child.stdout!.on("data", (d) => { if (String(d).includes("listening")) res(); });
     child.once("exit", () => rej(new Error("server exited")));
   });
-  return { base: `http://127.0.0.1:${port}`, port, tmp, child, stop() { child.kill(); try { rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ } } };
+  return { base: `http://127.0.0.1:${port}`, port, tmp, child, stop() {
+    // Windows keeps the SQLite files locked until the process is gone: remove the folder after the exit, with retries
+    const clean = () => { try { rmSync(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); } catch { /* ignore */ } };
+    if (child.exitCode !== null || child.signalCode !== null) clean();
+    else { child.once("exit", clean); child.kill(); }
+  } };
 }
 
 export async function api(base: string, method: string, path: string, body?: unknown, tok = "", extra: Record<string, string> = {}) {

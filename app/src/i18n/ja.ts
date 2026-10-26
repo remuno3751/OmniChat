@@ -20,6 +20,12 @@ import { ja as DESKTOP_JA } from './desktopStrings';
 import { ja as FOLDER_JA } from './folderStrings';
 import { ja as BIO_JA } from './bioStrings';
 import { ja as TIP_JA } from './tipStrings';
+import { ja as VOICE_JA } from './voiceStrings';
+import { ja as VOICE_VOICE_JA } from './voiceVoiceStrings';
+import { ja as VOICE_CALL_JA } from './voiceCallStrings';
+import { ja as HOST_CALL_JA } from './hostCallStrings';
+import { ja as HOST_SET_JA } from './hostSettingsStrings';
+import { ja as HOST_LIST_JA } from './hostListStrings';
 // 日本語の文言。en.ts と同じキーを持つこと。
 const messages: Record<string, string> = {
   'settings.title': '設定',
@@ -1885,7 +1891,9 @@ const messages: Record<string, string> = {
   'maint.unsupported': 'このサーバーはメンテナンスモードに対応していません。',
   ...TIPS_JA,
   ...ADMIN_JA,
-  ...SHARED_JA, ...SLIDE_JA, ...C56S_JA, ...C56F_JA, ...C56P_JA, ...C56A_JA, ...C56D_JA, ...C56E_JA, ...C56H_JA, ...C56F_DESK_JA, ...C56G_JA, ...C56I_JA, ...CODE_PREVIEW_JA,
+  ...SHARED_JA, ...SLIDE_JA, ...C56S_JA, ...C56F_JA, ...C56P_JA, ...C56A_JA, ...C56D_JA, ...C56E_JA, ...C56H_JA, ...C56F_DESK_JA, ...C56G_JA, ...C56I_JA, ...CODE_PREVIEW_JA, ...VOICE_JA,
+  ...SHARED_JA, ...SLIDE_JA, ...C56S_JA, ...C56F_JA, ...C56P_JA, ...C56A_JA, ...C56D_JA, ...C56E_JA, ...C56H_JA, ...C56F_DESK_JA, ...C56G_JA, ...C56I_JA, ...CODE_PREVIEW_JA, ...VOICE_JA, ...VOICE_VOICE_JA,
+  ...SHARED_JA, ...SLIDE_JA, ...C56S_JA, ...C56F_JA, ...C56P_JA, ...C56A_JA, ...C56D_JA, ...C56E_JA, ...C56H_JA, ...C56F_DESK_JA, ...C56G_JA, ...C56I_JA, ...CODE_PREVIEW_JA, ...VOICE_JA, ...VOICE_CALL_JA, ...HOST_CALL_JA, ...HOST_SET_JA, ...HOST_LIST_JA,
   ...ATTACH_JA,
   ...PLUGINS_JA,
   ...QUOTA_JA,

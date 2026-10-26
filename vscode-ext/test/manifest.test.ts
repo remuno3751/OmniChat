@@ -20,8 +20,8 @@ const nls = JSON.parse(read("package.nls.json")) as Record<string, string>;
 const nlsJa = JSON.parse(read("package.nls.ja.json")) as Record<string, string>;
 
 describe("manifest", () => {
-  it("is version 1.0.2", () => {
-    expect(pkg.version).toBe("1.0.2");
+  it("is version 1.1.0", () => {
+    expect(pkg.version).toBe("1.1.0");
     expect(read("CHANGELOG.md")).toMatch(/^## 0\.2\.0/m);
   });
 

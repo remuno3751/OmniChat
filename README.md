@@ -39,7 +39,7 @@ Lets the AI work in the folder you have open in VS Code (chat, models, approvals
 
 Install: `code --install-extension OmniChat-VS.vsix --force`, then run "Reload Window". Setup and usage: [docs/VSCODE.md](docs/VSCODE.md) (Japanese).
 
-> **v1.0 is the first major version (current: v1.0.2).** Some parts are not fully verified on real devices (see [Status and verification](#status-and-verification)). Please back up important data regularly.
+> **v1.1 (v1.0 was the first major version).** Some parts are not fully verified on real devices (see [Status and verification](#status-and-verification)). Please back up important data regularly.
 
 > **Note:** the installers are not code-signed, so your OS shows a warning on first launch.
 
@@ -75,6 +75,7 @@ Install: `code --install-extension OmniChat-VS.vsix --force`, then run "Reload W
 | API keys and OpenAI-compatible endpoint | `/v1/chat/completions` and `/v1/models`; point an OpenAI SDK's `base_url` at it |
 | Developer mode | Final prompt and raw JSON, sampling parameters, model comparison, benchmarks, structured output, token view, config file import/export, CLI |
 | Remote control of dsh | Operate DeepSeek Harness on your PC from OmniChat (outbound connection only); conversations from the dsh GUI are synced too, grouped by working folder in the Code tab |
+| Voice calls (Aria) | Talk to Aria (a separate AI-VTuber voice server) from the chat screen: calls are kept in the chat history, with a privacy switch, push-to-talk, voice-model upload and a diagnosis panel. Windows / Web / desktop; Aria is set up separately. See [docs/VOICE.md](docs/VOICE.md) (Japanese) |
 | VS Code integration | Let the AI work in a folder open in VS Code through a small extension (`vscode-ext/`, `.vsix`): the agent loop runs on your server with any tool-capable model, and the extension runs the tools (read/edit files, commands, Git) with manual / auto / full approval modes, protected items that always ask, and checkpoints with rewind. A safety net, not a sandbox. See [docs/VSCODE.md](docs/VSCODE.md) (Japanese) |
 | Device management | Per-device tokens, device list and revocation, logout |
 | Lock | Optionally lock the Code screens or the whole app (PIN or OS authentication) |
@@ -132,7 +133,7 @@ Four ways (details in **[docs/INSTALL.md](docs/INSTALL.md)**, Japanese). Release
 | `desktop/` | Tauri 2 desktop launcher (Windows / macOS / Linux) |
 | `server-app/` | OmniChat Server: a Tauri 2 app that runs and manages the server |
 | `bridge/` | A resident program on your PC that remote-controls dsh (daemon type) |
-| `dsh-plugin/` | The same role as a dsh plugin, running inside the dsh process (`@omnichat/dsh-bridge`, v1.0.2) |
+| `dsh-plugin/` | The same role as a dsh plugin, running inside the dsh process (`@omnichat/dsh-bridge`, v1.1.0) |
 | `packaging/` | Build scripts for the distributables |
 | `cli/` | Command-line client `omnichat` (no external dependencies) |
 | `docs/` | User and developer documentation (mostly Japanese) |
@@ -173,7 +174,7 @@ cd app && npx expo start                  # on a device with Expo Go
 
 ## Status and verification
 
-Version 1.0.2 (DSH plugin 1.0.2, OmniChat VS 1.0.2). See [CHANGELOG.md](CHANGELOG.md) (Japanese) for details.
+Version 1.1.0 (DSH plugin 1.1.0, OmniChat VS 1.1.0). See [CHANGELOG.md](CHANGELOG.md) (Japanese) for details.
 
 **Verified in practice**
 

@@ -1,7 +1,9 @@
 // Dev-only mock of the Tauri IPC bridge, for browser testing (Playwright addInitScript, or a plain static server in ui/).
 // Defines window.__TAURI__.core.invoke(cmd, args) with in-memory data that follows the IPC contract. Never ship this.
 // Query flags: ?wizard=1 forces the setup wizard, ?stopped=1 starts with the server stopped,
-// ?empty=1 starts with no users, ?noautostart=1 reports autostart as unsupported.
+// ?empty=1 starts with no users, ?noautostart=1 reports autostart as unsupported,
+// ?novoice=1 reports Aria hosting as unsupported (non-Windows), ?ariaDown=1 makes voice_admin models/llm return 502 aria_unreachable,
+// ?degraded=1 makes aria_get report health 'degraded' while running.
 // Setup-done flag lives in localStorage 'mock-setup-done' ('1' = done).
 (function () {
   'use strict';
@@ -162,6 +164,163 @@
       updateAvailable: newer && !!M.updChecked, skipped: false, skippedVersions: [], bundleAssetFound: true, lastCheckedAt: M.updChecked || null, lastError: null,
       phase: M.updPhase || 'idle', progress: M.updPhase === 'downloading' ? 0.4 : null, lastApply: null, plugin: null, isAdmin: true
     };
+  }
+
+  // ---------- Aria host and voice admin (in memory) ----------
+  var A = {
+    supported: q.novoice !== '1',
+    config: { ariaDir: 'C:\\Aria', pythonPath: '', aivisUrl: 'http://127.0.0.1:10101', port: 0, autostart: true, env: [{ key: 'ARIA_LOG_LEVEL', value: 'info' }] },
+    status: 'stopped', port: null, pid: null, error: null, restarts: 0, pidSeq: 5000,
+    logs: ['[aria] host ready (mock)']
+  };
+  function ariaLog(msg) { A.logs.push(new Date().toISOString().slice(11, 19) + ' ' + msg); if (A.logs.length > 2000) A.logs.splice(0, A.logs.length - 2000); }
+  function ariaHealth() {
+    if (A.status !== 'running') return null;
+    return q.degraded === '1' ? 'degraded' : 'ok';
+  }
+  function ariaShape() {
+    return {
+      supported: A.supported, config: copy(A.config), status: A.status,
+      port: A.status === 'running' ? A.port : null, pid: A.status === 'running' ? A.pid : null,
+      error: A.error, restarts: A.restarts, health: ariaHealth()
+    };
+  }
+  function ariaBoot() {
+    A.status = 'starting'; A.error = null;
+    setTimeout(function () {
+      if (A.status !== 'starting') return;
+      A.status = 'running'; A.pid = ++A.pidSeq; A.port = A.config.port || 8100;
+      ariaLog('listening on 127.0.0.1:' + A.port);
+    }, 800);
+  }
+  function ariaStart() {
+    if (!A.supported) return reject('Aria can be hosted on Windows only', 40);
+    if (A.status === 'running' || A.status === 'starting') return later(40, ariaShape);
+    ariaLog('starting');
+    ariaBoot();
+    return later(40, ariaShape);
+  }
+  function ariaStop() {
+    return later(400, function () {
+      if (A.status !== 'stopped') ariaLog('stopped');
+      A.status = 'stopped'; A.pid = null; A.port = null;
+      return ariaShape();
+    });
+  }
+  setInterval(function () {
+    if (A.status === 'running') ariaLog('heartbeat ok rtt=' + (8 + (A.logs.length % 9)) + 'ms');
+  }, 3000);
+
+  var V = {
+    mode: 'hosted', baseUrl: '', chatTokenSet: false, adminTokenSet: true,
+    endpoints: [
+      { id: 'lmstudio', name: 'LM Studio', models: ['qwen2.5-7b-instruct', 'llama-3.1-8b-instruct'] },
+      { id: 'ollama', name: 'Ollama', models: ['gemma3:4b', 'nomic-embed-text'] }
+    ],
+    roles: { fast: { endpoint: 'lmstudio', model: 'qwen2.5-7b-instruct' }, deep: { endpoint: 'ollama', model: 'gemma3:4b' } },
+    stt: { device: 'cpu', options: ['cpu', 'gpu'] },
+    models: [
+      { uuid: 'tsukuyomi', name: 'tsukuyomi', kind: 'aivmx', ownerUserId: '', ownerName: '', rights: ['use'], builtin: true },
+      { uuid: '5b7e0c2a-1f4d-4a8e-9c31-0d2f6a7b8c91', name: 'ja-voice-base', kind: 'aivmx', ownerUserId: '2', ownerName: 'mika', rights: ['use'] },
+      { uuid: 'a13c9e44-7d20-4f6b-8e15-92c4d0f3e2aa', name: 'my-voice', kind: 'aivmx', ownerUserId: '1', ownerName: 'admin', rights: 'read,write' },
+      { uuid: 'piper-ja-fast-01', name: 'ja-fast-news', kind: 'piper', ownerUserId: '1', ownerName: 'admin', rights: 'read,write', ready: true },
+      { uuid: 'piper-ja-fast-02', name: 'ja-fast-draft', kind: 'piper', ownerUserId: '2', ownerName: 'mika', rights: ['use'], ready: false }
+    ],
+    // per-user daily limits in minutes (null = use the default); defaultDaily null = no limit
+    quota: { defaultDaily: 60, perUser: { 2: 30 } },
+    // per-user usage for 7 and 30 days (scaled); keyed by user id
+    usageBase: { 1: { m: 14.2, t: 38, c: 9120 }, 2: { m: 31.5, t: 92, c: 20480 }, 3: { m: 2.4, t: 7, c: 1530 } }
+  };
+  var DIAG = [
+    { id: 'config', ok: true, message: 'Voice config loaded', hint: '' },
+    { id: 'aria', ok: true, message: 'Aria is reachable', hint: '' },
+    { id: 'models', ok: false, message: 'No fast voice model is ready', hint: 'Place the .onnx and config files for a fast model, then check again.' },
+    { id: 'llm', ok: true, message: 'Fast and deep response models are set', hint: '' }
+  ];
+  function voiceErr(msg) { return reject(msg, 40); }
+  function voiceRoute(method, path, body) {
+    var m;
+    if (method === 'GET' && path === '/local-admin/voice/config') {
+      return later(60, function () { return { mode: V.mode, baseUrl: V.baseUrl, chatTokenSet: V.chatTokenSet, adminTokenSet: V.adminTokenSet }; });
+    }
+    if (method === 'PUT' && path === '/local-admin/voice/config') {
+      var b = body || {};
+      if (['off', 'hosted', 'external'].indexOf(b.mode) < 0) return voiceErr('mode must be off, hosted or external');
+      if (b.mode === 'hosted' && !A.supported) return voiceErr('hosted mode is Windows only');
+      if (b.mode === 'external' && !/^https?:\/\//.test(b.baseUrl || '')) return voiceErr('baseUrl: http(s) URL required');
+      V.mode = b.mode;
+      if (typeof b.baseUrl === 'string') V.baseUrl = b.baseUrl;
+      if (b.chatToken) V.chatTokenSet = true;
+      if (b.adminToken) V.adminTokenSet = true;
+      return later(80, function () { return undefined; });
+    }
+    if (V.mode === 'off') return reject('409 voice_off', 40);
+    if (method === 'GET' && path === '/local-admin/voice/llm') {
+      if (q.ariaDown === '1') return reject('502 aria_unreachable', 40);
+      return later(60, function () { return { roles: copy(V.roles), endpoints: copy(V.endpoints) }; });
+    }
+    if (method === 'PUT' && path === '/local-admin/voice/llm/roles') {
+      var role = body && body.role;
+      if (role !== 'fast' && role !== 'deep') return voiceErr('role must be fast or deep');
+      var ep = V.endpoints.filter(function (x) { return x.id === body.endpoint; })[0];
+      if (!ep || ep.models.indexOf(body.model) < 0) return voiceErr('endpoint or model not found');
+      V.roles[role] = { endpoint: body.endpoint, model: body.model };
+      return later(60, function () { return undefined; });
+    }
+    if (method === 'GET' && path === '/local-admin/voice/placement') {
+      return later(40, function () { return { stt: copy(V.stt) }; });
+    }
+    if (method === 'PUT' && path === '/local-admin/voice/placement/stt') {
+      if (V.stt.options.indexOf(body && body.device) < 0) return voiceErr('device must be one of ' + V.stt.options.join(', '));
+      V.stt.device = body.device;
+      return later(60, function () { return undefined; });
+    }
+    if (method === 'GET' && path === '/local-admin/voice/models') {
+      if (q.ariaDown === '1') return reject('502 aria_unreachable', 40);
+      return later(80, function () { return copy(V.models); });
+    }
+    if ((m = /^\/local-admin\/voice\/models\/([^/]+)$/.exec(path)) && method === 'DELETE') {
+      var target = V.models.filter(function (x) { return x.uuid === decodeURIComponent(m[1]); })[0];
+      if (!target) return voiceErr('voice model not found');
+      if (target.builtin) return voiceErr('built-in voice models cannot be deleted');
+      V.models = V.models.filter(function (x) { return x !== target; });
+      return later(60, function () { return undefined; });
+    }
+    if ((m = /^\/local-admin\/voice\/usage\?days=(7|30)$/.exec(path)) && method === 'GET') {
+      var days = Number(m[1]);
+      var scale = days === 30 ? 4.2 : 1;
+      return later(90, function () {
+        return {
+          days: days,
+          defaultDailyMinutes: V.quota.defaultDaily,
+          users: M.users.map(function (u) {
+            var b = V.usageBase[u.id] || { m: 0, t: 0, c: 0 };
+            return {
+              id: u.id, username: u.username,
+              callMinutes: Math.round(b.m * scale * 10) / 10,
+              turns: Math.round(b.t * scale),
+              replyChars: Math.round(b.c * scale),
+              dailyMinutes: V.quota.perUser[u.id] != null ? V.quota.perUser[u.id] : null
+            };
+          })
+        };
+      });
+    }
+    if (method === 'PUT' && path === '/local-admin/voice/quota') {
+      var qv = body && body.dailyMinutes;
+      if (qv !== null && qv !== undefined && !(Number.isSafeInteger(qv) && qv >= 0 && qv <= 1440)) return voiceErr('dailyMinutes must be an integer 0-1440 or null');
+      if (body && body.userId !== undefined) {
+        if (!findUser(body.userId)) return voiceErr('user not found');
+        if (qv == null) delete V.quota.perUser[body.userId]; else V.quota.perUser[body.userId] = qv;
+      } else {
+        V.quota.defaultDaily = qv == null ? null : qv;
+      }
+      return later(60, function () { return undefined; });
+    }
+    if (method === 'GET' && path === '/local-admin/voice/diagnose') {
+      return later(250, function () { return copy(DIAG); });
+    }
+    return voiceErr('404 not found: ' + method + ' ' + path);
   }
 
   // ---------- commands ----------
@@ -426,7 +585,41 @@
     setup_done_set: function (a) {
       try { localStorage.setItem('mock-setup-done', a && a.done ? '1' : '0'); } catch (e) { /* ignore */ }
       return later(30, function () { return undefined; });
-    }
+    },
+    // ---- Aria host (Windows only in reality; ?novoice=1 marks it unsupported) and voice admin
+    aria_get: function () { return later(40, ariaShape); },
+    aria_set_config: function (a) {
+      var c = (a && a.config) || {};
+      if (!(c.port === 0 || (Math.floor(c.port) === c.port && c.port >= 1 && c.port <= 65535))) return reject('port must be 0-65535', 40);
+      A.config = {
+        ariaDir: String(c.ariaDir || ''), pythonPath: String(c.pythonPath || ''), aivisUrl: String(c.aivisUrl || ''), port: c.port || 0, autostart: !!c.autostart,
+        env: (c.env || []).map(function (kv) { return { key: String(kv.key), value: String(kv.value) }; })
+      };
+      return later(120, ariaShape);
+    },
+    aria_start: function () { return ariaStart(); },
+    aria_stop: function () { return ariaStop(); },
+    aria_restart: function () {
+      if (!A.supported) return reject('Aria can be hosted on Windows only', 40);
+      A.restarts++;
+      return ariaStop().then(function () { ariaLog('restarting'); ariaBoot(); return ariaShape(); });
+    },
+    aria_logs: function (a) {
+      var tail = Math.min(2000, Math.max(1, Number(a && a.tail) || 200));
+      return later(30, function () { return A.logs.slice(-tail); });
+    },
+    aria_check: function () {
+      return later(300, function () {
+        return [
+          { id: 'dir', ok: true, message: 'Aria folder found: C:\\Aria' },
+          { id: 'python', ok: true, message: 'Python 3.11.9 runs' },
+          { id: 'files', ok: A.status !== 'failed', message: 'Required files present' },
+          { id: 'models', ok: false, message: 'No voice model loaded yet' }
+        ];
+      });
+    },
+    aria_setup_tokens: function () { return later(200, function () { return undefined; }); },
+    voice_admin: function (a) { return voiceRoute(String(a.method || 'GET').toUpperCase(), String(a.path || ''), a.body); }
   };
 
   function invoke(cmd, args) {

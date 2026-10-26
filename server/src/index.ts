@@ -26,6 +26,8 @@ import { handleChatFrame, sendSnapshot } from "./chat.js";
 import { registerChatRoutes } from "./routes-chat.js";
 import { registerSync } from "./sync.js";
 import { handleBridgeUpgrade, listBridges } from "./bridges.js";
+import { registerVoiceRoutes } from "./voice-routes.js";
+import { handleVoiceUpgrade } from "./voice-relay.js";
 import "./vscode-chat.js";
 import { providerKinds } from "./providers/index.js";
 import { parseEffortProfile } from "./effort.js";
@@ -236,6 +238,7 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 })
 app.server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (url.pathname === "/bridge") return handleBridgeUpgrade(req, socket, head, url);
+  if (url.pathname === "/voice/ws") return handleVoiceUpgrade(req, socket, head, url);
   if (url.pathname !== "/ws") return socket.destroy();
   const user = deviceFromToken(url.searchParams.get("token"));
   if (!user) {
@@ -286,6 +289,7 @@ registerPreviewFrameRoute(app);
 registerUpdateRoutes(app);
 registerAdminRoutes(app);
 registerQuotaRoutes(app);
+registerVoiceRoutes(app);
 await registerAttachmentRoutes(app);
 initLocalAdminToken();
 registerLocalAdminRoutes(app);

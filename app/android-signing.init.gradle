@@ -3,6 +3,18 @@
 // Signs the release APK with your own keystore when these env vars are set; otherwise it does
 // nothing and the Expo template falls back to the debug keystore (installable, NOT for stores).
 //   OMNICHAT_KEYSTORE_FILE, OMNICHAT_KEYSTORE_PASSWORD, OMNICHAT_KEY_ALIAS, OMNICHAT_KEY_PASSWORD
+// Windows: a native module in node_modules (react-native-audio-api) builds objects into a path that repeats the whole source path
+// and passes the 260-character limit. OMNICHAT_SHORT_CXX_DIR (set by packaging/local/build-android.sh) moves the CMake build
+// folders of the Android library modules to a short place, one folder per module.
+def shortCxx = System.getenv('OMNICHAT_SHORT_CXX_DIR')
+if (shortCxx) {
+    allprojects { p ->
+        p.pluginManager.withPlugin('com.android.library') {
+            p.android.externalNativeBuild.cmake.buildStagingDirectory = new File(shortCxx, p.name)
+        }
+    }
+}
+
 allprojects {
     afterEvaluate { p ->
         def storeFile = System.getenv('OMNICHAT_KEYSTORE_FILE')

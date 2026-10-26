@@ -57,6 +57,8 @@ const MAP = {
   ephemeral: 'visibility-off',
   tips: 'lightbulb-outline',
   lock: 'lock-outline',
+  phone: 'call',
+  chat: 'chat-bubble-outline',
 } as const;
 
 export type IconName = keyof typeof MAP;

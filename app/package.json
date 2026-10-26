@@ -1,6 +1,6 @@
 {
   "name": "app",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "license": "AGPL-3.0-only",
   "main": "index.ts",
   "dependencies": {
@@ -24,6 +24,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-audio-api": "0.13.6",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",

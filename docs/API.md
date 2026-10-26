@@ -298,6 +298,38 @@ WebSocket サーバー → クライアントの追加: `phase`(`thinking/search
 
 ---
 
+## 音声通話(`/voice/*`、Aria)
+
+サーバーが Aria(別プロジェクトの AI-VTuber)との間を中継し、通話を履歴に残します。設計は [design/ARIA-HOST.md](design/ARIA-HOST.md) と [design/ARIA-HOST-ADDENDUM.md](design/ARIA-HOST-ADDENDUM.md)(食い違うときは追補が優先)。認証は他の REST と同じ(`Authorization: Bearer <端末トークン>`、WS は `?token=`)。`mode` が `off` のとき、Aria が要る API は `409 {code:"voice_off"}`、Aria に届かないときは `502 {code:"aria_unreachable"}`。Aria のトークンは、どの応答にも出ません。通話に使う LLM は、ユーザー一律(管理者が役割 `fast` / `deep` のモデルを指定)です。
+
+| メソッド・パス | 誰が | 内容 |
+|---|---|---|
+| `GET /voice/status` | ログイン済み | `{ mode, ready, ttsModes, me, canAdmin }`(`ready` = Aria の `/health` と `/voice/placement` が 200) |
+| `GET` / `PUT /voice/me` | 本人 | 話し方の設定(`voice`, `ttsMode`, `speed`, `pauseScale`, `responseDelayMs`, `endOfTurnMs`, `bargeIn`, `bargeInDb`)。範囲は丸める。`speed` の既定は balanced で 1.3、fast で 1.0 |
+| `GET /voice/voices` | ログイン済み | 声モデルの一覧(`kind`: `aivmx` / `piper`、`ownerUserId`、`mine` 付き) |
+| `POST /voice/voices/models?name=&kind=aivmx\|piper&file=zip\|model\|config` | ログイン済み | 声モデルのアップロード(本文は生のバイト列、上限 300 MB)。`kind` 省略時は拡張子から(`.aivmx` = 標準、`.onnx` / `.zip` / `.json` = Fast の piper)。Aria が弾いた形式は `422`、知らない拡張子は `415`(どちらも `{code:"unsupported_format"}`) |
+| `DELETE /voice/voices/models/:uuid` | 持ち主 / 管理者 | 削除(`kind` に応じた Aria の API を呼ぶ) |
+| `POST /voice/preview` | ログイン済み | `{ text?, voice?, ttsMode? }` → `audio/wav`。Aria に試聴の API が無いときは `501 {code:"not_supported_yet"}` |
+| `GET /voice/diagnose` | ログイン済み | `[{ id, ok, message, hint }]`(Aria に届く、健康状態、音声認識、`tts_modes`、LLM の役割) |
+| `GET /voice/usage` | 本人 | 今日と直近 30 日の通話時間・ターン数・返事の文字数、本人に当たる 1日の上限(分)(本人の上書き、なければ共通の値)、超過しているか |
+| `GET` / `PUT /voice/admin/config` | 管理者 | `{ mode: off\|hosted\|external, baseUrl, dailyLimitMinutes }`。トークン(`chatToken`, `adminToken`)は書き込み専用で、読み出しは `chatTokenSet` / `adminTokenSet` だけ。`dailyLimitMinutes` = ユーザーごと・1日あたりの通話時間の上限(0 = 無制限) |
+| `PUT /voice/admin/quota` | 管理者 | `{ userId?, dailyMinutes }`。`dailyMinutes` は 0〜1440 の整数か `null`。`userId` なしは共通の `dailyLimitMinutes` を設定(`null` は無制限、つまり 0)。`userId` ありは、そのユーザーの上書きを設定(0 = 無制限、`null` = 上書きを外して共通の値に戻す)。存在しない `userId` は `404`。`/local-admin/voice/quota` にも同じ |
+| `GET /voice/admin/llm`、`PUT /voice/admin/llm/roles` | 管理者 | 役割 `fast`(通話の返事)/ `deep`(背景思考)のモデルの取得と指定(`{role, endpoint?, model}`) |
+| `GET /voice/admin/users` | 管理者 | ユーザーと設定、今日の使用量 |
+| `GET /voice/admin/usage?days=7\|30` | 管理者 | ユーザー別の使用量。既定は 30 日。`{ days, defaultDailyMinutes, dailyLimitMinutes, users: [{ id, username, isAdmin, callMinutes(期間の通話時間・分、小数 1 桁), turns, replyChars, dailyMinutes(本人の上書き、なければ null), today, last30 }] }`。`last30` は常に直近 30 日 |
+| `GET /voice/admin/placement`、`PUT /voice/admin/placement/stt` | 管理者 | Whisper の置き場所 |
+| `GET /voice/admin/models` | 管理者 | 声モデル(持ち主付き)。各要素に `kind`、`ready`(Fast は Aria の `ready`、なければ `.onnx` と config がそろっているか。標準は常に `true`)、`builtin`(持ち主のない Aria の声。例: Fast の `tsukuyomi`)。Aria の Fast の一覧にあって行の無い声も、`builtin` で並ぶ。Aria が答えないときは行だけ(Fast は `ready: false`) |
+| `/local-admin/voice/*` | Server アプリ | `/voice/admin/*` と同じ内容(ループバック + local-admin トークン)。ほかに `status`、`diagnose`、`usage`(`?days=` も渡る)、`quota`(PUT)、`DELETE models/:uuid` |
+
+### `WS /voice/ws?token=&conversationId=&private=1`
+Aria の `/live/ws` へ JSON とバイナリをそのまま中継します。`conversationId` が無ければ新しい会話を作り(`ready` に `conversationId` を足して返す)、ある場合は本人の会話に追記します。`private=1` のときは、会話の作成も保存もしません(Aria にも `private=1` を伝え、`ready.private` をそのまま返す)。接続の直後(Aria の `ready` のあと)に、サーバーが保存した話し方の設定を、`{type:"settings", values, persist:false}` で Aria に送ります。
+
+閉じるコード: `4409` = `voice_off`、`4429` = `busy`(1ユーザー 1 通話)または `quota`(1日の上限)、`4404` = 会話が無い、`4502` = Aria に届かない、`1011` = `aria_restarting`(Aria が止まった / 再起動した。クライアントが再接続する)。
+
+サーバーが履歴に記録します(クライアントの実装に依存しません): 確定した文字起こし(`final:true`)は `role:'user'`、Aria の `text` は `role:'assistant'` のメッセージで、どちらも `via:'voice'`。取り消し(`transcript_retract`)は `utterance_id` で対応します。`/ws` の `upsert` で、ほかの端末にもリアルタイムに届きます。会話の JSON の `kinds`(`'chat'` / `'voice'` の配列)は、メッセージの `via` から導かれます。通話が終わると、仮のタイトル(「通話 …」)を、既存のタイトル生成で付けます(使えるプロバイダーがあるとき)。
+
+中継は、ターンごとに `{type:"omni_stats", latencyMs}` をクライアントに流します(Aria の `turn_end.stats.first_audio_ms` があればそれ、なければ中継が測った値)。通話時間とターン数は `voice_usage` に集計します。
+
 ## WebSocket
 
 ### 接続

@@ -40,7 +40,7 @@ VS Code で開いているフォルダを、自分のサーバー経由で AI �
 
 インストール: `code --install-extension OmniChat-VS.vsix --force` を実行して、VS Code で「Reload Window」を実行します。設定と使い方は [docs/VSCODE.md](docs/VSCODE.md) を見てください。
 
-> **v1.0 は、最初のメジャーバージョンです(現在は v1.0.2)。** 実機での動作確認が十分でない部分もあります(下の「[状態と検証範囲](#状態と検証範囲)」)。大切なデータは、定期的にバックアップしてください。他の OS・.msi などは [Releases](https://github.com/remuno3751/omnichat/releases/latest) の表から選べます。
+> **v1.1 です(v1.0 が最初のメジャーバージョン)。** 実機での動作確認が十分でない部分もあります(下の「[状態と検証範囲](#状態と検証範囲)」)。大切なデータは、定期的にバックアップしてください。他の OS・.msi などは [Releases](https://github.com/remuno3751/omnichat/releases/latest) の表から選べます。
 
 > **注意**: インストーラーは署名していないため、初回に OS の警告が出ます(手順は [docs/DOWNLOAD.md](docs/DOWNLOAD.md#os-ごとのインストール手順))。
 
@@ -95,6 +95,7 @@ VS Code で開いているフォルダを、自分のサーバー経由で AI �
 | API キー・OpenAI 互換エンドポイント | `/v1/chat/completions` と `/v1/models`。OpenAI SDK の `base_url` を向けて使える(履歴には保存しない) |
 | 開発者モード | 最終プロンプトと生 JSON の確認、サンプリングパラメーター、API キー。モデル比較・ベンチマーク・構造化出力・トークン表示・設定ファイル入出力・CLI は[フェーズ 4](#状態と検証範囲)の範囲([docs/DEVELOPER.md](docs/DEVELOPER.md)) |
 | dsh の遠隔操作 | PC 上の DeepSeek Harness を OmniChat から操作(外向き接続のみ)。dsh の GUI の会話も同期 |
+| 音声通話(Aria) | チャット画面から、Aria(別プロジェクトの AI-VTuber の音声通話サーバー)と、声で会話できます。通話は履歴に残り、記録しないスイッチ、押している間だけ話す、声モデルのアップロード、診断があります。Windows・Web・デスクトップ。Aria は別に用意します。[docs/VOICE.md](docs/VOICE.md) |
 | VS Code 連携 | VS Code で開いているフォルダを AI に操作させる(拡張 `vscode-ext/`・`.vsix`)。エージェントのループはサーバー側(ツール対応の任意のモデル)、拡張がツール(ファイルの読み書き・コマンド・Git)を実行。承認は手動 / 自動 / フルアクセスの 3 段、保護項目は常に確認、チェックポイントと巻き戻し付き。安全網でありサンドボックスではない。[docs/VSCODE.md](docs/VSCODE.md) |
 | 端末管理 | 端末ごとのトークン、端末一覧と失効、ログアウト |
 
@@ -230,7 +231,7 @@ cd app && npx expo start                  # 実機は Expo Go でQRを読む
 
 ## 状態と検証範囲
 
-バージョンは 1.0.2 です(DSH 連携プラグインは 1.0.2、OmniChat VS は 1.0.2)。実装は 4 フェーズ(基盤 / 可視化 / ツール・検索・履歴 / 開発者機能)で、詳細は [CHANGELOG.md](CHANGELOG.md)。フェーズ 4 の各機能は、まだ実機で検証していない項目があります([docs/DEVELOPER.md](docs/DEVELOPER.md) の状態一覧)。
+バージョンは 1.1.0 です(DSH 連携プラグインは 1.1.0、OmniChat VS は 1.1.0)。実装は 4 フェーズ(基盤 / 可視化 / ツール・検索・履歴 / 開発者機能)で、詳細は [CHANGELOG.md](CHANGELOG.md)。フェーズ 4 の各機能は、まだ実機で検証していない項目があります([docs/DEVELOPER.md](docs/DEVELOPER.md) の状態一覧)。
 
 以下の「確認したもの」は、各フェーズの開発時に行った確認の記録です。このドキュメントを書いた時点で再実行したものではありません。
 

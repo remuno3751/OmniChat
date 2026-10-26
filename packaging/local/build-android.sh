@@ -15,6 +15,8 @@ export JAVA_TOOL_OPTIONS="--enable-native-access=ALL-UNNAMED"   # JDK 24+ otherw
 ROOT="$(pwd)"
 # A neutral Gradle home keeps this PC's account name out of the native libraries (it ends up in their build paths).
 export GRADLE_USER_HOME="${OMNICHAT_GRADLE_HOME:-C:/omnichat-build/gradle}"
+# a short place for the CMake build folders of native modules (the Windows 260-character path limit); see app/android-signing.init.gradle
+export OMNICHAT_SHORT_CXX_DIR="${OMNICHAT_SHORT_CXX_DIR:-C:/omnichat-build/cxx}"
 cd app
 cp app.json /tmp/omnichat-app.json.bak
 # absolute paths: the script changes directory before it exits. Commit your own edits to app.json / package.json first.

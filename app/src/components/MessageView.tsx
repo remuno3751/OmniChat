@@ -121,6 +121,11 @@ export default function MessageView({ m, sibIndex, sibTotal, onSwitch, canBranch
       style={{ alignItems: user ? 'flex-end' : 'flex-start' }}
       {...(Platform.OS === 'web' ? ({ onMouseEnter: () => setHover(true), onMouseLeave: () => setHover(false) } as any) : {})}
     >
+      {m.via === 'voice' && (
+        <View style={{ marginBottom: 2 }} accessibilityLabel={tr('host.call.viaVoice')}>
+          <Icon name="phone" size={12} color={t.sub} />
+        </View>
+      )}
       {wrapEnter(
       <Pressable
         style={[

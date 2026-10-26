@@ -29,6 +29,8 @@ export interface Conversation {
   updatedAt: number;
   deleted: boolean;
   seq: number;
+  /** Aria host: what the conversation holds ('voice' = has call messages); absent on an old server = chat */
+  kinds?: ('chat' | 'voice')[];
   // v3 (all optional: absent on an old server)
   projectId?: string | null;
   systemPrompt?: string | null;
@@ -148,6 +150,8 @@ export interface Message {
   seq: number;
   /** v3 tree link; undefined on an old server (=> linear chain by createdAt). */
   parentId?: string | null;
+  /** 'voice' = made during a voice call */
+  via?: 'voice' | null;
   /** phase 2: full thinking text (null/absent = none). */
   reasoning?: string | null;
   /** phase 2: speed metrics of a finished assistant reply. */

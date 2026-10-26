@@ -6,6 +6,8 @@ import { CODE_LOCK_DEFAULTS, normalizeCodeLock } from './codeLock';
 import type { CodeLockSettings } from './codeLock';
 import { normalizePetPos } from './petPos';
 import type { PetPos } from './petPos';
+import { VOICE_DEFAULTS, normalizeVoice } from './voice/voiceSettings';
+import type { VoiceSettings } from './voice/voiceSettings';
 
 /** Per-device settings (never synced to the server). Persisted to AsyncStorage key `omnichat.device`. */
 
@@ -56,6 +58,8 @@ export interface DshSettings {
   bridgeName: string;
 }
 
+export type { VoiceSettings } from './voice/voiceSettings';
+
 export interface DeviceSettings {
   language: Language;
   theme: ThemeName;
@@ -82,6 +86,8 @@ export interface DeviceSettings {
   /** #rrggbb, used when particleColorMode is custom */
   particleColor: string;
   dsh: DshSettings;
+  /** Aria voice call (Settings > Voice call); see voice/voiceSettings.ts */
+  voice: VoiceSettings;
   /** the first-use explanation of ephemeral chats has been dismissed on this device */
   ephemeralBannerSeen: boolean;
   /** what to do when a chat turn would load a model next to another loaded one (PROTOCOL-v7); 'ask' = show the dialog */
@@ -96,7 +102,8 @@ export interface DeviceSettings {
   vscodeAutoProvider: boolean;
 }
 
-export type DevicePatch = Partial<Omit<DeviceSettings, 'pets' | 'dsh' | 'codeLock'>> & {
+export type DevicePatch = Partial<Omit<DeviceSettings, 'pets' | 'dsh' | 'codeLock' | 'voice'>> & {
+  voice?: Partial<VoiceSettings>;
   pets?: Partial<PetSettings>;
   dsh?: Partial<DshSettings>;
   codeLock?: Partial<CodeLockSettings>;
@@ -122,6 +129,7 @@ export const DEVICE_DEFAULTS: DeviceSettings = {
   particleColorMode: 'preset',
   particleColor: '#f9c837',
   dsh: { enabled: false, port: 19401, pairing: '', bridgeName: 'my-pc' },
+  voice: VOICE_DEFAULTS,
   ephemeralBannerSeen: false,
   modelLoadPolicy: 'ask',
   codeLock: CODE_LOCK_DEFAULTS,
@@ -187,6 +195,7 @@ function normalize(raw: any): DeviceSettings {
       pairing: typeof q.pairing === 'string' ? q.pairing.trim().slice(0, 200) : d.dsh.pairing,
       bridgeName: (typeof q.bridgeName === 'string' ? q.bridgeName.trim().slice(0, 200) : '') || d.dsh.bridgeName,
     },
+    voice: normalizeVoice(raw?.voice),
     ephemeralBannerSeen: typeof raw?.ephemeralBannerSeen === 'boolean' ? raw.ephemeralBannerSeen : d.ephemeralBannerSeen,
     modelLoadPolicy: normalizeRemembered(raw?.modelLoadPolicy),
     codeLock: normalizeCodeLock(raw?.codeLock),
@@ -227,12 +236,13 @@ export function getDevice(): DeviceSettings {
 
 /** Shallow-merges `patch` (deep for `pets`), validates the result, persists and notifies subscribers. */
 export function setDevice(patch: DevicePatch): void {
-  const { pets, dsh, codeLock, ...rest } = patch;
+  const { pets, dsh, codeLock, voice, ...rest } = patch;
   state = normalize({
     ...state,
     ...rest,
     pets: pets ? { ...state.pets, ...pets } : state.pets,
     dsh: dsh ? { ...state.dsh, ...dsh } : state.dsh,
+    voice: voice ? { ...state.voice, ...voice } : state.voice,
     codeLock: codeLock ? { ...state.codeLock, ...codeLock } : state.codeLock,
   });
   written = true;

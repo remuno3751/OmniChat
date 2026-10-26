@@ -28,7 +28,7 @@ const DSH_KIND = 'dsh-bridge';
 const DSH_MODEL = 'dsh';
 const POLL_MS = 10000;
 const RELEASES_URL = 'https://github.com/remuno3751/OmniChat/releases/latest';
-const TGZ = 'omnichat-dsh-bridge-1.0.2.tgz';
+const TGZ = 'omnichat-dsh-bridge-1.1.0.tgz';
 
 /** Name shown to the user in DSH when this app asks for approval. Not translated (it is a host name). */
 function pairClientName(): string {

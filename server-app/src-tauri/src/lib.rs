@@ -19,6 +19,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
 use tauri_plugin_opener::OpenerExt;
 
+mod aria;
 mod autostart;
 mod background;
 mod extra;
@@ -870,7 +871,16 @@ pub fn run() {
             extra::quotas_set,
             extra::quota_users_get,
             extra::quota_user_set,
-            extra::quota_user_delete
+            extra::quota_user_delete,
+            aria::aria_get,
+            aria::aria_set_config,
+            aria::aria_start,
+            aria::aria_stop,
+            aria::aria_restart,
+            aria::aria_logs,
+            aria::aria_check,
+            aria::aria_setup_tokens,
+            aria::voice_admin
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -926,6 +936,7 @@ pub fn run() {
 
             // restarts the server when it exits with RESTART_EXIT_CODE (update applied)
             spawn_monitor(handle.clone());
+            aria::spawn_monitor(handle.clone());
 
             // the server starts with the app
             std::thread::spawn(move || {
@@ -934,6 +945,7 @@ pub fn run() {
                     autostart::wait_for_startup(launch.delay_secs, &|m| push_log(&logs, m));
                 }
                 let _ = start(&handle);
+                aria::autostart_if_configured(&handle);
             });
             Ok(())
         })
@@ -949,7 +961,10 @@ pub fn run() {
                 api.prevent_exit();
             }
         }
-        RunEvent::Exit => stop(handle),
+        RunEvent::Exit => {
+            aria::stop_all(handle);
+            stop(handle)
+        }
         _ => {}
     });
 }

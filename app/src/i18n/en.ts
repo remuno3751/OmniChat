@@ -20,6 +20,12 @@ import { en as DESKTOP_EN } from './desktopStrings';
 import { en as FOLDER_EN } from './folderStrings';
 import { en as BIO_EN } from './bioStrings';
 import { en as TIP_EN } from './tipStrings';
+import { en as VOICE_EN } from './voiceStrings';
+import { en as VOICE_VOICE_EN } from './voiceVoiceStrings';
+import { en as VOICE_CALL_EN } from './voiceCallStrings';
+import { en as HOST_CALL_EN } from './hostCallStrings';
+import { en as HOST_SET_EN } from './hostSettingsStrings';
+import { en as HOST_LIST_EN } from './hostListStrings';
 // English strings. Reference language: every key here should exist in ja.ts too.
 const messages: Record<string, string> = {
   'settings.title': 'Settings',
@@ -1885,7 +1891,9 @@ const messages: Record<string, string> = {
   'maint.unsupported': 'This server does not support maintenance mode.',
   ...TIPS_EN,
   ...ADMIN_EN,
-  ...SHARED_EN, ...SLIDE_EN, ...C56S_EN, ...C56F_EN, ...C56P_EN, ...C56A_EN, ...C56D_EN, ...C56E_EN, ...C56H_EN, ...C56F_DESK_EN, ...C56G_EN, ...C56I_EN, ...CODE_PREVIEW_EN,
+  ...SHARED_EN, ...SLIDE_EN, ...C56S_EN, ...C56F_EN, ...C56P_EN, ...C56A_EN, ...C56D_EN, ...C56E_EN, ...C56H_EN, ...C56F_DESK_EN, ...C56G_EN, ...C56I_EN, ...CODE_PREVIEW_EN, ...VOICE_EN,
+  ...SHARED_EN, ...SLIDE_EN, ...C56S_EN, ...C56F_EN, ...C56P_EN, ...C56A_EN, ...C56D_EN, ...C56E_EN, ...C56H_EN, ...C56F_DESK_EN, ...C56G_EN, ...C56I_EN, ...CODE_PREVIEW_EN, ...VOICE_EN, ...VOICE_VOICE_EN,
+  ...SHARED_EN, ...SLIDE_EN, ...C56S_EN, ...C56F_EN, ...C56P_EN, ...C56A_EN, ...C56D_EN, ...C56E_EN, ...C56H_EN, ...C56F_DESK_EN, ...C56G_EN, ...C56I_EN, ...CODE_PREVIEW_EN, ...VOICE_EN, ...VOICE_CALL_EN, ...HOST_CALL_EN, ...HOST_SET_EN, ...HOST_LIST_EN,
   ...ATTACH_EN,
   ...PLUGINS_EN,
   ...QUOTA_EN,

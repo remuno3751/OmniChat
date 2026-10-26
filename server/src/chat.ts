@@ -963,7 +963,7 @@ function placeholderTitle(mode: unknown, text: unknown): string {
 /** After a reply: one short non-streamed call; never blocks or fails the reply.
  *  Writes the first title (n = 1), then refreshes it every titleEvery completed replies (n >= 2).
  *  Only a title the server still owns (placeholder, or equal to auto_title) is ever replaced. */
-async function autoTitle(userId: string, prov: any, conversationId: string, assistantMessageId: string, chatModel: string): Promise<void> {
+async function autoTitle(userId: string, prov: any, conversationId: string, assistantMessageId: string, chatModel: string, force = false): Promise<void> {
   const settings = getSettings(userId);
   if (!settings.autoTitle) return;
   if (maintenanceBlocking(userId)) return; // not a user action: a regular user gets no background LLM call during maintenance
@@ -977,8 +977,8 @@ async function autoTitle(userId: string, prov: any, conversationId: string, assi
   if (!mayTitle(conv)) return;
   const done = db.prepare("SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ? AND role = 'assistant' AND status = 'done'").get(conversationId) as any;
   const n = Number(done.n);
-  const refresh = n >= 2 && settings.titleEvery > 0 && n % settings.titleEvery === 0;
-  if (n !== 1 && !refresh) return;
+  const refresh = !force && n >= 2 && settings.titleEvery > 0 && n % settings.titleEvery === 0;
+  if (!force && n !== 1 && !refresh) return;
   const asst = getMessageRow(assistantMessageId);
   if (!asst || !firstUser) return;
 
@@ -1001,6 +1001,19 @@ async function autoTitle(userId: string, prov: any, conversationId: string, assi
   // same title as now: leave the row and its seq alone
   if (title === again.title) return;
   touchConversation(userId, conversationId, { title, autoTitle: title });
+}
+
+/** After a voice call: titles the chat once from its first exchange (force = skip the "first reply" gate). The call has no provider of its own, so
+ *  the user's most recently used chat provider does the titling. Never throws; a chat whose title the user changed is left alone. */
+export async function titleVoiceConversation(userId: string, conversationId: string): Promise<void> {
+  try {
+    const asst = db.prepare("SELECT id FROM messages WHERE conversation_id = ? AND role = 'assistant' AND status IN ('done','stopped') ORDER BY created_at DESC, seq DESC LIMIT 1").get(conversationId) as { id: string } | undefined;
+    if (!asst) return;
+    const prov = (db.prepare("SELECT p.* FROM conversations c JOIN providers p ON p.id = c.provider_id WHERE c.user_id = ? AND p.deleted = 0 AND p.user_id = ? ORDER BY c.updated_at DESC LIMIT 1").get(userId, userId)
+      ?? db.prepare("SELECT * FROM providers WHERE user_id = ? AND deleted = 0 ORDER BY created_at LIMIT 1").get(userId)) as any;
+    if (!prov) return;
+    await autoTitle(userId, prov, conversationId, asst.id, prov.model, true);
+  } catch { /* the provisional title stays */ }
 }
 
 function finish(userId: string, messageId: string, content: string, status: Message["status"], reasoning?: string) {

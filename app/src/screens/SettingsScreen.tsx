@@ -21,6 +21,7 @@ import GeneralPage from './settings/GeneralPage';
 import ModelsPage from './settings/ModelsPage';
 import PluginsPage from './settings/PluginsPage';
 import UpdatesPage from './settings/UpdatesPage';
+import VoicePage from './settings/VoicePage';
 import { useUpdateBadge } from '../updateStore';
 import ServerPage from './settings/ServerPage';
 import ThisChatPage from './settings/ThisChatPage';
@@ -234,6 +235,7 @@ export default function SettingsScreen({ onClose, onLogout, showBack, convId, in
       case 'code': return <CodePage onBack={onBack} onLogout={onLogout} />;
       case 'plugins': return <PluginsPage onBack={onBack} onGoto={(p) => go(p)} />;
       case 'updates': return <UpdatesPage onBack={onBack} />;
+      case 'voice': return <VoicePage onBack={onBack} />;
       case 'connections': return <ConnectionsPage key={c.n} initialSub={c.sub} onBack={onBack} onLogout={onLogout} onOpenChat={onOpenChat} />;
       case 'server': return <ServerPage onBack={onBack} />;
       case 'developer': return <DeveloperPage onBack={onBack} />;

@@ -3,7 +3,7 @@
  * 'synced' = the server /settings doc), which settings page shows it, and its label key (see i18n).
  */
 
-export type SettingsPageId = 'general' | 'appearance' | 'models' | 'chat' | 'code' | 'plugins' | 'updates' | 'connections' | 'server' | 'developer';
+export type SettingsPageId = 'general' | 'appearance' | 'models' | 'chat' | 'code' | 'voice' | 'plugins' | 'updates' | 'connections' | 'server' | 'developer';
 
 export interface SettingMeta {
   scope: 'device' | 'synced';
@@ -32,6 +32,17 @@ export const SETTINGS_META: Record<string, SettingMeta> = {
   'dsh.bridgeName': { scope: 'device', page: 'plugins', labelKey: 'integ.dsh.set.bridgeName' },
   ephemeralBannerSeen: { scope: 'device', page: 'chat', labelKey: 'eph.bannerTitle' },
   modelLoadPolicy: { scope: 'device', page: 'chat', labelKey: 'modelload.settings.title' },
+  'voice.url': { scope: 'device', page: 'voice', labelKey: 'voice.set.url' },
+  'voice.user': { scope: 'device', page: 'voice', labelKey: 'voice.set.user' },
+  'voice.token': { scope: 'device', page: 'voice', labelKey: 'voice.set.token' },
+  'voice.ttsMode': { scope: 'device', page: 'voice', labelKey: 'voice.set.ttsMode' },
+  'voice.speed': { scope: 'device', page: 'voice', labelKey: 'voice.set.speed' },
+  'voice.pauseScale': { scope: 'device', page: 'voice', labelKey: 'voice.set.pauseScale' },
+  'voice.responseDelayMs': { scope: 'device', page: 'voice', labelKey: 'voice.set.responseDelayMs' },
+  'voice.endOfTurnMs': { scope: 'device', page: 'voice', labelKey: 'voice.set.endOfTurnMs' },
+  'voice.bargeIn': { scope: 'device', page: 'voice', labelKey: 'voice.set.bargeIn' },
+  'voice.bargeInDb': { scope: 'device', page: 'voice', labelKey: 'voice.set.bargeInDb' },
+  'voice.voice': { scope: 'device', page: 'voice', labelKey: 'voice.set.voice' },
 
   // synced (server /settings)
   systemPrompt: { scope: 'synced', page: 'chat', labelKey: 'label.systemPrompt' },
@@ -68,6 +79,7 @@ export const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'models', titleKey: 'settings.page.models' },
   { id: 'chat', titleKey: 'settings.page.chat' },
   { id: 'code', titleKey: 'settings.page.code' },
+  { id: 'voice', titleKey: 'settings.page.voice' },
   { id: 'plugins', titleKey: 'settings.page.plugins' },
   { id: 'updates', titleKey: 'settings.page.updates' },
   { id: 'connections', titleKey: 'settings.page.connections' },

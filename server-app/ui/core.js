@@ -38,7 +38,8 @@
     external: 'M14 4h6v6M20 4l-9 9M18 14v5H5V6h5',
     plugin: 'M9 3v4M15 3v4M7 7h10v4a5 5 0 0 1-10 0zM12 16v5',
     quota: 'M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6',
-    attachments: 'M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10.5 17a2 2 0 0 1-3-3l7.5-7.5'
+    attachments: 'M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10.5 17a2 2 0 0 1-3-3l7.5-7.5',
+    voice: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3'
   };
   OC.icon = function (name) {
     var ns = 'http://www.w3.org/2000/svg';
@@ -236,8 +237,8 @@
 
   OC.addStrings({
     ja: { 'common.copy': 'コピー', 'common.copied': 'コピーしました', 'common.copyFailed': 'コピーできませんでした', 'common.cancel': 'キャンセル', 'common.save': '保存', 'common.saved': '保存しました', 'common.back': '戻る', 'common.next': '次へ', 'common.done': '完了', 'common.refresh': '更新', 'common.delete': '削除', 'common.loading': '読み込み中…', 'common.serverStopped': 'サーバーが停止しています', 'common.startFirst': '起動すると表示されます。', 'state.running': '稼働中', 'state.stopped': '停止中', 'time.dh': '{d}日 {h}時間', 'time.hm': '{h}時間 {m}分', 'time.m': '{m}分', 'time.s': '{s}秒',
-      'nav.dashboard': 'ダッシュボード', 'nav.connections': '接続', 'nav.models': 'モデル', 'nav.users': 'ユーザー', 'nav.security': 'セキュリティ', 'nav.logs': 'ログ', 'nav.settings': '設定', 'nav.backup': 'バックアップ', 'nav.about': 'このアプリについて' },
+      'nav.dashboard': 'ダッシュボード', 'nav.connections': '接続', 'nav.models': 'モデル', 'nav.users': 'ユーザー', 'nav.security': 'セキュリティ', 'nav.logs': 'ログ', 'nav.settings': '設定', 'nav.backup': 'バックアップ', 'nav.about': 'このアプリについて', 'nav.voice': '音声通話' },
     en: { 'common.copy': 'Copy', 'common.copied': 'Copied', 'common.copyFailed': 'Could not copy', 'common.cancel': 'Cancel', 'common.save': 'Save', 'common.saved': 'Saved', 'common.back': 'Back', 'common.next': 'Next', 'common.done': 'Done', 'common.refresh': 'Refresh', 'common.delete': 'Delete', 'common.loading': 'Loading…', 'common.serverStopped': 'The server is stopped', 'common.startFirst': 'Start the server to see this.', 'state.running': 'Running', 'state.stopped': 'Stopped', 'time.dh': '{d}d {h}h', 'time.hm': '{h}h {m}m', 'time.m': '{m} min', 'time.s': '{s} s',
-      'nav.dashboard': 'Dashboard', 'nav.connections': 'Connections', 'nav.models': 'Models', 'nav.users': 'Users', 'nav.security': 'Security', 'nav.logs': 'Logs', 'nav.settings': 'Settings', 'nav.backup': 'Backup', 'nav.about': 'About' }
+      'nav.dashboard': 'Dashboard', 'nav.connections': 'Connections', 'nav.models': 'Models', 'nav.users': 'Users', 'nav.security': 'Security', 'nav.logs': 'Logs', 'nav.settings': 'Settings', 'nav.backup': 'Backup', 'nav.about': 'About', 'nav.voice': 'Voice call' }
   });
 })();

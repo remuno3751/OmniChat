@@ -25,7 +25,42 @@ function adminToken(): string | null {
 
 const MAP = /^\/local-admin\/(attachments|plugins|quotas|usage)(\/.*)?$/;
 
+// /local-admin/voice/*: the same as /voice/admin/* (plus the status, the diagnose, and deleting a model via /voice/voices/models/:uuid).
+const VOICE_ROUTES: [string, string][] = [
+  ["GET", "status"], ["GET", "diagnose"], ["GET", "config"], ["PUT", "config"], ["GET", "llm"], ["PUT", "llm/roles"],
+  ["GET", "users"], ["GET", "usage"], ["PUT", "quota"], ["GET", "placement"], ["PUT", "placement/stt"], ["GET", "models"], ["DELETE", "models/:uuid"],
+];
+// Paths that are not under /voice/admin/.
+const VOICE_DIRECT: Record<string, string> = { status: "/voice/status", diagnose: "/voice/diagnose" };
+
+const voiceHandler = async (app: FastifyInstance, req: any, reply: any) => {
+  requireLocal(req);
+  const url: string = req.raw.url ?? req.url;
+  const q = url.indexOf("?");
+  const pathname = q < 0 ? url : url.slice(0, q);
+  const query = q < 0 ? "" : url.slice(q);
+  const rest = pathname.slice("/local-admin/voice/".length);
+  // DELETE models/:uuid is the model's own route; everything else is the admin side unless listed in VOICE_DIRECT.
+  const target = VOICE_DIRECT[rest] ?? (req.method === "DELETE" ? `/voice/voices/${rest}` : `/voice/admin/${rest}`);
+  const token = adminToken();
+  if (!token) { reply.code(409); return { error: "no administrator account exists", code: "no_admin" }; }
+  const res = await app.inject({
+    method: req.method,
+    url: target + query,
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    ...(req.body !== undefined && req.method !== "GET" && req.method !== "DELETE" ? { payload: JSON.stringify(req.body) } : {}),
+  });
+  reply.code(res.statusCode);
+  const ct = res.headers["content-type"];
+  if (ct) reply.header("content-type", ct);
+  return res.body;
+};
+
 export function registerLocalAdminMirror(app: FastifyInstance): void {
+  for (const [method, path] of VOICE_ROUTES) {
+    app.route({ method: method as "GET" | "PUT" | "DELETE", url: `/local-admin/voice/${path}`, handler: (req: any, reply: any) => voiceHandler(app, req, reply) });
+  }
+
   const handler = async (req: any, reply: any) => {
     requireLocal(req);
     const url: string = req.raw.url ?? req.url;

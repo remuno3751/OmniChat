@@ -39,6 +39,9 @@ import SearchChip from '../components/SearchChip';
 import ComposerDevChips from '../components/ComposerDevChips';
 import Icon from '../components/Icon';
 import MessageView from '../components/MessageView';
+import VoiceCallBar from '../components/VoiceCallBar';
+import { supported as voiceSupported } from '../voice/voiceEngine';
+import { useVoiceCall } from '../voice/useVoiceCall';
 import PetOverlay from '../components/PetOverlay';
 import SlashMenu from '../components/SlashMenu';
 import SystemCard from '../components/SystemCard';
@@ -325,6 +328,26 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
     return true;
   };
 
+  // Aria voice call in this conversation (the phone button; the bar above the list). Not for ephemeral or code chats.
+  const voiceCall = useVoiceCall();
+  const callOn = voiceCall.state !== 'idle';
+  const voiceOk = voiceSupported && !eph && (conv ? conv.mode !== 'code' : draftMode !== 'code');
+  // "not saved" for the next call: the switch next to the phone button; starts from the device default
+  const voicePrivDefault = useDevice((s) => s.voice.privateDefault);
+  const [voicePrivOverride, setVoicePrivOverride] = useState<boolean | null>(null);
+  const voicePriv = voicePrivOverride ?? voicePrivDefault;
+  // a call belongs to one conversation: leaving it (or unmounting) ends the call
+  useEffect(() => () => voiceCall.stop(), [convId]);
+  const onVoicePress = async () => {
+    if (callOn) { voiceCall.stop(); return; }
+    try {
+      if (!(await ensureConv())) return;
+      void voiceCall.start(convId, voicePriv);
+    } catch (x: any) {
+      toast(x.message || tr('host.call.err.failed'), 'error');
+    }
+  };
+
   /** regenerate of an assistant message (MessageView's button and /retry) */
   const regenerateFrom = (m: Message) => {
     const e = regenerate({ convId, message: m, tree, effort: unsupported ? null : oneShot, responseFormat: oneShotRF });
@@ -364,6 +387,12 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
     const cmd = fromQueue === undefined ? parseSlashCommand(text) : null;
     if (cmd) { setText(''); await runSlash(cmd); return; }
     const content = (fromQueue ?? text).trim();
+    // during a voice call the composer talks to the call: Aria answers, and the server keeps both sides in this chat
+    if (fromQueue === undefined && content && voiceCall.state === 'ready') {
+      voiceCall.sendText(content);
+      setText('');
+      return;
+    }
     if (fromQueue === undefined && streaming) {
       if (content && queued.length < MAX_QUEUED) { addQueued(content, false); setText(''); }
       return;
@@ -580,6 +609,28 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
           </Pressable>
         )}
         <LatencyBadge />
+        {voiceOk && !callOn && (
+          <Pressable
+            onPress={() => setVoicePrivOverride(!voicePriv)}
+            hitSlop={8}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: voicePriv }}
+            accessibilityLabel={tr('host.call.privateToggleHint')}
+          >
+            <Text style={{ color: voicePriv ? t.accent : t.sub, fontSize: 12, fontWeight: '600' }}>{tr('host.call.privateToggle')}</Text>
+          </Pressable>
+        )}
+        {voiceOk && (
+          <Pressable
+            onPress={onVoicePress}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={tr(callOn ? 'voice.call.end' : 'host.call.start')}
+            accessibilityState={{ selected: callOn }}
+          >
+            <Icon name="phone" size={20} color={callOn ? t.accentInk : t.sub} />
+          </Pressable>
+        )}
         <ModelPicker
           sel={sel}
           providerName={provider?.name || ''}
@@ -603,6 +654,7 @@ export default function ChatScreen({ convId, draftProjectId, draftMode = 'chat',
       )}
       {eph && !ephBannerSeen && <EphemeralBanner minutes={idleMinutes} onDismiss={() => setDevice({ ephemeralBannerSeen: true })} />}
       {jump.banner}
+      {callOn && <VoiceCallBar call={voiceCall} />}
       <ScrollView
         key={`list-${layoutEpoch}`}
         ref={scroller}

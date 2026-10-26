@@ -5,6 +5,7 @@ import { api } from '../api';
 import { isEphemeralId } from '../ephemeral';
 import { isPinned, setPinned } from '../chatActions';
 import Icon from '../components/Icon';
+import { kindLogos } from '../convKinds';
 import Tip from '../components/Tip';
 import FolderSheet from '../components/FolderSheet';
 import ProjectSheet from '../components/ProjectSheet';
@@ -197,6 +198,11 @@ export default function ConversationList({ activeId, onSelect, onNew, onNewEphem
       ]}
     >
       {mode === 'code' && statusColor(c.codeStatus, t) && <View style={[styles.dot, { backgroundColor: statusColor(c.codeStatus, t) ?? t.sub }]} />}
+      {kindLogos(c.kinds).map((k) => (
+        <View key={k} accessibilityRole="image" accessibilityLabel={tr(k === 'voice' ? 'host.list.kindVoice' : 'host.list.kindChat')} style={{ marginRight: 6 }}>
+          <Icon name={k === 'voice' ? 'phone' : 'chat'} size={14} color={t.sub} />
+        </View>
+      ))}
       <Text numberOfLines={1} style={[styles.rowText, { color: t.text }]}>{c.title}</Text>
       {rowDevice(c) !== null && deviceBadge(rowDevice(c)!)}
       <Pressable onPress={() => setMenuFor(c)} hitSlop={8} accessibilityLabel={tr('list.conversationMenu')}>
