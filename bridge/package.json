@@ -10,7 +10,7 @@
     "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
-    "ws": "^8.18.0",
+    "ws": "^8.23.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
